@@ -1,3 +1,7 @@
+# --- ДОБАВИТЬ ЭТИ 2 СТРОКИ В САМЫЙ ВЕРХ ---
+from keep_alive import keep_alive
+keep_alive()
+# ------------------------------------------
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackQueryHandler
 import json
@@ -775,4 +779,5 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__':
+
     main()
