@@ -1,12 +1,26 @@
-# --- ДОБАВИТЬ ЭТИ 2 СТРОКИ В САМЫЙ ВЕРХ ---
 from keep_alive import keep_alive
 keep_alive()
-# ------------------------------------------
+
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackQueryHandler
 import json
 import time
+import os
 from datetime import datetime
+from pymongo import MongoClient
+
+# --- НАСТРОЙКА БАЗЫ ДАННЫХ ---
+# Бот берет ссылку из настроек Render
+MONGO_URL = os.getenv('MONGO_URL') 
+
+# Если ссылка есть - подключаемся, если нет - предупреждаем (для локального теста)
+if MONGO_URL:
+    cluster = MongoClient(MONGO_URL)
+    db = cluster["bible_bot_db"]
+    collection = db["leaderboard"]
+else:
+    print("⚠️ ВНИМАНИЕ: Не задана переменная MONGO_URL. Статистика не будет сохраняться!")
+    collection = None
 
 # Состояния разговора
 CHOOSING_LEVEL, ANSWERING = range(2)
@@ -248,46 +262,49 @@ hard_questions = [
     }
 ]
 
-# Хранилище данных пользователей
+# Хранилище данных пользователей (текущая сессия)
 user_data = {}
 
-# Глобальная статистика (загружается из файла)
-leaderboard = {}
+# --- ФУНКЦИИ БАЗЫ ДАННЫХ ---
 
-# Загрузка статистики из файла
-def load_leaderboard():
-    global leaderboard
-    try:
-        with open('leaderboard.json', 'r', encoding='utf-8') as f:
-            leaderboard = json.load(f)
-    except FileNotFoundError:
-        leaderboard = {}
-
-# Сохранение статистики в файл
-def save_leaderboard():
-    with open('leaderboard.json', 'w', encoding='utf-8') as f:
-        json.dump(leaderboard, f, ensure_ascii=False, indent=2)
-
-# Добавление результата в таблицу лидеров
 def add_to_leaderboard(user_id, username, first_name, level_key, score, total, time_seconds):
+    if collection is None: return
+
     # Очки за уровень: легкий = 1, средний = 2, сложный = 3
     points_per_question = {"easy": 1, "medium": 2, "hard": 3}
     earned_points = score * points_per_question[level_key]
-    
     user_id_str = str(user_id)
     
-    # Если пользователь уже есть - обновляем
-    if user_id_str in leaderboard:
-        entry = leaderboard[user_id_str]
-        entry["total_points"] += earned_points
-        entry[f"{level_key}_attempts"] += 1
-        entry[f"{level_key}_best_score"] = max(entry.get(f"{level_key}_best_score", 0), score)
-        entry[f"{level_key}_best_time"] = min(entry.get(f"{level_key}_best_time", float('inf')), time_seconds)
-        entry["last_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Ищем пользователя в базе
+    entry = collection.find_one({"_id": user_id_str})
+    
+    if entry:
+        # Обновляем
+        new_total = entry.get("total_points", 0) + earned_points
+        new_attempts = entry.get(f"{level_key}_attempts", 0) + 1
+        new_best_score = max(entry.get(f"{level_key}_best_score", 0), score)
+        
+        current_best_time = entry.get(f"{level_key}_best_time", float('inf'))
+        new_best_time = min(current_best_time, time_seconds)
+        
+        collection.update_one(
+            {"_id": user_id_str},
+            {
+                "$set": {
+                    "total_points": new_total,
+                    f"{level_key}_attempts": new_attempts,
+                    f"{level_key}_best_score": new_best_score,
+                    f"{level_key}_best_time": new_best_time,
+                    "last_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "first_name": first_name,
+                    "username": username
+                }
+            }
+        )
     else:
-        # Создаём нового пользователя
-        entry = {
-            "user_id": user_id,
+        # Создаем нового
+        new_entry = {
+            "_id": user_id_str,
             "username": username or "Без username",
             "first_name": first_name or "Пользователь",
             "total_points": earned_points,
@@ -302,24 +319,25 @@ def add_to_leaderboard(user_id, username, first_name, level_key, score, total, t
             "hard_best_time": time_seconds if level_key == "hard" else float('inf'),
             "last_date": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
-        leaderboard[user_id_str] = entry
-    
-    save_leaderboard()
+        collection.insert_one(new_entry)
 
-# Получение позиции пользователя в общем рейтинге
 def get_user_position(user_id):
-    sorted_users = sorted(leaderboard.items(), key=lambda x: x[1]["total_points"], reverse=True)
-    for i, (uid, entry) in enumerate(sorted_users, 1):
-        if uid == str(user_id):
-            return i, entry
-    return None, None
+    if collection is None: return None, None
+    user_id_str = str(user_id)
+    entry = collection.find_one({"_id": user_id_str})
+    if not entry:
+        return None, None
+    
+    my_points = entry.get("total_points", 0)
+    # Считаем, сколько людей имеют больше очков
+    count_better = collection.count_documents({"total_points": {"$gt": my_points}})
+    return count_better + 1, entry
 
-# Получение топ-10
 def get_top_10():
-    sorted_users = sorted(leaderboard.items(), key=lambda x: x[1]["total_points"], reverse=True)
-    return sorted_users[:10]
+    if collection is None: return []
+    # Сортируем по очкам (убывание) и берем 10
+    return list(collection.find().sort("total_points", -1).limit(10))
 
-# Форматирование времени
 def format_time(seconds):
     if seconds == float('inf'):
         return "—"
@@ -392,29 +410,23 @@ async def show_general_leaderboard(query):
     else:
         text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
         
-        for i, (uid, entry) in enumerate(top, 1):
+        for i, entry in enumerate(top, 1):
             medal = ""
-            if i == 1:
-                medal = "🥇"
-            elif i == 2:
-                medal = "🥈"
-            elif i == 3:
-                medal = "🥉"
+            if i == 1: medal = "🥇"
+            elif i == 2: medal = "🥈"
+            elif i == 3: medal = "🥉"
             
-            name = entry['first_name']
+            name = entry.get('first_name', 'Unknown')
             if len(name) > 15:
                 name = name[:15] + "..."
             
             text += f'{medal} *{i}.* {name}\n'
-            text += f'   💎 {entry["total_points"]} баллов\n'
+            text += f'   💎 {entry.get("total_points", 0)} баллов\n'
             
             attempts = []
-            if entry["easy_attempts"] > 0:
-                attempts.append(f'🟢{entry["easy_attempts"]}')
-            if entry["medium_attempts"] > 0:
-                attempts.append(f'🟡{entry["medium_attempts"]}')
-            if entry["hard_attempts"] > 0:
-                attempts.append(f'🔴{entry["hard_attempts"]}')
+            if entry.get("easy_attempts", 0) > 0: attempts.append(f'🟢{entry["easy_attempts"]}')
+            if entry.get("medium_attempts", 0) > 0: attempts.append(f'🟡{entry["medium_attempts"]}')
+            if entry.get("hard_attempts", 0) > 0: attempts.append(f'🔴{entry["hard_attempts"]}')
             
             if attempts:
                 text += f'   Прохождений: {" ".join(attempts)}\n\n'
@@ -438,22 +450,22 @@ async def show_my_stats(query):
     else:
         text = '📊 *МОЯ СТАТИСТИКА*\n\n'
         text += f'🏅 Позиция в общем рейтинге: *#{position}*\n'
-        text += f'💎 Всего баллов: *{entry["total_points"]}*\n\n'
+        text += f'💎 Всего баллов: *{entry.get("total_points", 0)}*\n\n'
         
         text += '📈 *КОЛИЧЕСТВО ПРОХОЖДЕНИЙ:*\n'
-        text += f'🟢 Лёгкий: {entry["easy_attempts"]} раз(а)\n'
-        text += f'🟡 Средний: {entry["medium_attempts"]} раз(а)\n'
-        text += f'🔴 Сложный: {entry["hard_attempts"]} раз(а)\n\n'
+        text += f'🟢 Лёгкий: {entry.get("easy_attempts", 0)} раз(а)\n'
+        text += f'🟡 Средний: {entry.get("medium_attempts", 0)} раз(а)\n'
+        text += f'🔴 Сложный: {entry.get("hard_attempts", 0)} раз(а)\n\n'
         
         text += '⭐ *ЛУЧШИЕ РЕЗУЛЬТАТЫ:*\n'
-        if entry["easy_attempts"] > 0:
-            text += f'🟢 Лёгкий: {entry["easy_best_score"]}/10 • {format_time(entry["easy_best_time"])}\n'
-        if entry["medium_attempts"] > 0:
-            text += f'🟡 Средний: {entry["medium_best_score"]}/10 • {format_time(entry["medium_best_time"])}\n'
-        if entry["hard_attempts"] > 0:
-            text += f'🔴 Сложный: {entry["hard_best_score"]}/10 • {format_time(entry["hard_best_time"])}\n'
+        if entry.get("easy_attempts", 0) > 0:
+            text += f'🟢 Лёгкий: {entry.get("easy_best_score")}/10 • {format_time(entry.get("easy_best_time"))}\n'
+        if entry.get("medium_attempts", 0) > 0:
+            text += f'🟡 Средний: {entry.get("medium_best_score")}/10 • {format_time(entry.get("medium_best_time"))}\n'
+        if entry.get("hard_attempts", 0) > 0:
+            text += f'🔴 Сложный: {entry.get("hard_best_score")}/10 • {format_time(entry.get("hard_best_time"))}\n'
         
-        text += f'\n📅 Последняя активность: {entry["last_date"]}'
+        text += f'\n📅 Последняя активность: {entry.get("last_date", "?")}'
     
     keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -629,7 +641,7 @@ async def show_results(message, user_id):
     username = user.username
     first_name = user.first_name
     
-    # Добавляем в таблицу лидеров
+    # Добавляем в таблицу лидеров (ТЕПЕРЬ В MONGODB)
     add_to_leaderboard(
         user_id,
         username,
@@ -666,12 +678,11 @@ async def show_results(message, user_id):
     result_text += f'*Правильных ответов:* {score} из {total}\n'
     result_text += f'*Процент:* {percentage:.0f}%\n'
     result_text += f'*Заработано баллов:* +{earned_points} 💎\n'
-    result_text += f'*Всего баллов:* {entry["total_points"]} 💎\n'
+    result_text += f'*Всего баллов:* {entry.get("total_points", 0)} 💎\n'
     result_text += f'*Время:* {format_time(time_taken)}\n'
     result_text += f'*Позиция в рейтинге:* #{position}\n'
     result_text += f'*Оценка:* {grade}\n\n'
     
-    # Показываем ошибки с пояснениями ТОЛЬКО если есть ошибки
     if data["wrong_answers"]:
         result_text += '❌ *РАЗБОР ОШИБОК:*\n\n'
         for i, wrong in enumerate(data["wrong_answers"], 1):
@@ -702,29 +713,23 @@ async def leaderboard_command(update: Update, context):
     else:
         text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
         
-        for i, (uid, entry) in enumerate(top, 1):
+        for i, entry in enumerate(top, 1):
             medal = ""
-            if i == 1:
-                medal = "🥇"
-            elif i == 2:
-                medal = "🥈"
-            elif i == 3:
-                medal = "🥉"
+            if i == 1: medal = "🥇"
+            elif i == 2: medal = "🥈"
+            elif i == 3: medal = "🥉"
             
-            name = entry['first_name']
+            name = entry.get('first_name', 'Unknown')
             if len(name) > 15:
                 name = name[:15] + "..."
             
             text += f'{medal} *{i}.* {name}\n'
-            text += f'   💎 {entry["total_points"]} баллов\n'
+            text += f'   💎 {entry.get("total_points", 0)} баллов\n'
             
             attempts = []
-            if entry["easy_attempts"] > 0:
-                attempts.append(f'🟢{entry["easy_attempts"]}')
-            if entry["medium_attempts"] > 0:
-                attempts.append(f'🟡{entry["medium_attempts"]}')
-            if entry["hard_attempts"] > 0:
-                attempts.append(f'🔴{entry["hard_attempts"]}')
+            if entry.get("easy_attempts", 0) > 0: attempts.append(f'🟢{entry["easy_attempts"]}')
+            if entry.get("medium_attempts", 0) > 0: attempts.append(f'🟡{entry["medium_attempts"]}')
+            if entry.get("hard_attempts", 0) > 0: attempts.append(f'🔴{entry["hard_attempts"]}')
             
             if attempts:
                 text += f'   Прохождений: {" ".join(attempts)}\n\n'
@@ -743,9 +748,6 @@ async def cancel(update: Update, context):
 
 # Главная функция
 def main():
-    # Загружаем статистику
-    load_leaderboard()
-    
     app = Application.builder().token("8134773553:AAF4DWLR7DBDolkigso_ZgXd4Ml_90YaaK8").build()
     
     # Обработчик теста
@@ -773,11 +775,10 @@ def main():
     print('🤖 Библейский тест-бот запущен!')
     print('📖 Тема: 1 Петра 1:1-16')
     print('🎯 3 уровня сложности')
-    print('🏆 Система баллов активна')
+    print('🏆 Система баллов активна (MongoDB)')
     print('💎 Лёгкий: 1 балл, Средний: 2 балла, Сложный: 3 балла')
     print('🤫 Ответы показываются только в конце')
     app.run_polling()
 
 if __name__ == '__main__':
-
     main()
