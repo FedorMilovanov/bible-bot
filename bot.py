@@ -429,7 +429,7 @@ async def show_general_leaderboard(query, page=0):
     users = get_leaderboard_page(page)
     total_users = get_total_users()
 
-      # ДОБАВЬТЕ ЭТУ СТРОКУ ДЛЯ ОТЛАДКИ:
+    # ОТЛАДКА: смотрим в логах Render
     print(f"DEBUG: page={page}, users_on_page={len(users)}, total_users={total_users}")
     
     if not users:
@@ -794,4 +794,5 @@ def main():
 if __name__ == '__main__':
     main()
 ```
+
 
