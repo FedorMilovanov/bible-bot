@@ -428,6 +428,9 @@ async def button_handler(update: Update, context):
 async def show_general_leaderboard(query, page=0):
     users = get_leaderboard_page(page)
     total_users = get_total_users()
+
+      # ДОБАВЬТЕ ЭТУ СТРОКУ ДЛЯ ОТЛАДКИ:
+    print(f"DEBUG: page={page}, users_on_page={len(users)}, total_users={total_users}")
     
     if not users:
         text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
@@ -791,3 +794,4 @@ def main():
 if __name__ == '__main__':
     main()
 ```
+
