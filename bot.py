@@ -1,3 +1,13 @@
+Конечно! Я понял, что нужно исправить.
+
+**Что я изменил:**
+1.  **Статистика и Таблица лидеров:** Теперь там добавлены кнопки **"🎯 Начать тест"** и **"Главное меню"**. Вам не нужно нажимать "Назад", чтобы запустить тест.
+2.  **Конец теста (Результаты):** Самое важное. Раньше бот просто писал текст и убирал кнопки, заставляя вас скроллить вверх. Теперь в сообщении с результатом появляются кнопки: **"🔄 Пройти снова"**, **"🏆 Лидеры"** и **"🏠 Меню"**.
+3.  **Редактирование:** Меню статистики и лидеров обновляют текущее сообщение, а не шлют новое (как вы и просили).
+
+Вот **полный готовый код**. Просто скопируйте его, вставьте в `bot.py` и сделайте Commit.
+
+```python
 from keep_alive import keep_alive
 keep_alive()
 
@@ -10,14 +20,16 @@ from datetime import datetime
 from pymongo import MongoClient
 
 # --- НАСТРОЙКА БАЗЫ ДАННЫХ ---
-# Бот берет ссылку из настроек Render
 MONGO_URL = os.getenv('MONGO_URL') 
 
-# Если ссылка есть - подключаемся, если нет - предупреждаем (для локального теста)
 if MONGO_URL:
-    cluster = MongoClient(MONGO_URL)
-    db = cluster["bible_bot_db"]
-    collection = db["leaderboard"]
+    try:
+        cluster = MongoClient(MONGO_URL)
+        db = cluster["bible_bot_db"]
+        collection = db["leaderboard"]
+    except Exception as e:
+        print(f"Ошибка подключения к БД: {e}")
+        collection = None
 else:
     print("⚠️ ВНИМАНИЕ: Не задана переменная MONGO_URL. Статистика не будет сохраняться!")
     collection = None
@@ -25,7 +37,7 @@ else:
 # Состояния разговора
 CHOOSING_LEVEL, ANSWERING = range(2)
 
-# ЛЁГКИЙ УРОВЕНЬ (10 вопросов)
+# ЛЁГКИЙ УРОВЕНЬ
 easy_questions = [
     {
         "question": "Кто написал Первое послание Петра?",
@@ -89,7 +101,7 @@ easy_questions = [
     }
 ]
 
-# СРЕДНИЙ УРОВЕНЬ (10 вопросов)
+# СРЕДНИЙ УРОВЕНЬ
 medium_questions = [
     {
         "question": "Почему Петр назвал Рим 'Вавилоном'?",
@@ -153,7 +165,7 @@ medium_questions = [
     }
 ]
 
-# СЛОЖНЫЙ УРОВЕНЬ (10 вопросов)
+# СЛОЖНЫЙ УРОВЕНЬ
 hard_questions = [
     {
         "question": "Какие три действия Троицы описаны в 1 Пет. 1:2?",
@@ -270,73 +282,76 @@ user_data = {}
 def add_to_leaderboard(user_id, username, first_name, level_key, score, total, time_seconds):
     if collection is None: return
 
-    # Очки за уровень: легкий = 1, средний = 2, сложный = 3
     points_per_question = {"easy": 1, "medium": 2, "hard": 3}
     earned_points = score * points_per_question[level_key]
     user_id_str = str(user_id)
     
-    # Ищем пользователя в базе
-    entry = collection.find_one({"_id": user_id_str})
-    
-    if entry:
-        # Обновляем
-        new_total = entry.get("total_points", 0) + earned_points
-        new_attempts = entry.get(f"{level_key}_attempts", 0) + 1
-        new_best_score = max(entry.get(f"{level_key}_best_score", 0), score)
+    try:
+        entry = collection.find_one({"_id": user_id_str})
         
-        current_best_time = entry.get(f"{level_key}_best_time", float('inf'))
-        new_best_time = min(current_best_time, time_seconds)
-        
-        collection.update_one(
-            {"_id": user_id_str},
-            {
-                "$set": {
-                    "total_points": new_total,
-                    f"{level_key}_attempts": new_attempts,
-                    f"{level_key}_best_score": new_best_score,
-                    f"{level_key}_best_time": new_best_time,
-                    "last_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "first_name": first_name,
-                    "username": username
+        if entry:
+            new_total = entry.get("total_points", 0) + earned_points
+            new_attempts = entry.get(f"{level_key}_attempts", 0) + 1
+            new_best_score = max(entry.get(f"{level_key}_best_score", 0), score)
+            
+            current_best_time = entry.get(f"{level_key}_best_time", float('inf'))
+            new_best_time = min(current_best_time, time_seconds)
+            
+            collection.update_one(
+                {"_id": user_id_str},
+                {
+                    "$set": {
+                        "total_points": new_total,
+                        f"{level_key}_attempts": new_attempts,
+                        f"{level_key}_best_score": new_best_score,
+                        f"{level_key}_best_time": new_best_time,
+                        "last_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "first_name": first_name,
+                        "username": username
+                    }
                 }
+            )
+        else:
+            new_entry = {
+                "_id": user_id_str,
+                "username": username or "Без username",
+                "first_name": first_name or "Пользователь",
+                "total_points": earned_points,
+                "easy_attempts": 1 if level_key == "easy" else 0,
+                "medium_attempts": 1 if level_key == "medium" else 0,
+                "hard_attempts": 1 if level_key == "hard" else 0,
+                "easy_best_score": score if level_key == "easy" else 0,
+                "medium_best_score": score if level_key == "medium" else 0,
+                "hard_best_score": score if level_key == "hard" else 0,
+                "easy_best_time": time_seconds if level_key == "easy" else float('inf'),
+                "medium_best_time": time_seconds if level_key == "medium" else float('inf'),
+                "hard_best_time": time_seconds if level_key == "hard" else float('inf'),
+                "last_date": datetime.now().strftime("%Y-%m-%d %H:%M")
             }
-        )
-    else:
-        # Создаем нового
-        new_entry = {
-            "_id": user_id_str,
-            "username": username or "Без username",
-            "first_name": first_name or "Пользователь",
-            "total_points": earned_points,
-            "easy_attempts": 1 if level_key == "easy" else 0,
-            "medium_attempts": 1 if level_key == "medium" else 0,
-            "hard_attempts": 1 if level_key == "hard" else 0,
-            "easy_best_score": score if level_key == "easy" else 0,
-            "medium_best_score": score if level_key == "medium" else 0,
-            "hard_best_score": score if level_key == "hard" else 0,
-            "easy_best_time": time_seconds if level_key == "easy" else float('inf'),
-            "medium_best_time": time_seconds if level_key == "medium" else float('inf'),
-            "hard_best_time": time_seconds if level_key == "hard" else float('inf'),
-            "last_date": datetime.now().strftime("%Y-%m-%d %H:%M")
-        }
-        collection.insert_one(new_entry)
+            collection.insert_one(new_entry)
+    except Exception as e:
+        print(f"Ошибка записи в БД: {e}")
 
 def get_user_position(user_id):
     if collection is None: return None, None
     user_id_str = str(user_id)
-    entry = collection.find_one({"_id": user_id_str})
-    if not entry:
+    try:
+        entry = collection.find_one({"_id": user_id_str})
+        if not entry:
+            return None, None
+        
+        my_points = entry.get("total_points", 0)
+        count_better = collection.count_documents({"total_points": {"$gt": my_points}})
+        return count_better + 1, entry
+    except Exception:
         return None, None
-    
-    my_points = entry.get("total_points", 0)
-    # Считаем, сколько людей имеют больше очков
-    count_better = collection.count_documents({"total_points": {"$gt": my_points}})
-    return count_better + 1, entry
 
 def get_top_10():
     if collection is None: return []
-    # Сортируем по очкам (убывание) и берем 10
-    return list(collection.find().sort("total_points", -1).limit(10))
+    try:
+        return list(collection.find().sort("total_points", -1).limit(10))
+    except Exception:
+        return []
 
 def format_time(seconds):
     if seconds == float('inf'):
@@ -388,6 +403,7 @@ async def button_handler(update: Update, context):
             '• Общий рейтинг по набранным баллам\n'
             '• Статистика по каждому уровню\n\n'
             'Используй /test чтобы начать!',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]]),
             parse_mode='Markdown'
         )
     
@@ -433,7 +449,11 @@ async def show_general_leaderboard(query):
             else:
                 text += '\n'
     
-    keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]]
+    # Кнопки навигации (чтобы не создавать новое сообщение)
+    keyboard = [
+        [InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')],
+        [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
@@ -467,7 +487,11 @@ async def show_my_stats(query):
         
         text += f'\n📅 Последняя активность: {entry.get("last_date", "?")}'
     
-    keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]]
+    # Кнопки навигации
+    keyboard = [
+        [InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')],
+        [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
@@ -633,33 +657,26 @@ async def show_results(message, user_id):
     total = len(data["questions"])
     percentage = (score / total) * 100
     
-    # Вычисляем время
     time_taken = time.time() - data["start_time"]
-    
-    # Получаем данные пользователя
     user = message.from_user
-    username = user.username
-    first_name = user.first_name
     
-    # Добавляем в таблицу лидеров (ТЕПЕРЬ В MONGODB)
+    # Добавляем в БД
     add_to_leaderboard(
         user_id,
-        username,
-        first_name,
+        user.username,
+        user.first_name,
         data["level_key"],
         score,
         total,
         time_taken
     )
     
-    # Получаем позицию в рейтинге
     position, entry = get_user_position(user_id)
     
-    # Считаем заработанные баллы
+    # Очки за уровень
     points_per_question = {"easy": 1, "medium": 2, "hard": 3}
     earned_points = score * points_per_question[data["level_key"]]
     
-    # Оценка
     if percentage >= 90:
         grade = "Отлично! 🌟"
         emoji = "🏆"
@@ -693,10 +710,16 @@ async def show_results(message, user_id):
     else:
         result_text += '🎉 *Все ответы правильные!*\n\n'
     
-    result_text += 'Используй /test чтобы пройти тест заново\n'
-    result_text += 'Используй /leaderboard чтобы посмотреть рейтинг'
+    # ВАЖНО: Добавляем кнопки ВНИЗУ результатов
+    # чтобы не надо было скроллить вверх
+    keyboard = [
+        [InlineKeyboardButton("🔄 Пройти снова", callback_data='start_test')],
+        [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='leaderboard')],
+        [InlineKeyboardButton("⬅️ Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await message.reply_text(result_text, reply_markup=ReplyKeyboardRemove(), parse_mode='Markdown')
+    await message.reply_text(result_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # Команда /test
 async def test_command(update: Update, context):
@@ -712,7 +735,6 @@ async def leaderboard_command(update: Update, context):
         text += 'Пока никто не проходил тесты.\nБудь первым! 🚀'
     else:
         text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
-        
         for i, entry in enumerate(top, 1):
             medal = ""
             if i == 1: medal = "🥇"
@@ -720,29 +742,31 @@ async def leaderboard_command(update: Update, context):
             elif i == 3: medal = "🥉"
             
             name = entry.get('first_name', 'Unknown')
-            if len(name) > 15:
-                name = name[:15] + "..."
+            if len(name) > 15: name = name[:15] + "..."
             
             text += f'{medal} *{i}.* {name}\n'
             text += f'   💎 {entry.get("total_points", 0)} баллов\n'
-            
+            # (код про попытки скрыт для краткости, он тот же)
             attempts = []
             if entry.get("easy_attempts", 0) > 0: attempts.append(f'🟢{entry["easy_attempts"]}')
             if entry.get("medium_attempts", 0) > 0: attempts.append(f'🟡{entry["medium_attempts"]}')
             if entry.get("hard_attempts", 0) > 0: attempts.append(f'🔴{entry["hard_attempts"]}')
-            
-            if attempts:
-                text += f'   Прохождений: {" ".join(attempts)}\n\n'
-            else:
-                text += '\n'
+            if attempts: text += f'   Прохождений: {" ".join(attempts)}\n\n'
+            else: text += '\n'
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    # Кнопки для команды /leaderboard
+    keyboard = [
+        [InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')],
+        [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]
+    ]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # Отмена
 async def cancel(update: Update, context):
+    keyboard = [[InlineKeyboardButton("⬅️ Главное меню", callback_data='back_to_main')]]
     await update.message.reply_text(
-        '❌ Тест отменён.\n\nИспользуй /test чтобы начать заново',
-        reply_markup=ReplyKeyboardRemove()
+        '❌ Тест отменён.',
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return ConversationHandler.END
 
@@ -763,21 +787,17 @@ def main():
         fallbacks=[
             CommandHandler('cancel', cancel),
             CallbackQueryHandler(back_to_main, pattern='^back_to_main$')
-        ]
+        ],
+        allow_reentry=True
     )
     
+    app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CallbackQueryHandler(button_handler, pattern='^(about|start_test|leaderboard|my_stats)$'))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern='^back_to_main$'))
-    app.add_handler(conv_handler)
     
     print('🤖 Библейский тест-бот запущен!')
-    print('📖 Тема: 1 Петра 1:1-16')
-    print('🎯 3 уровня сложности')
-    print('🏆 Система баллов активна (MongoDB)')
-    print('💎 Лёгкий: 1 балл, Средний: 2 балла, Сложный: 3 балла')
-    print('🤫 Ответы показываются только в конце')
     app.run_polling()
 
 if __name__ == '__main__':
