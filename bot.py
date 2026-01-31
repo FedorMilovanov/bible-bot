@@ -6,6 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import json
 import time
 import os
+import re
 from datetime import datetime
 from pymongo import MongoClient
 
@@ -336,12 +337,22 @@ def get_user_position(user_id):
     except Exception:
         return None, None
 
-def get_top_10():
+def get_leaderboard_page(page_number):
+    """Получает 10 пользователей для конкретной страницы"""
     if collection is None: return []
     try:
-        return list(collection.find().sort("total_points", -1).limit(10))
+        skip_amount = page_number * 10
+        return list(collection.find().sort("total_points", -1).skip(skip_amount).limit(10))
     except Exception:
         return []
+
+def get_total_users():
+    """Считает сколько всего пользователей в базе"""
+    if collection is None: return 0
+    try:
+        return collection.count_documents({})
+    except Exception:
+        return 0
 
 def format_time(seconds):
     if seconds == float('inf'):
@@ -376,6 +387,12 @@ async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
     
+    # Обработка переключения страниц (если нажали стрелочку)
+    if query.data.startswith('leaderboard_page_'):
+        page = int(query.data.split('_')[2])
+        await show_general_leaderboard(query, page)
+        return
+
     if query.data == 'about':
         await query.edit_message_text(
             '📚 *О БОТЕ*\n\n'
@@ -401,30 +418,34 @@ async def button_handler(update: Update, context):
         await choose_level(update, context, is_callback=True)
     
     elif query.data == 'leaderboard':
-        await show_general_leaderboard(query)
+        # Показываем первую страницу (0)
+        await show_general_leaderboard(query, 0)
     
     elif query.data == 'my_stats':
         await show_my_stats(query)
 
-# Показ общей таблицы лидеров
-async def show_general_leaderboard(query):
-    top = get_top_10()
+# Показ общей таблицы лидеров (с пагинацией)
+async def show_general_leaderboard(query, page=0):
+    users = get_leaderboard_page(page)
+    total_users = get_total_users()
     
-    if not top:
+    if not users:
         text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
         text += 'Пока никто не проходил тесты.\nБудь первым! 🚀'
     else:
-        text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
+        text = f'🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ* (Стр. {page + 1})\n\n'
         
-        for i, entry in enumerate(top, 1):
+        # Начинаем нумерацию с правильного числа (1, 11, 21...)
+        start_rank = (page * 10) + 1
+        
+        for i, entry in enumerate(users, start_rank):
             medal = ""
             if i == 1: medal = "🥇"
             elif i == 2: medal = "🥈"
             elif i == 3: medal = "🥉"
             
             name = entry.get('first_name', 'Unknown')
-            if len(name) > 15:
-                name = name[:15] + "..."
+            if len(name) > 15: name = name[:15] + "..."
             
             text += f'{medal} *{i}.* {name}\n'
             text += f'   💎 {entry.get("total_points", 0)} баллов\n'
@@ -439,11 +460,24 @@ async def show_general_leaderboard(query):
             else:
                 text += '\n'
     
-    # Кнопки навигации (чтобы не создавать новое сообщение)
-    keyboard = [
-        [InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')],
-        [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]
-    ]
+    # Кнопки навигации
+    nav_buttons = []
+    
+    # Кнопка "Назад" (если не первая страница)
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f'leaderboard_page_{page-1}'))
+        
+    # Кнопка "Вперед" (если есть еще пользователи)
+    if (page + 1) * 10 < total_users:
+        nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f'leaderboard_page_{page+1}'))
+    
+    keyboard = []
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+        
+    keyboard.append([InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')])
+    keyboard.append([InlineKeyboardButton("⬅️ В меню", callback_data='back_to_main')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
@@ -541,6 +575,7 @@ async def level_selected(update: Update, context):
     
     if query.data == 'back_to_main':
         await back_to_main(update, context)
+        # Если нажали "Назад", завершаем состояние разговора
         return ConversationHandler.END
     
     # Выбор набора вопросов
@@ -609,10 +644,8 @@ async def answer(update: Update, context):
     
     user_answer = update.message.text
     
-    # Проверяем ответ
     try:
         answer_index = q["options"].index(user_answer)
-        
         if answer_index == q["correct"]:
             data["correct_answers"] += 1
         else:
@@ -623,14 +656,12 @@ async def answer(update: Update, context):
                 "explanation": q["explanation"]
             })
         
-        # Молча принимаем ответ без подсказок
         await update.message.reply_text("✓ Принято", reply_markup=ReplyKeyboardRemove())
         
     except ValueError:
         await update.message.reply_text("Пожалуйста, выбери один из предложенных вариантов")
         return ANSWERING
     
-    # Следующий вопрос
     data["current_question"] += 1
     
     if data["current_question"] < len(data["questions"]):
@@ -650,7 +681,6 @@ async def show_results(message, user_id):
     time_taken = time.time() - data["start_time"]
     user = message.from_user
     
-    # Добавляем в БД
     add_to_leaderboard(
         user_id,
         user.username,
@@ -662,8 +692,6 @@ async def show_results(message, user_id):
     )
     
     position, entry = get_user_position(user_id)
-    
-    # Очки за уровень
     points_per_question = {"easy": 1, "medium": 2, "hard": 3}
     earned_points = score * points_per_question[data["level_key"]]
     
@@ -700,8 +728,6 @@ async def show_results(message, user_id):
     else:
         result_text += '🎉 *Все ответы правильные!*\n\n'
     
-    # ВАЖНО: Добавляем кнопки ВНИЗУ результатов
-    # чтобы не надо было скроллить вверх
     keyboard = [
         [InlineKeyboardButton("🔄 Пройти снова", callback_data='start_test')],
         [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='leaderboard')],
@@ -718,46 +744,13 @@ async def test_command(update: Update, context):
 
 # Команда /leaderboard
 async def leaderboard_command(update: Update, context):
-    top = get_top_10()
-    
-    if not top:
-        text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
-        text += 'Пока никто не проходил тесты.\nБудь первым! 🚀'
-    else:
-        text = '🏆 *ОБЩАЯ ТАБЛИЦА ЛИДЕРОВ*\n\n'
-        for i, entry in enumerate(top, 1):
-            medal = ""
-            if i == 1: medal = "🥇"
-            elif i == 2: medal = "🥈"
-            elif i == 3: medal = "🥉"
-            
-            name = entry.get('first_name', 'Unknown')
-            if len(name) > 15: name = name[:15] + "..."
-            
-            text += f'{medal} *{i}.* {name}\n'
-            text += f'   💎 {entry.get("total_points", 0)} баллов\n'
-            # (код про попытки скрыт для краткости, он тот же)
-            attempts = []
-            if entry.get("easy_attempts", 0) > 0: attempts.append(f'🟢{entry["easy_attempts"]}')
-            if entry.get("medium_attempts", 0) > 0: attempts.append(f'🟡{entry["medium_attempts"]}')
-            if entry.get("hard_attempts", 0) > 0: attempts.append(f'🔴{entry["hard_attempts"]}')
-            if attempts: text += f'   Прохождений: {" ".join(attempts)}\n\n'
-            else: text += '\n'
-    
-    # Кнопки для команды /leaderboard
-    keyboard = [
-        [InlineKeyboardButton("🎯 Начать тест", callback_data='start_test')],
-        [InlineKeyboardButton("⬅️ Назад", callback_data='back_to_main')]
-    ]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    # Показываем первую страницу
+    await show_general_leaderboard(update.message, 0)
 
 # Отмена
 async def cancel(update: Update, context):
     keyboard = [[InlineKeyboardButton("⬅️ Главное меню", callback_data='back_to_main')]]
-    await update.message.reply_text(
-        '❌ Тест отменён.',
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text('❌ Тест отменён.', reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 # Главная функция
@@ -776,7 +769,10 @@ def main():
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
-            CallbackQueryHandler(back_to_main, pattern='^back_to_main$')
+            CallbackQueryHandler(back_to_main, pattern='^back_to_main$'),
+            CallbackQueryHandler(button_handler, pattern='^(about|start_test|leaderboard|my_stats)$'),
+            # Добавили обработку страниц с лидерами, чтобы работала даже во время теста
+            CallbackQueryHandler(button_handler, pattern='^leaderboard_page_')
         ],
         allow_reentry=True
     )
@@ -784,7 +780,9 @@ def main():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(about|start_test|leaderboard|my_stats)$'))
+    
+    # Регулярное выражение обновлено: ловим и обычные кнопки, и кнопки страниц
+    app.add_handler(CallbackQueryHandler(button_handler, pattern='^(about|start_test|leaderboard|my_stats|leaderboard_page_\d+)$'))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern='^back_to_main$'))
     
     print('🤖 Библейский тест-бот запущен!')
@@ -792,4 +790,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
+```
