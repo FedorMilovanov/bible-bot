@@ -94,6 +94,24 @@ LEVEL_CONFIG = {
         "key":   "linguistics_ch1_3",
         "points_per_q": 3,
     },
+     "level_intro1": {
+        "pool":  intro_part1_questions,
+        "name":  "📜 Введение: Авторство ч.1",
+        "key":   "intro1",
+        "points_per_q": 2,
+    },
+    "level_intro2": {
+        "pool":  intro_part2_questions,
+        "name":  "📜 Введение: Авторство ч.2",
+        "key":   "intro2",
+        "points_per_q": 2,
+    },
+    "level_intro3": {
+        "pool":  intro_part3_questions,
+        "name":  "📜 Введение: Структура и цель",
+        "key":   "intro3",
+        "points_per_q": 2,
+    },
 }
 
 # Состояния диалога
@@ -981,3 +999,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
