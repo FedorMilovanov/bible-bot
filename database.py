@@ -27,6 +27,10 @@ else:
 
 # --- ФУНКЦИИ БАЗЫ ДАННЫХ ---
 
+# Категории "Исторический контекст" — не влияют на общий рейтинг
+HISTORICAL_CATEGORIES = {"nero", "geography", "intro1", "intro2", "intro3"}
+
+
 def get_user_stats(user_id):
     """Получить или создать статистику пользователя"""
     if collection is None:
@@ -86,6 +90,10 @@ def add_to_leaderboard(user_id, username, first_name, level_key, score, total, t
 
     points_per_question = {"easy": 1, "medium": 2, "hard": 3, "nero": 2, "geography": 2, "practical_ch1": 2, "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3, "intro1": 2, "intro2": 2, "intro3": 2}
     earned_points = score * points_per_question.get(level_key, 1)
+    # Исторические категории — не начисляем очки в общий рейтинг
+    is_historical = level_key in HISTORICAL_CATEGORIES
+    if is_historical:
+        earned_points = 0
     user_id_str = str(user_id)
     
     try:
@@ -247,6 +255,42 @@ def get_question_stats(level_key: str = None, limit: int = 20):
         return list(
             questions_stats_collection.find(query)
             .sort("accuracy_pct", 1)  # сначала самые сложные
+            .limit(limit)
+        )
+    except Exception:
+        return []
+
+def get_points_to_next_place(user_id):
+    """Сколько очков до следующего места в рейтинге."""
+    if collection is None:
+        return None
+    try:
+        user_id_str = str(user_id)
+        entry = collection.find_one({"_id": user_id_str})
+        if not entry:
+            return None
+        my_points = entry.get("total_points", 0)
+        next_player = collection.find_one(
+            {"total_points": {"$gt": my_points}},
+            sort=[("total_points", 1)]
+        )
+        if not next_player:
+            return None
+        return next_player.get("total_points", 0) - my_points
+    except Exception:
+        return None
+
+def get_category_leaderboard(category_key, limit=10):
+    """Топ игроков по конкретной категории."""
+    if collection is None:
+        return []
+    try:
+        sort_field = f"{category_key}_correct"
+        return list(
+            collection.find(
+                {f"{category_key}_attempts": {"$gt": 0}}
+            )
+            .sort(sort_field, -1)
             .limit(limit)
         )
     except Exception:
