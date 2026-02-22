@@ -1237,24 +1237,38 @@ def build_rules_card(mode, eligible):
 # ═══════════════════════════════════════════════
 
 async def challenge_menu(update: Update, context):
-    """Меню выбора режима челленджа."""
+    """Меню выбора режима челленджа со статусом бонуса."""
     query = update.callback_query
     await query.answer()
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎲 Random Challenge (20)", callback_data="challenge_rules_random20")],
-        [InlineKeyboardButton("💀 Hardcore Random (20)",  callback_data="challenge_rules_hardcore20")],
-        [InlineKeyboardButton("🏆 Лидерборд недели",      callback_data="weekly_lb_random20")],
-        [InlineKeyboardButton("⬅️ Назад",                  callback_data="back_to_main")],
-    ])
-    await query.edit_message_text(
-        "🎲 *RANDOM CHALLENGE*\n\n"
-        "Умный рандом из всех категорий.\n"
-        "Бонус за высокий результат — *1 раз в день*.\n\n"
-        "🎲 *Normal* — без таймера, смешанный пул\n"
-        "💀 *Hardcore* — 7 сек, уклон в сложные вопросы",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
+    user_id = query.from_user.id
+
+    normal_ok   = is_bonus_eligible(user_id, "random20")
+    hardcore_ok = is_bonus_eligible(user_id, "hardcore20")
+
+    def badge(ok):
+        return "✅ доступен" if ok else "❌ уже получен"
+
+    text = (
+        "🎲 *RANDOM CHALLENGE (20)*\n\n"
+        "20 вопросов • умный рандом • подсказки выключены\n\n"
+        "💎 *Очки:*\n"
+        "• Normal: 1 за верный ответ + супер-бонус\n"
+        "• Hardcore: 2 за верный ответ + супер-бонус\n\n"
+        f"🎁 *Бонус сегодня:*\n"
+        f"• 🎲 Normal:   {badge(normal_ok)}\n"
+        f"• 💀 Hardcore: {badge(hardcore_ok)}\n\n"
+        "Это лучший режим для обучения — вопросы\n"
+        "покрывают ключевые темы и стихи.\n\n"
+        "Выбери режим:"
     )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎲 Normal (20) — без таймера", callback_data="challenge_rules_random20")],
+        [InlineKeyboardButton("💀 Hardcore (20) — 7 сек",     callback_data="challenge_rules_hardcore20")],
+        [InlineKeyboardButton("🏆 Лидерборд недели",          callback_data="weekly_lb_random20")],
+        [InlineKeyboardButton("⬅️ Назад",                      callback_data="back_to_main")],
+    ])
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
 
 async def challenge_rules(update: Update, context):
@@ -1515,7 +1529,7 @@ async def show_challenge_results(message, user_id):
         f"⏱ Время: *{format_time(time_taken)}*\n"
         f"🏅 Позиция: *#{position}*\n"
         f"━━━━━━━━━━━━━━━━\n"
-        f"💎 Очки за ответы: +{earned_base}\n"
+        f"💎 Обычные очки: +{earned_base} ({score} × {points_per_q})\n"
     )
 
     if eligible:
