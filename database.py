@@ -500,3 +500,85 @@ def get_user_achievements(user_id):
         entry.get("challenge_streak_count", 0),
         entry.get("challenge_streak_last_date", ""),
     )
+
+
+def get_context_leaderboard(limit=10):
+    """
+    Объединённый рейтинг 'Знатоки контекста':
+    суммирует верные ответы по intro1+intro2+intro3+nero+geography.
+    """
+    if collection is None:
+        return []
+    try:
+        users = list(collection.find(
+            {"$or": [
+                {"intro1_attempts": {"$gt": 0}},
+                {"nero_attempts":   {"$gt": 0}},
+                {"geography_attempts": {"$gt": 0}},
+            ]}
+        ))
+        for u in users:
+            correct = (
+                u.get("intro1_correct", 0) +
+                u.get("intro2_correct", 0) +
+                u.get("intro3_correct", 0) +
+                u.get("nero_correct",   0) +
+                u.get("geography_correct", 0)
+            )
+            total = (
+                u.get("intro1_total", 0) +
+                u.get("intro2_total", 0) +
+                u.get("intro3_total", 0) +
+                u.get("nero_total",   0) +
+                u.get("geography_total", 0)
+            )
+            u["_context_correct"] = correct
+            u["_context_acc"]     = round(correct / total * 100) if total else 0
+
+        users.sort(key=lambda x: x["_context_correct"], reverse=True)
+        return users[:limit]
+    except Exception:
+        return []
+
+
+def get_context_leaderboard(limit=10):
+    """
+    Рейтинг 'Знатоки контекста' — суммирует верные ответы
+    по nero + geography + intro1 + intro2 + intro3.
+    """
+    if collection is None:
+        return []
+    try:
+        users = list(collection.find(
+            {"$or": [
+                {"nero_correct":      {"$gt": 0}},
+                {"geography_correct": {"$gt": 0}},
+                {"intro1_correct":    {"$gt": 0}},
+                {"intro2_correct":    {"$gt": 0}},
+                {"intro3_correct":    {"$gt": 0}},
+            ]}
+        ))
+        for u in users:
+            u["_context_correct"] = (
+                u.get("nero_correct", 0) +
+                u.get("geography_correct", 0) +
+                u.get("intro1_correct", 0) +
+                u.get("intro2_correct", 0) +
+                u.get("intro3_correct", 0)
+            )
+            u["_context_total"] = (
+                u.get("nero_total", 0) +
+                u.get("geography_total", 0) +
+                u.get("intro1_total", 0) +
+                u.get("intro2_total", 0) +
+                u.get("intro3_total", 0)
+            )
+            # Для совместимости с show_category_leaderboard
+            u[f"context_correct"] = u["_context_correct"]
+            u[f"context_total"]   = u["_context_total"]
+            u[f"context_best_score"] = 0
+            u[f"context_attempts"]   = 1
+        users.sort(key=lambda x: x["_context_correct"], reverse=True)
+        return users[:limit]
+    except Exception:
+        return []
