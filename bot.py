@@ -30,6 +30,13 @@ from database import (
     is_bonus_eligible, compute_bonus,
     update_challenge_stats, update_weekly_leaderboard,
     get_weekly_leaderboard, get_user_achievements, get_current_week_id,
+    # Session management
+    create_quiz_session, get_active_quiz_session, get_quiz_session,
+    update_quiz_session, advance_quiz_session, set_question_sent_at,
+    finish_quiz_session, cancel_quiz_session, cancel_active_quiz_session,
+    is_question_timed_out,
+    # Reports
+    can_submit_report, seconds_until_next_report, insert_report, mark_report_delivered,
 )
 from questions import (
     easy_questions, easy_questions_v17_25,
@@ -120,13 +127,66 @@ LEVEL_CONFIG = {
     },
 }
 
+# ─────────────────────────────────────────────
+# КОНФИГУРАЦИЯ
+# ─────────────────────────────────────────────
+ADMIN_USER_ID = 413740069
+
 # Состояния диалога
 CHOOSING_LEVEL, ANSWERING, BATTLE_ANSWERING = range(3)
+# Состояния репорта
+REPORT_TYPE, REPORT_TEXT, REPORT_PHOTO, REPORT_CONFIRM = range(10, 14)
 
 # Хранилище активных сессий (в памяти)
-# TODO: перенести в MongoDB/Redis при необходимости
 user_data: dict = {}
 pending_battles: dict = {}
+
+
+# ─────────────────────────────────────────────
+# УТИЛИТЫ: safe_send / safe_edit
+# ─────────────────────────────────────────────
+MAX_MSG_LEN = 3900
+
+
+def _truncate(text: str, limit: int = MAX_MSG_LEN) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit - 3] + "..."
+
+
+async def safe_send(target, text: str, **kwargs):
+    """
+    Безопасная отправка сообщения.
+    Пробует Markdown, при ошибке — plain text.
+    Обрезает до MAX_MSG_LEN символов.
+    """
+    text = _truncate(text)
+    try:
+        return await target.reply_text(text, parse_mode="Markdown", **kwargs)
+    except Exception:
+        try:
+            kwargs.pop("parse_mode", None)
+            return await target.reply_text(text, **kwargs)
+        except Exception as e:
+            print(f"safe_send failed: {e}")
+            return None
+
+
+async def safe_edit(query, text: str, **kwargs):
+    """
+    Безопасное редактирование сообщения через callback query.
+    Пробует Markdown, при ошибке — plain text.
+    """
+    text = _truncate(text)
+    try:
+        return await query.edit_message_text(text, parse_mode="Markdown", **kwargs)
+    except Exception:
+        try:
+            kwargs.pop("parse_mode", None)
+            return await query.edit_message_text(text, **kwargs)
+        except Exception as e:
+            print(f"safe_edit failed: {e}")
+            return None
 
 
 # ═══════════════════════════════════════════════
@@ -142,6 +202,9 @@ def _main_keyboard():
         [InlineKeyboardButton("⚔️ Режим битвы",            callback_data="battle_menu")],
         [InlineKeyboardButton("🏆 Таблица лидеров",       callback_data="leaderboard")],
         [InlineKeyboardButton("📊 Моя статистика",        callback_data="my_stats")],
+        [InlineKeyboardButton("📌 Мой статус",            callback_data="my_status"),
+         InlineKeyboardButton("🆘 Сбросить тест",         callback_data="reset_session")],
+        [InlineKeyboardButton("🐞 Баг / 💡 Идея / ❓ Вопрос", callback_data="report_menu")],
     ])
 
 
@@ -151,6 +214,24 @@ async def start(update: Update, context):
 
     # Сбрасываем ReplyKeyboard если осталась от теста
     await update.message.reply_text("↩️", reply_markup=ReplyKeyboardRemove())
+
+    # Проверяем активную сессию в MongoDB
+    active_session = get_active_quiz_session(user.id)
+    if active_session:
+        total_q = len(active_session.get("questions_data", []))
+        current = active_session.get("current_index", 0)
+        level_name = active_session.get("level_name", "тест")
+        await update.message.reply_text(
+            f"⏸ *Тест прерван на вопросе {current + 1}/{total_q}*\n"
+            f"_{level_name}_\n\nЧто хочешь сделать?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{active_session['_id']}")],
+                [InlineKeyboardButton("🔁 Начать заново", callback_data=f"restart_session_{active_session['_id']}")],
+                [InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_session_{active_session['_id']}")],
+            ]),
+        )
+        return
 
     name = user.first_name or "друг"
 
@@ -279,7 +360,25 @@ async def level_selected(update: Update, context):
     user_id = update.effective_user.id
     questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
 
+    # Отменяем предыдущую активную сессию если есть
+    cancel_active_quiz_session(user_id)
+
+    # Генерируем id для вопросов (хэш от текста)
+    question_ids = [str(hash(q["question"])) for q in questions]
+
+    # Создаём сессию в MongoDB
+    session_id = create_quiz_session(
+        user_id=user_id,
+        mode="level",
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key=cfg["key"],
+        level_name=cfg["name"],
+        time_limit=None,
+    )
+
     user_data[user_id] = {
+        "session_id":         session_id,
         "questions":          questions,
         "level_name":         cfg["name"],
         "level_key":          cfg["key"],
@@ -319,12 +418,18 @@ async def send_question(message, user_id):
 
     data["current_options"]      = shuffled
     data["current_correct_text"] = correct_text
-    data["question_sent_at"]     = time.time()
+    sent_at = time.time()
+    data["question_sent_at"]     = sent_at
 
     # Отменяем предыдущий страховочный таймер
     old_task = data.get("timer_task")
     if old_task and not old_task.done():
         old_task.cancel()
+
+    # Сохраняем время отправки в MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        set_question_sent_at(session_id, sent_at)
 
     await message.reply_text(
         f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}",
@@ -377,9 +482,14 @@ async def auto_timeout(message, user_id, q_num_at_send):
 async def answer(update: Update, context):
     user_id = update.effective_user.id
 
+    # Если нет данных в памяти — проверяем MongoDB (восстановление после рестарта)
     if user_id not in user_data:
-        await update.message.reply_text("Используй /test чтобы начать")
-        return ConversationHandler.END
+        db_session = get_active_quiz_session(user_id)
+        if db_session and db_session.get("mode") == "level":
+            await _restore_session_to_memory(user_id, db_session)
+        else:
+            await update.message.reply_text("Используй /test чтобы начать")
+            return ConversationHandler.END
 
     data = user_data[user_id]
 
@@ -390,19 +500,22 @@ async def answer(update: Update, context):
     q           = data["questions"][q_num]
     user_answer = update.message.text
 
-    correct_text    = data.get("current_correct_text") or q["options"][q["correct"]]
-    current_options = data.get("current_options") or q["options"]
+    # Валидация по всем вариантам вопроса (не зависит от памяти)
+    correct_text    = q["options"][q["correct"]]
+    all_options     = q["options"]
+    current_options = data.get("current_options") or all_options
 
-    if user_answer not in current_options:
-        await update.message.reply_text("Выбери один из вариантов")
+    if user_answer not in all_options:
+        await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
         return ANSWERING
 
-    # Отмена таймера (если вдруг остался с предыдущей сессии)
+    # Отмена таймера
     timer_task = data.get("timer_task")
     if timer_task and not timer_task.done():
         timer_task.cancel()
 
-    if user_answer == correct_text:
+    is_correct = (user_answer == correct_text)
+    if is_correct:
         data["correct_answers"] += 1
         await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
     else:
@@ -414,10 +527,15 @@ async def answer(update: Update, context):
     # Записываем статистику по вопросу
     elapsed = time.time() - data.get("question_sent_at", time.time())
     q_id = str(q.get("id", hash(q["question"])))
-    record_question_stat(q_id, data["level_key"], user_answer == correct_text, elapsed)
+    record_question_stat(q_id, data["level_key"], is_correct, elapsed)
 
     data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
     data["current_question"] += 1
+
+    # Обновляем MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        advance_quiz_session(session_id, q_id, user_answer, is_correct, q)
 
     if data["current_question"] < len(data["questions"]):
         await send_question(update.message, user_id)
@@ -434,6 +552,11 @@ async def show_results(message, user_id):
     percentage = (score / total) * 100
     time_taken = time.time() - data["start_time"]
     user       = message.from_user
+
+    # Завершаем сессию в MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        finish_quiz_session(session_id)
 
     add_to_leaderboard(user_id, user.username, user.first_name, data["level_key"], score, total, time_taken)
 
@@ -537,8 +660,191 @@ async def test_command(update: Update, context):
 
 
 async def cancel(update: Update, context):
+    user_id = update.effective_user.id
+    cancel_active_quiz_session(user_id)
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
+
+
+# ═══════════════════════════════════════════════
+# ВОССТАНОВЛЕНИЕ СЕССИИ ПОСЛЕ РЕСТАРТА
+# ═══════════════════════════════════════════════
+
+async def _restore_session_to_memory(user_id: int, db_session: dict):
+    """Восстанавливает сессию из MongoDB в память."""
+    mode = db_session.get("mode", "level")
+    questions = db_session.get("questions_data", [])
+    current_index = db_session.get("current_index", 0)
+    correct_count = db_session.get("correct_count", 0)
+    answered = db_session.get("answered_questions", [])
+    start_time_val = db_session.get("start_time", time.time())
+
+    is_challenge = mode in ("random20", "hardcore20")
+    time_limit = db_session.get("time_limit")
+
+    user_data[user_id] = {
+        "session_id":           db_session["_id"],
+        "questions":            questions,
+        "level_name":           db_session.get("level_name", ""),
+        "level_key":            db_session.get("level_key", mode),
+        "current_question":     current_index,
+        "correct_answers":      correct_count,
+        "answered_questions":   answered,
+        "start_time":           start_time_val,
+        "is_battle":            False,
+        "battle_points":        0,
+        "is_challenge":         is_challenge,
+        "challenge_mode":       mode if is_challenge else None,
+        "challenge_eligible":   is_bonus_eligible(user_id, mode) if is_challenge else False,
+        "challenge_time_limit": time_limit,
+    }
+
+
+async def _handle_timeout_after_restart(message, user_id: int, db_session: dict):
+    """Обрабатывает истёкший таймер Hardcore после рестарта."""
+    await _restore_session_to_memory(user_id, db_session)
+    data = user_data[user_id]
+    q_num = data["current_question"]
+    q = data["questions"][q_num]
+    correct_text = q["options"][q["correct"]]
+
+    q_id = str(q.get("id", hash(q["question"])))
+    session_id = data["session_id"]
+    advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
+    data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
+    data["current_question"] += 1
+
+    try:
+        await message.reply_text(
+            f"⏱ *Время вышло!*\n✅ {correct_text}",
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="Markdown",
+        )
+    except Exception:
+        pass
+
+    if data["current_question"] < len(data["questions"]):
+        await send_challenge_question(message, user_id)
+    else:
+        await show_challenge_results(message, user_id)
+
+
+async def resume_session_handler(update: Update, context):
+    """Продолжить прерванную сессию."""
+    query = update.callback_query
+    await query.answer()
+    session_id = query.data.replace("resume_session_", "")
+    user_id = query.from_user.id
+
+    db_session = get_quiz_session(session_id)
+    if not db_session or db_session.get("status") != "in_progress":
+        await query.edit_message_text("⚠️ Сессия не найдена или уже завершена.")
+        return
+
+    await _restore_session_to_memory(user_id, db_session)
+    data = user_data[user_id]
+    mode = db_session.get("mode", "level")
+
+    # Проверяем таймаут Hardcore
+    if is_question_timed_out(db_session):
+        await query.edit_message_text("▶️ Продолжаем тест...")
+        await _handle_timeout_after_restart(query.message, user_id, db_session)
+        return ANSWERING
+
+    level_name = data["level_name"]
+    current = data["current_question"]
+    total = len(data["questions"])
+    await query.edit_message_text(
+        f"▶️ *Продолжаем!*\n_{level_name}_\nВопрос {current + 1}/{total}",
+        parse_mode="Markdown",
+    )
+
+    if mode in ("random20", "hardcore20"):
+        await send_challenge_question(query.message, user_id)
+    else:
+        await send_question(query.message, user_id)
+    return ANSWERING
+
+
+async def restart_session_handler(update: Update, context):
+    """Начать тест заново (отменяем старую сессию, стартуем новую по тому же уровню)."""
+    query = update.callback_query
+    await query.answer()
+    session_id = query.data.replace("restart_session_", "")
+    user_id = query.from_user.id
+
+    db_session = get_quiz_session(session_id)
+    cancel_quiz_session(session_id)
+
+    if not db_session:
+        await query.edit_message_text("⚠️ Сессия не найдена.")
+        return
+
+    mode = db_session.get("mode", "level")
+    if mode in ("random20", "hardcore20"):
+        # Перезапускаем Challenge
+        fake_query_data = f"challenge_start_{mode}"
+        # Патчим callback_data и вызываем challenge_start логику напрямую
+        eligible = is_bonus_eligible(user_id, mode)
+        questions = pick_challenge_questions(mode)
+        time_limit = 7 if mode == "hardcore20" else None
+        mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
+        question_ids = [str(hash(q["question"])) for q in questions]
+        new_session_id = create_quiz_session(
+            user_id=user_id, mode=mode, question_ids=question_ids,
+            questions_data=questions, level_key=mode, level_name=mode_name,
+            time_limit=time_limit,
+        )
+        user_data[user_id] = {
+            "session_id": new_session_id, "questions": questions,
+            "level_name": mode_name, "level_key": mode,
+            "current_question": 0, "correct_answers": 0,
+            "answered_questions": [], "start_time": time.time(),
+            "is_battle": False, "battle_points": 0,
+            "is_challenge": True, "challenge_mode": mode,
+            "challenge_eligible": eligible, "challenge_time_limit": time_limit,
+        }
+        await query.edit_message_text(f"{mode_name}\n\n📋 20 вопросов\nПоехали! 💪", parse_mode="Markdown")
+        await send_challenge_question(query.message, user_id)
+    else:
+        # Перезапускаем обычный уровень
+        level_key = db_session.get("level_key")
+        cfg = next((v for v in LEVEL_CONFIG.values() if v["key"] == level_key), None)
+        if not cfg:
+            await query.edit_message_text("⚠️ Уровень не найден.")
+            return
+        questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
+        question_ids = [str(hash(q["question"])) for q in questions]
+        new_session_id = create_quiz_session(
+            user_id=user_id, mode="level", question_ids=question_ids,
+            questions_data=questions, level_key=cfg["key"],
+            level_name=cfg["name"], time_limit=None,
+        )
+        user_data[user_id] = {
+            "session_id": new_session_id, "questions": questions,
+            "level_name": cfg["name"], "level_key": cfg["key"],
+            "current_question": 0, "correct_answers": 0,
+            "answered_questions": [], "start_time": time.time(),
+            "is_battle": False, "battle_points": 0,
+        }
+        await query.edit_message_text(
+            f"🔁 *Начинаем заново*\n{cfg['name']}\n\n📝 Вопросов: {len(questions)}",
+            parse_mode="Markdown",
+        )
+        await send_question(query.message, user_id)
+    return ANSWERING
+
+
+async def cancel_session_handler(update: Update, context):
+    """Отменить прерванную сессию."""
+    query = update.callback_query
+    await query.answer()
+    session_id = query.data.replace("cancel_session_", "")
+    cancel_quiz_session(session_id)
+    await query.edit_message_text(
+        "❌ Тест отменён.",
+        reply_markup=_main_keyboard(),
+    )
 
 
 # ═══════════════════════════════════════════════
@@ -646,6 +952,10 @@ async def button_handler(update: Update, context):
         await show_achievements(update, context)
     elif query.data == "coming_soon":
         await query.answer("🚧 Глава 2 в разработке — следи за обновлениями!", show_alert=True)
+    elif query.data == "my_status":
+        await show_status_inline(update, context)
+    elif query.data == "reset_session":
+        await reset_session_inline(update, context)
 
 
 async def category_leaderboard_handler(update: Update, context):
@@ -1310,19 +1620,34 @@ async def challenge_start(update: Update, context):
     time_limit = 7 if mode == "hardcore20" else None
     mode_name  = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
 
+    # Отменяем предыдущую активную сессию
+    cancel_active_quiz_session(user_id)
+
+    question_ids = [str(hash(q["question"])) for q in questions]
+    session_id = create_quiz_session(
+        user_id=user_id,
+        mode=mode,
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key=mode,
+        level_name=mode_name,
+        time_limit=time_limit,
+    )
+
     user_data[user_id] = {
-        "questions":           questions,
-        "level_name":          mode_name,
-        "level_key":           mode,
-        "current_question":    0,
-        "correct_answers":     0,
-        "answered_questions":  [],
-        "start_time":          time.time(),
-        "is_battle":           False,
-        "battle_points":       0,
-        "is_challenge":        True,
-        "challenge_mode":      mode,
-        "challenge_eligible":  eligible,
+        "session_id":           session_id,
+        "questions":            questions,
+        "level_name":           mode_name,
+        "level_key":            mode,
+        "current_question":     0,
+        "correct_answers":      0,
+        "answered_questions":   [],
+        "start_time":           time.time(),
+        "is_battle":            False,
+        "battle_points":        0,
+        "is_challenge":         True,
+        "challenge_mode":       mode,
+        "challenge_eligible":   eligible,
         "challenge_time_limit": time_limit,
     }
 
@@ -1354,12 +1679,18 @@ async def send_challenge_question(message, user_id):
 
     data["current_options"]      = shuffled
     data["current_correct_text"] = correct_text
-    data["question_sent_at"]     = time.time()
+    sent_at = time.time()
+    data["question_sent_at"]     = sent_at
 
     # Отменяем предыдущий таймер
     old_task = data.get("timer_task")
     if old_task and not old_task.done():
         old_task.cancel()
+
+    # Сохраняем время отправки в MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        set_question_sent_at(session_id, sent_at)
 
     progress   = build_progress_bar(q_num, total)
     correct_so_far = data["correct_answers"]
@@ -1437,17 +1768,27 @@ async def challenge_answer(update: Update, context):
     user_id = update.effective_user.id
     data    = user_data.get(user_id)
 
+    # Восстановление после рестарта — проверяем MongoDB
     if not data or not data.get("is_challenge"):
-        return await answer(update, context)
+        db_session = get_active_quiz_session(user_id)
+        if db_session and db_session.get("mode") in ("random20", "hardcore20"):
+            # Проверяем таймаут Hardcore
+            if is_question_timed_out(db_session):
+                await _handle_timeout_after_restart(update.message, user_id, db_session)
+                return ANSWERING
+            await _restore_session_to_memory(user_id, db_session)
+            data = user_data.get(user_id)
+        elif not data or not data.get("is_challenge"):
+            return await answer(update, context)
 
     q_num       = data["current_question"]
     q           = data["questions"][q_num]
     user_answer = update.message.text
-    correct_text    = data.get("current_correct_text") or q["options"][q["correct"]]
-    current_options = data.get("current_options") or q["options"]
+    correct_text    = q["options"][q["correct"]]
+    all_options     = q["options"]
 
-    if user_answer not in current_options:
-        await update.message.reply_text("Выбери вариант из списка")
+    if user_answer not in all_options:
+        await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
         return ANSWERING
 
     # Отменяем таймер
@@ -1473,6 +1814,11 @@ async def challenge_answer(update: Update, context):
     data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
     data["current_question"] += 1
 
+    # Обновляем MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        advance_quiz_session(session_id, q_id, user_answer, is_correct, q)
+
     if data["current_question"] < len(data["questions"]):
         await send_challenge_question(update.message, user_id)
         return ANSWERING
@@ -1490,6 +1836,11 @@ async def show_challenge_results(message, user_id):
     eligible   = data["challenge_eligible"]
     time_taken = time.time() - data["start_time"]
     user       = message.from_user
+
+    # Завершаем сессию в MongoDB
+    session_id = data.get("session_id")
+    if session_id:
+        finish_quiz_session(session_id)
 
     # Анимация подсчёта
     anim_msg = await message.reply_text("📊 Подсчитываю результат…")
@@ -1683,6 +2034,447 @@ async def cleanup_old_battles(context):
 
 
 # ═══════════════════════════════════════════════
+# /reset и /status — КОМАНДЫ СПАСЕНИЯ
+# ═══════════════════════════════════════════════
+
+async def reset_command(update: Update, context):
+    """Команда /reset — отмена сессии и возврат в меню."""
+    user_id = update.effective_user.id
+    cancel_active_quiz_session(user_id)
+    user_data.pop(user_id, None)
+    await update.message.reply_text("🆘 Тест сброшен.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(
+        "📖 *Главное меню*\nВыбери действие:",
+        reply_markup=_main_keyboard(),
+        parse_mode="Markdown",
+    )
+    return ConversationHandler.END
+
+
+async def reset_session_inline(update: Update, context):
+    """Кнопка 🆘 Сбросить тест."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    cancel_active_quiz_session(user_id)
+    user_data.pop(user_id, None)
+    try:
+        await query.message.reply_text("✅", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        pass
+    await safe_edit(query,
+        "🆘 Тест сброшен. Возвращаемся в меню.",
+        reply_markup=_main_keyboard(),
+    )
+
+
+async def status_command(update: Update, context):
+    """Команда /status — показывает текущий статус сессии."""
+    user_id = update.effective_user.id
+    session = get_active_quiz_session(user_id)
+    mem = user_data.get(user_id)
+
+    if not session and not mem:
+        await update.message.reply_text(
+            "📌 *Статус:* нет активного теста\n\nВыбери действие:",
+            reply_markup=_main_keyboard(),
+            parse_mode="Markdown",
+        )
+        return
+
+    if session:
+        total_q = len(session.get("questions_data", []))
+        current = session.get("current_index", 0)
+        mode = session.get("mode", "?")
+        level = session.get("level_name", "?")
+        sid = session["_id"]
+    else:
+        total_q = len(mem.get("questions", []))
+        current = mem.get("current_question", 0)
+        mode = mem.get("level_key", "?")
+        level = mem.get("level_name", "?")
+        sid = mem.get("session_id", "")
+
+    text = (
+        f"📌 *Активный тест*\n"
+        f"Режим: _{level}_\n"
+        f"Вопрос: *{current + 1}/{total_q}*"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{sid}")],
+        [InlineKeyboardButton("🆘 Сбросить",   callback_data="reset_session")],
+        [InlineKeyboardButton("⬅️ Меню",        callback_data="back_to_main")],
+    ]) if sid else InlineKeyboardMarkup([
+        [InlineKeyboardButton("🆘 Сбросить", callback_data="reset_session")],
+        [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
+    ])
+    await update.message.reply_text(text, reply_markup=kb, parse_mode="Markdown")
+
+
+async def show_status_inline(update: Update, context):
+    """Кнопка 📌 Мой статус."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    session = get_active_quiz_session(user_id)
+    mem = user_data.get(user_id)
+
+    if not session and not mem:
+        await safe_edit(query,
+            "📌 *Статус:* нет активного теста\n\nВыбери действие:",
+            reply_markup=_main_keyboard(),
+        )
+        return
+
+    if session:
+        total_q = len(session.get("questions_data", []))
+        current = session.get("current_index", 0)
+        level = session.get("level_name", "?")
+        sid = session["_id"]
+    else:
+        total_q = len(mem.get("questions", []))
+        current = mem.get("current_question", 0)
+        level = mem.get("level_name", "?")
+        sid = mem.get("session_id", "")
+
+    text = (
+        f"📌 *Активный тест*\n"
+        f"Режим: _{level}_\n"
+        f"Вопрос: *{current + 1}/{total_q}*"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{sid}")],
+        [InlineKeyboardButton("🆘 Сбросить",   callback_data="reset_session")],
+        [InlineKeyboardButton("⬅️ Меню",        callback_data="back_to_main")],
+    ]) if sid else InlineKeyboardMarkup([
+        [InlineKeyboardButton("🆘 Сбросить", callback_data="reset_session")],
+        [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
+    ])
+    await safe_edit(query, text, reply_markup=kb)
+
+
+# ═══════════════════════════════════════════════
+# ГЛОБАЛЬНЫЙ ERROR HANDLER
+# ═══════════════════════════════════════════════
+
+async def on_error(update: object, context):
+    """Глобальный обработчик исключений."""
+    import traceback
+    tb = "".join(traceback.format_exception(
+        type(context.error), context.error, context.error.__traceback__
+    ))
+    print(f"[ERROR] {tb}")
+
+    # Собираем контекст
+    user_id = None
+    username = None
+    trigger = "?"
+    session_info = ""
+
+    if isinstance(update, Update):
+        if update.effective_user:
+            user_id = update.effective_user.id
+            username = update.effective_user.username or str(user_id)
+        if update.callback_query:
+            trigger = f"callback: {update.callback_query.data}"
+        elif update.message and update.message.text:
+            trigger = f"message: {update.message.text[:50]}"
+
+        # Пробуем достать сессию
+        if user_id:
+            mem = user_data.get(user_id)
+            if mem:
+                session_info = f"mode={mem.get('level_key')}, level={mem.get('level_name')}, q={mem.get('current_question')}"
+
+    admin_text = (
+        f"🚨 *ОШИБКА В БОТЕ*\n"
+        f"User: @{username} (id={user_id})\n"
+        f"Trigger: `{trigger}`\n"
+        f"Session: {session_info or 'нет'}\n\n"
+        f"```\n{tb[:1500]}\n```"
+    )
+
+    # Уведомляем админа
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=_truncate(admin_text),
+            parse_mode="Markdown",
+        )
+    except Exception as e_admin:
+        print(f"[ERROR HANDLER] Could not notify admin: {e_admin}")
+
+    # Уведомляем пользователя
+    if isinstance(update, Update) and user_id:
+        try:
+            msg_target = update.message or (update.callback_query.message if update.callback_query else None)
+            if msg_target:
+                await msg_target.reply_text(
+                    "⚠️ Произошла ошибка. Я уже сообщил админу.\n"
+                    "Нажми /reset или кнопку «🆘 Сбросить тест» в меню.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🆘 Сбросить", callback_data="reset_session")],
+                        [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
+                    ]),
+                )
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════════
+# СИСТЕМА РЕПОРТОВ
+# ═══════════════════════════════════════════════
+
+# Временное хранилище черновиков репортов
+report_drafts: dict = {}
+
+REPORT_TYPE_LABELS = {
+    "bug":      "🐞 Баг",
+    "idea":     "💡 Идея",
+    "question": "❓ Вопрос по материалу",
+}
+
+
+async def report_menu(update: Update, context):
+    """Меню выбора типа репорта."""
+    query = update.callback_query
+    await query.answer()
+    await safe_edit(query,
+        "📬 *Обратная связь*\n\nВыбери тип сообщения:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🐞 Сообщить о баге",         callback_data="report_start_bug")],
+            [InlineKeyboardButton("💡 Предложить улучшение",    callback_data="report_start_idea")],
+            [InlineKeyboardButton("❓ Вопрос по материалу",      callback_data="report_start_question")],
+            [InlineKeyboardButton("⬅️ Назад",                    callback_data="back_to_main")],
+        ]),
+    )
+
+
+async def report_start(update: Update, context):
+    """Начинает сбор репорта после выбора типа."""
+    query = update.callback_query
+    await query.answer()
+    report_type = query.data.replace("report_start_", "")
+    user_id = query.from_user.id
+
+    # Rate limit
+    if not can_submit_report(user_id):
+        secs = seconds_until_next_report(user_id)
+        await query.answer(f"⏳ Слишком часто. Попробуй через {secs} сек.", show_alert=True)
+        return
+
+    report_drafts[user_id] = {
+        "type": report_type,
+        "text": None,
+        "photo_file_id": None,
+    }
+
+    label = REPORT_TYPE_LABELS.get(report_type, report_type)
+    await safe_edit(query,
+        f"{label}\n\n✏️ Напиши своё сообщение (одним сообщением).\n\n"
+        f"Для отмены: /cancelreport",
+    )
+    return REPORT_TEXT
+
+
+async def report_receive_text(update: Update, context):
+    """Получает текст репорта."""
+    user_id = update.effective_user.id
+    if user_id not in report_drafts:
+        return ConversationHandler.END
+
+    text = update.message.text.strip()
+    if not text:
+        await safe_send(update.message, "Пожалуйста, напиши текст сообщения.")
+        return REPORT_TEXT
+
+    report_drafts[user_id]["text"] = text
+    await safe_send(update.message,
+        "📎 Хочешь приложить скриншот?\n\nПришли *фото* или нажми кнопку ниже.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("➡️ Пропустить", callback_data="report_skip_photo")],
+            [InlineKeyboardButton("❌ Отмена",      callback_data="report_cancel")],
+        ]),
+    )
+    return REPORT_PHOTO
+
+
+async def report_receive_photo(update: Update, context):
+    """Получает фото репорта."""
+    user_id = update.effective_user.id
+    if user_id not in report_drafts:
+        return ConversationHandler.END
+
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        report_drafts[user_id]["photo_file_id"] = photo.file_id
+
+    draft = report_drafts[user_id]
+    label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
+    has_photo = "✅ фото приложено" if draft.get("photo_file_id") else "нет фото"
+
+    await safe_send(update.message,
+        f"📋 *Подтверждение*\n\n"
+        f"Тип: {label}\n"
+        f"Текст: _{draft['text'][:200]}_\n"
+        f"Фото: {has_photo}\n\n"
+        f"Отправить?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Отправить", callback_data="report_confirm")],
+            [InlineKeyboardButton("❌ Отмена",    callback_data="report_cancel")],
+        ]),
+    )
+    return REPORT_CONFIRM
+
+
+async def report_skip_photo(update: Update, context):
+    """Пропустить фото."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    if user_id not in report_drafts:
+        return ConversationHandler.END
+
+    draft = report_drafts[user_id]
+    label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
+
+    await safe_edit(query,
+        f"📋 *Подтверждение*\n\n"
+        f"Тип: {label}\n"
+        f"Текст: _{draft['text'][:200]}_\n"
+        f"Фото: нет\n\n"
+        f"Отправить?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Отправить", callback_data="report_confirm")],
+            [InlineKeyboardButton("❌ Отмена",    callback_data="report_cancel")],
+        ]),
+    )
+    return REPORT_CONFIRM
+
+
+async def report_confirm(update: Update, context):
+    """Финальная отправка репорта."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    user = query.from_user
+
+    if user_id not in report_drafts:
+        await safe_edit(query, "⚠️ Данные репорта устарели. Начни заново.", reply_markup=_main_keyboard())
+        return ConversationHandler.END
+
+    draft = report_drafts.pop(user_id)
+
+    # Контекст активной сессии
+    ctx = {}
+    session = get_active_quiz_session(user_id)
+    mem = user_data.get(user_id)
+    if session:
+        ctx = {
+            "mode": session.get("mode"),
+            "level_key": session.get("level_key"),
+            "question_index": session.get("current_index"),
+        }
+    elif mem:
+        ctx = {
+            "mode": mem.get("level_key"),
+            "level_key": mem.get("level_key"),
+            "question_index": mem.get("current_question"),
+        }
+
+    report_id = insert_report(
+        user_id=user_id,
+        username=user.username,
+        first_name=user.first_name,
+        report_type=draft["type"],
+        text=draft["text"],
+        context=ctx,
+    )
+
+    # Карточка для админа
+    label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
+    uname = f"@{user.username}" if user.username else f"id={user_id}"
+    ctx_str = ", ".join(f"{k}={v}" for k, v in ctx.items() if v is not None) or "нет"
+    admin_card = (
+        f"{label}\n"
+        f"От: {uname} (id={user_id})\n"
+        f"report\\_id: `{report_id}`\n"
+        f"Контекст: {ctx_str}\n\n"
+        f"_{draft['text'][:1000]}_"
+    )
+
+    admin_delivered = False
+    try:
+        # Сначала фото если есть
+        if draft.get("photo_file_id"):
+            await context.bot.send_photo(
+                chat_id=ADMIN_USER_ID,
+                photo=draft["photo_file_id"],
+                caption=f"{label} от {uname}",
+            )
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=_truncate(admin_card),
+            parse_mode="Markdown",
+        )
+        admin_delivered = True
+        mark_report_delivered(report_id)
+    except Exception as e:
+        print(f"[REPORT] Could not deliver to admin: {e}")
+
+    if admin_delivered:
+        msg = "✅ *Спасибо! Сообщение отправлено.*"
+    else:
+        msg = "✅ Сообщение сохранено. Админу не удалось отправить автоматически — он увидит его позже."
+
+    await safe_edit(query, msg, reply_markup=_main_keyboard())
+    return ConversationHandler.END
+
+
+async def report_cancel(update: Update, context):
+    """Отмена репорта через кнопку."""
+    query = update.callback_query
+    await query.answer()
+    report_drafts.pop(query.from_user.id, None)
+    await safe_edit(query, "❌ Репорт отменён.", reply_markup=_main_keyboard())
+    return ConversationHandler.END
+
+
+async def cancel_report_command(update: Update, context):
+    """Команда /cancelreport."""
+    user_id = update.effective_user.id
+    report_drafts.pop(user_id, None)
+    await update.message.reply_text("❌ Репорт отменён.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("Главное меню:", reply_markup=_main_keyboard())
+    return ConversationHandler.END
+
+
+async def _general_message_fallback(update: Update, context):
+    """
+    Резервный обработчик текстовых сообщений.
+    Срабатывает если ConversationHandler потерял состояние после рестарта.
+    Проверяет MongoDB на наличие активной сессии и трактует сообщение как ответ.
+    """
+    user_id = update.effective_user.id
+
+    # Если пользователь уже в памяти — ConvHandler должен был поймать, не трогаем
+    if user_id in user_data:
+        return
+
+    db_session = get_active_quiz_session(user_id)
+    if not db_session:
+        return  # Нет активной сессии — просто игнорируем
+
+    mode = db_session.get("mode", "level")
+    if mode in ("random20", "hardcore20"):
+        # Передаём в challenge_answer
+        await challenge_answer(update, context)
+    else:
+        # Передаём в answer
+        await answer(update, context)
+
+
+# ═══════════════════════════════════════════════
 # ЗАПУСК
 # ═══════════════════════════════════════════════
 
@@ -1716,6 +2508,46 @@ def main():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
 
+    # Session recovery handlers
+    app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
+    app.add_handler(CallbackQueryHandler(restart_session_handler, pattern="^restart_session_"))
+    app.add_handler(CallbackQueryHandler(cancel_session_handler,  pattern="^cancel_session_"))
+
+    # Команды спасения
+    app.add_handler(CommandHandler("reset",  reset_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("cancelreport", cancel_report_command))
+
+    # Репорты — отдельный ConversationHandler
+    report_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(report_start, pattern="^report_start_"),
+        ],
+        states={
+            REPORT_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, report_receive_text),
+            ],
+            REPORT_PHOTO: [
+                MessageHandler(filters.PHOTO, report_receive_photo),
+                CallbackQueryHandler(report_skip_photo, pattern="^report_skip_photo$"),
+                CallbackQueryHandler(report_cancel,     pattern="^report_cancel$"),
+            ],
+            REPORT_CONFIRM: [
+                CallbackQueryHandler(report_confirm, pattern="^report_confirm$"),
+                CallbackQueryHandler(report_cancel,  pattern="^report_cancel$"),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancelreport", cancel_report_command),
+            CommandHandler("reset",        reset_command),
+        ],
+        allow_reentry=True,
+    )
+    app.add_handler(report_conv)
+
+    # Report menu entry point
+    app.add_handler(CallbackQueryHandler(report_menu, pattern="^report_menu$"))
+
     # Битвы
     app.add_handler(CallbackQueryHandler(create_battle,  pattern="^create_battle$"))
     app.add_handler(CallbackQueryHandler(join_battle,    pattern="^join_battle_"))
@@ -1726,7 +2558,7 @@ def main():
     app.add_handler(CallbackQueryHandler(historical_menu,   pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(
         button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu|coming_soon|challenge_menu|achievements)$",
+        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu|coming_soon|challenge_menu|achievements|my_status|reset_session)$",
     ))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
@@ -1734,18 +2566,26 @@ def main():
     app.add_handler(CallbackQueryHandler(show_weekly_leaderboard, pattern="^weekly_lb_"))
     # challenge_start — через ConversationHandler entry_points ниже
 
-    # JobQueue — подключаем только если доступен (требует pip install python-telegram-bot[job-queue])
+    # Общий обработчик сообщений — восстанавливает ответы если состояние ConvHandler потеряно
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        _general_message_fallback,
+    ))
     if app.job_queue is not None:
         app.job_queue.run_repeating(cleanup_old_battles, interval=300, first=300)
         print("🧹 Автоочистка битв активна (JobQueue)")
     else:
         print("⚠️  JobQueue недоступен — очистка битв встроена в show_battle_menu")
 
+    # Глобальный error handler
+    app.add_error_handler(on_error)
+
     print("🤖 Бот запущен!")
     print("📚 Вопросы — 1 Петра (Введение + Глава 1, ст. 1–25)")
     print("⚔️ Режим битвы включён")
     print("🔁 Режим повторения ошибок включён")
     print("📊 Статистика сохраняется в MongoDB")
+    print(f"🛡 Admin ID: {ADMIN_USER_ID}")
 
     app.run_polling()
 
