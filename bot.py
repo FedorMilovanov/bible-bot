@@ -1469,12 +1469,15 @@ async def show_challenge_results(message, user_id):
 
     # Анимация подсчёта
     anim_msg = await message.reply_text("📊 Подсчитываю результат…")
-    await asyncio.sleep(0.4)
-    await anim_msg.edit_text("📊 Подсчитываю результат… ▰▱▱")
-    await asyncio.sleep(0.4)
-    await anim_msg.edit_text("📊 Подсчитываю результат… ▰▰▱")
-    await asyncio.sleep(0.4)
-    await anim_msg.edit_text("📊 Готово! ✨")
+    try:
+        await asyncio.sleep(0.4)
+        await anim_msg.edit_text("📊 Подсчитываю результат… ▰▱▱")
+        await asyncio.sleep(0.4)
+        await anim_msg.edit_text("📊 Подсчитываю результат… ▰▰▱")
+        await asyncio.sleep(0.4)
+        await anim_msg.edit_text("📊 Готово! ✨")
+    except Exception:
+        pass  # Telegram может отклонить если текст не изменился
 
     # Считаем очки
     points_per_q = 1 if mode == "random20" else 2
