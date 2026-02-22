@@ -35,8 +35,6 @@ from database import (
     update_quiz_session, advance_quiz_session, set_question_sent_at,
     finish_quiz_session, cancel_quiz_session, cancel_active_quiz_session,
     is_question_timed_out,
-    # Reports
-    can_submit_report, seconds_until_next_report, insert_report, mark_report_delivered,
 )
 from questions import (
     easy_questions, easy_questions_v17_25,
@@ -49,9 +47,22 @@ from questions import (
     intro_part1_questions, intro_part2_questions, intro_part3_questions,
 )
 
-# ─────────────────────────────────────────────
-# КОНФИГУРАЦИЯ УРОВНЕЙ (единое место для правок)
-# ─────────────────────────────────────────────
+# Счётчик неверных вводов подряд (сбрасывается при успешном ответе / рестарте)
+_bad_input_count: dict = {}
+_BAD_INPUT_LIMIT = 3
+
+def _inc_bad_input(user_id: int) -> int:
+    _bad_input_count[user_id] = _bad_input_count.get(user_id, 0) + 1
+    return _bad_input_count[user_id]
+
+def _reset_bad_input(user_id: int):
+    _bad_input_count.pop(user_id, None)
+
+_STUCK_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🆘 Сброс",    callback_data="reset_session"),
+     InlineKeyboardButton("🐞 Сообщить", callback_data="report_start_bug_direct")],
+    [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
+])
 LEVEL_CONFIG = {
     "level_easy": {
         "pool":  easy_questions + easy_questions_v17_25,
@@ -202,9 +213,8 @@ def _main_keyboard():
         [InlineKeyboardButton("⚔️ Режим битвы",            callback_data="battle_menu")],
         [InlineKeyboardButton("🏆 Таблица лидеров",       callback_data="leaderboard")],
         [InlineKeyboardButton("📊 Моя статистика",        callback_data="my_stats")],
-        [InlineKeyboardButton("📌 Мой статус",            callback_data="my_status"),
-         InlineKeyboardButton("🆘 Сбросить тест",         callback_data="reset_session")],
-        [InlineKeyboardButton("🐞 Баг / 💡 Идея / ❓ Вопрос", callback_data="report_menu")],
+        [InlineKeyboardButton("📌 Мой статус",            callback_data="my_status")],
+        [InlineKeyboardButton("✉️ Обратная связь",            callback_data="report_menu")],
     ])
 
 
@@ -218,8 +228,13 @@ async def start(update: Update, context):
     # Проверяем активную сессию в MongoDB
     active_session = get_active_quiz_session(user.id)
     if active_session:
-        total_q = len(active_session.get("questions_data", []))
+        questions_data = active_session.get("questions_data", [])
+        total_q = len(questions_data)
         current = active_session.get("current_index", 0)
+        # Не показываем "продолжить" если тест фактически завершён
+        if current >= total_q:
+            cancel_quiz_session(active_session["_id"])
+            active_session = None
         level_name = active_session.get("level_name", "тест")
         await update.message.reply_text(
             f"⏸ *Тест прерван на вопросе {current + 1}/{total_q}*\n"
@@ -463,6 +478,14 @@ async def auto_timeout(message, user_id, q_num_at_send):
         "user_answer":  "⏱ Время вышло",
     })
 
+    # Сохраняем в MongoDB
+    q_id = str(q.get("id", hash(q["question"])))
+    session_id = data.get("session_id")
+    if session_id:
+        advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
+
+    data["current_question"] += 1
+
     try:
         await message.reply_text(
             f"⏱ *60 секунд истекло*\n✅ Правильный ответ: *{correct_text}*",
@@ -472,7 +495,6 @@ async def auto_timeout(message, user_id, q_num_at_send):
     except Exception:
         return
 
-    data["current_question"] += 1
     if data["current_question"] < len(data["questions"]):
         await send_question(message, user_id)
     else:
@@ -506,7 +528,15 @@ async def answer(update: Update, context):
     current_options = data.get("current_options") or all_options
 
     if user_answer not in all_options:
-        await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
+        count = _inc_bad_input(user_id)
+        if count >= _BAD_INPUT_LIMIT:
+            _reset_bad_input(user_id)
+            await update.message.reply_text(
+                "🤔 Похоже, что-то пошло не так. Выбери вариант кнопкой, сбрось тест или сообщи автору.",
+                reply_markup=_STUCK_KB,
+            )
+        else:
+            await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
         return ANSWERING
 
     # Отмена таймера
@@ -515,6 +545,7 @@ async def answer(update: Update, context):
         timer_task.cancel()
 
     is_correct = (user_answer == correct_text)
+    _reset_bad_input(user_id)  # сброс счётчика при успешном ответе
     if is_correct:
         data["correct_answers"] += 1
         await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
@@ -646,6 +677,12 @@ async def show_results(message, user_id):
                 breakdown = breakdown[:3990] + "..."
 
             await message.reply_text(breakdown, parse_mode="Markdown")
+
+        # Повторяем кнопки после разбора — чтобы не потерялись
+        await message.reply_text(
+            "⬆️ Выбери действие:",
+            reply_markup=InlineKeyboardMarkup(keyboard_rows),
+        )
     else:
         await message.reply_text("🎯 *Все ответы верны — отличная работа!*", parse_mode="Markdown")
 
@@ -1788,7 +1825,15 @@ async def challenge_answer(update: Update, context):
     all_options     = q["options"]
 
     if user_answer not in all_options:
-        await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
+        count = _inc_bad_input(user_id)
+        if count >= _BAD_INPUT_LIMIT:
+            _reset_bad_input(user_id)
+            await update.message.reply_text(
+                "🤔 Похоже, что-то пошло не так. Выбери вариант кнопкой, сбрось тест или сообщи автору.",
+                reply_markup=_STUCK_KB,
+            )
+        else:
+            await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
         return ANSWERING
 
     # Отменяем таймер
@@ -1797,6 +1842,7 @@ async def challenge_answer(update: Update, context):
         timer_task.cancel()
 
     is_correct = (user_answer == correct_text)
+    _reset_bad_input(user_id)  # сброс счётчика при успешном ответе
     if is_correct:
         data["correct_answers"] += 1
         await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
@@ -2127,8 +2173,14 @@ async def show_status_inline(update: Update, context):
         return
 
     if session:
-        total_q = len(session.get("questions_data", []))
+        questions_data = session.get("questions_data", [])
+        total_q = len(questions_data)
         current = session.get("current_index", 0)
+        # Сессия уже завершена — почистить
+        if current >= total_q:
+            cancel_quiz_session(session["_id"])
+            await safe_edit(query, "📌 *Статус:* нет активного теста\n\nВыбери действие:", reply_markup=_main_keyboard())
+            return
         level = session.get("level_name", "?")
         sid = session["_id"]
     else:
@@ -2228,11 +2280,11 @@ async def on_error(update: object, context):
             msg_target = update.message or (update.callback_query.message if update.callback_query else None)
             if msg_target:
                 await msg_target.reply_text(
-                    "⚠️ Произошла ошибка. Я уже сообщил админу.\n"
-                    "Нажми /reset или кнопку «🆘 Сбросить тест» в меню.",
+                    "⚠️ Произошла ошибка. Можешь сбросить тест или сообщить автору.",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🆘 Сбросить", callback_data="reset_session")],
-                        [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
+                        [InlineKeyboardButton("🆘 Сброс",     callback_data="reset_session"),
+                         InlineKeyboardButton("🐞 Сообщить",  callback_data="report_start_bug_direct")],
+                        [InlineKeyboardButton("⬅️ Меню",      callback_data="back_to_main")],
                     ]),
                 )
         except Exception:
@@ -2246,6 +2298,10 @@ async def on_error(update: object, context):
 # Временное хранилище черновиков репортов
 report_drafts: dict = {}
 
+# In-memory rate limit: {user_id: last_report_timestamp}
+_report_last_sent: dict = {}
+REPORT_COOLDOWN_SECONDS = 60
+
 REPORT_TYPE_LABELS = {
     "bug":      "🐞 Баг",
     "idea":     "💡 Идея",
@@ -2258,10 +2314,10 @@ async def report_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
     await safe_edit(query,
-        "📬 *Обратная связь*\n\nВыбери тип сообщения:",
+        "✉️ *Написать автору*\n\nВыбери тип сообщения:",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🐞 Сообщить о баге",         callback_data="report_start_bug")],
-            [InlineKeyboardButton("💡 Предложить улучшение",    callback_data="report_start_idea")],
+            [InlineKeyboardButton("💡 Предложение",              callback_data="report_start_idea")],
             [InlineKeyboardButton("❓ Вопрос по материалу",      callback_data="report_start_question")],
             [InlineKeyboardButton("⬅️ Назад",                    callback_data="back_to_main")],
         ]),
@@ -2273,12 +2329,16 @@ async def report_start(update: Update, context):
     query = update.callback_query
     await query.answer()
     report_type = query.data.replace("report_start_", "")
+    # "bug_direct" — быстрый запуск из error handler, без выбора типа
+    if report_type == "bug_direct":
+        report_type = "bug"
     user_id = query.from_user.id
 
-    # Rate limit
-    if not can_submit_report(user_id):
-        secs = seconds_until_next_report(user_id)
-        await query.answer(f"⏳ Слишком часто. Попробуй через {secs} сек.", show_alert=True)
+    # Rate limit (in-memory)
+    last_ts = _report_last_sent.get(user_id, 0)
+    remaining = REPORT_COOLDOWN_SECONDS - (time.time() - last_ts)
+    if remaining > 0:
+        await query.answer(f"⏳ Слишком часто. Попробуй через {int(remaining)} сек.", show_alert=True)
         return
 
     report_drafts[user_id] = {
@@ -2371,7 +2431,7 @@ async def report_skip_photo(update: Update, context):
 
 
 async def report_confirm(update: Update, context):
-    """Финальная отправка репорта."""
+    """Финальная отправка репорта напрямую админу (без MongoDB)."""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -2383,67 +2443,56 @@ async def report_confirm(update: Update, context):
 
     draft = report_drafts.pop(user_id)
 
-    # Контекст активной сессии
+    # Контекст активной сессии (из памяти)
     ctx = {}
-    session = get_active_quiz_session(user_id)
     mem = user_data.get(user_id)
-    if session:
-        ctx = {
-            "mode": session.get("mode"),
-            "level_key": session.get("level_key"),
-            "question_index": session.get("current_index"),
-        }
-    elif mem:
+    if mem:
         ctx = {
             "mode": mem.get("level_key"),
-            "level_key": mem.get("level_key"),
-            "question_index": mem.get("current_question"),
+            "level": mem.get("level_name"),
+            "q": mem.get("current_question"),
         }
-
-    report_id = insert_report(
-        user_id=user_id,
-        username=user.username,
-        first_name=user.first_name,
-        report_type=draft["type"],
-        text=draft["text"],
-        context=ctx,
-    )
 
     # Карточка для админа
     label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
     uname = f"@{user.username}" if user.username else f"id={user_id}"
     ctx_str = ", ".join(f"{k}={v}" for k, v in ctx.items() if v is not None) or "нет"
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%Y-%m-%d %H:%M")
     admin_card = (
         f"{label}\n"
         f"От: {uname} (id={user_id})\n"
-        f"report\\_id: `{report_id}`\n"
+        f"Время: {ts}\n"
         f"Контекст: {ctx_str}\n\n"
-        f"_{draft['text'][:1000]}_"
+        f"{draft['text'][:1500]}"
     )
+
+    # Обновляем rate limit
+    _report_last_sent[user_id] = time.time()
 
     admin_delivered = False
     try:
-        # Сначала фото если есть
         if draft.get("photo_file_id"):
             await context.bot.send_photo(
                 chat_id=ADMIN_USER_ID,
                 photo=draft["photo_file_id"],
-                caption=f"{label} от {uname}",
+                caption=f"{label} от {uname} • {ts}",
             )
         await context.bot.send_message(
             chat_id=ADMIN_USER_ID,
             text=_truncate(admin_card),
-            parse_mode="Markdown",
         )
         admin_delivered = True
-        mark_report_delivered(report_id)
     except Exception as e:
         print(f"[REPORT] Could not deliver to admin: {e}")
 
     if admin_delivered:
-        msg = "✅ *Спасибо! Сообщение отправлено.*"
+        msg = "✅ *Спасибо! Сообщение отправлено автору.*"
     else:
-        msg = "✅ Сообщение сохранено. Админу не удалось отправить автоматически — он увидит его позже."
+        msg = (
+            "⚠️ Не удалось доставить сообщение автору прямо сейчас.\n"
+            "Попробуй позже или напиши напрямую через Telegram."
+        )
 
     await safe_edit(query, msg, reply_markup=_main_keyboard())
     return ConversationHandler.END
