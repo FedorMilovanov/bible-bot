@@ -295,3 +295,208 @@ def get_category_leaderboard(category_key, limit=10):
         )
     except Exception:
         return []
+
+
+# ═══════════════════════════════════════════════
+# RANDOM CHALLENGE — БАЗА ДАННЫХ
+# ═══════════════════════════════════════════════
+
+# Коллекция еженедельного лидерборда
+if MONGO_URL:
+    try:
+        weekly_lb_collection = db["weekly_leaderboard"]
+    except Exception:
+        weekly_lb_collection = None
+else:
+    weekly_lb_collection = None
+
+
+def get_current_week_id():
+    """Возвращает строку вида 2026-08 (ISO год-неделя)."""
+    now = datetime.now()
+    return f"{now.isocalendar()[0]}-{now.isocalendar()[1]:02d}"
+
+
+def get_today():
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def is_bonus_eligible(user_id, mode):
+    """
+    Проверяет, может ли пользователь получить бонус сегодня.
+    mode: 'random20' | 'hardcore20'
+    """
+    if collection is None:
+        return True
+    field = f"{mode}_bonus_last_date"
+    entry = collection.find_one({"_id": str(user_id)})
+    if not entry:
+        return True
+    return entry.get(field) != get_today()
+
+
+def mark_bonus_used(user_id, mode):
+    """Записывает что бонус сегодня уже использован."""
+    if collection is None:
+        return
+    field = f"{mode}_bonus_last_date"
+    collection.update_one(
+        {"_id": str(user_id)},
+        {"$set": {field: get_today()}}
+    )
+
+
+def compute_bonus(score, mode, eligible):
+    """Возвращает супер-бонус по таблице. 0 если не eligible."""
+    if not eligible:
+        return 0
+    if mode == "random20":
+        table = {20: 100, 19: 80, 18: 60, 17: 40, 16: 25, 15: 10}
+    else:  # hardcore20
+        table = {20: 200, 19: 150, 18: 110, 17: 80, 16: 50, 15: 25}
+    return table.get(score, 0)
+
+
+def update_challenge_stats(user_id, username, first_name, mode, score, total,
+                            time_seconds, eligible):
+    """
+    Записывает результат Random Challenge в leaderboard.
+    Начисляет обычные очки + бонус (если eligible).
+    Обновляет streak и достижения.
+    """
+    if collection is None:
+        return 0, 0
+
+    points_per_q = 1 if mode == "random20" else 2
+    earned = score * points_per_q
+    bonus  = compute_bonus(score, mode, eligible)
+    total_earned = earned + bonus
+
+    user_id_str = str(user_id)
+    today = get_today()
+
+    entry = collection.find_one({"_id": user_id_str})
+    if not entry:
+        from database import init_user_stats
+        init_user_stats(user_id, username, first_name)
+        entry = collection.find_one({"_id": user_id_str})
+
+    upd = {
+        "total_points":              entry.get("total_points", 0) + total_earned,
+        "total_tests":               entry.get("total_tests", 0) + 1,
+        "total_questions_answered":  entry.get("total_questions_answered", 0) + total,
+        "total_correct_answers":     entry.get("total_correct_answers", 0) + score,
+        "total_time_spent":          entry.get("total_time_spent", 0) + time_seconds,
+        f"{mode}_attempts":          entry.get(f"{mode}_attempts", 0) + 1,
+        f"{mode}_correct":           entry.get(f"{mode}_correct", 0) + score,
+        f"{mode}_total":             entry.get(f"{mode}_total", 0) + total,
+        f"{mode}_best_score":        max(entry.get(f"{mode}_best_score", 0), score),
+        "last_date":                 datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "first_name":                first_name,
+        "username":                  username or "",
+    }
+
+    if eligible:
+        mark_bonus_used(user_id, mode)
+
+    # Streak (только на eligible попытке)
+    achievements = entry.get("achievements", {})
+    new_achievements = []
+
+    if eligible:
+        streak_count = entry.get("challenge_streak_count", 0)
+        streak_last  = entry.get("challenge_streak_last_date", "")
+
+        if score >= 18:
+            # Проверяем непрерывность streak
+            if streak_last == "":
+                streak_count = 1
+            else:
+                try:
+                    last_dt = datetime.strptime(streak_last, "%Y-%m-%d")
+                    delta   = (datetime.strptime(today, "%Y-%m-%d") - last_dt).days
+                    if delta == 1:
+                        streak_count += 1
+                    elif delta == 0:
+                        pass  # уже засчитан сегодня
+                    else:
+                        streak_count = 1  # сброс
+                except Exception:
+                    streak_count = 1
+            upd["challenge_streak_count"]     = streak_count
+            upd["challenge_streak_last_date"] = today
+
+            # Достижение 3-day streak
+            if streak_count >= 3 and "streak_3" not in achievements:
+                achievements["streak_3"] = today
+                new_achievements.append("🔥 3-дневная серия 18+ — разблокировано!")
+        else:
+            # Сбрасываем streak при score < 18
+            upd["challenge_streak_count"]     = 0
+            upd["challenge_streak_last_date"] = today
+
+        # Достижение Perfect 20
+        if score == 20 and "perfect_20" not in achievements:
+            achievements["perfect_20"] = today
+            new_achievements.append("⭐ Perfect 20 — разблокировано!")
+
+        if new_achievements:
+            upd["achievements"] = achievements
+
+    collection.update_one({"_id": user_id_str}, {"$set": upd})
+    return total_earned, new_achievements
+
+
+def update_weekly_leaderboard(user_id, username, first_name, mode, score, time_seconds):
+    """Обновляет еженедельный лидерборд (только на bonus_eligible попытке)."""
+    if weekly_lb_collection is None:
+        return
+    week_id = get_current_week_id()
+    doc_id  = f"{week_id}_{mode}_{user_id}"
+    existing = weekly_lb_collection.find_one({"_id": doc_id})
+
+    if not existing or score > existing.get("best_score", 0) or \
+       (score == existing.get("best_score", 0) and time_seconds < existing.get("best_time", 9999)):
+        weekly_lb_collection.update_one(
+            {"_id": doc_id},
+            {"$set": {
+                "week_id":    week_id,
+                "mode":       mode,
+                "user_id":    str(user_id),
+                "username":   username or "",
+                "first_name": first_name or "Пользователь",
+                "best_score": score,
+                "best_time":  time_seconds,
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }},
+            upsert=True
+        )
+
+
+def get_weekly_leaderboard(mode, limit=10):
+    """Возвращает топ еженедельного лидерборда по режиму."""
+    if weekly_lb_collection is None:
+        return []
+    week_id = get_current_week_id()
+    try:
+        return list(
+            weekly_lb_collection.find({"week_id": week_id, "mode": mode})
+            .sort([("best_score", -1), ("best_time", 1)])
+            .limit(limit)
+        )
+    except Exception:
+        return []
+
+
+def get_user_achievements(user_id):
+    """Возвращает достижения и streak пользователя."""
+    if collection is None:
+        return {}, 0, ""
+    entry = collection.find_one({"_id": str(user_id)})
+    if not entry:
+        return {}, 0, ""
+    return (
+        entry.get("achievements", {}),
+        entry.get("challenge_streak_count", 0),
+        entry.get("challenge_streak_last_date", ""),
+    )
