@@ -2160,9 +2160,27 @@ async def show_status_inline(update: Update, context):
 async def on_error(update: object, context):
     """Глобальный обработчик исключений."""
     import traceback
-    tb = "".join(traceback.format_exception(
-        type(context.error), context.error, context.error.__traceback__
-    ))
+    from telegram.error import NetworkError, TimedOut, RetryAfter, InvalidToken
+
+    err = context.error
+
+    # ── Фильтруем сетевой шум — не спамим админу ──────────────────────────
+    # NetworkError/TimedOut — обычные разрывы соединения на Render/polling
+    # RetryAfter — Telegram rate limit, PTB сам повторит
+    if isinstance(err, (NetworkError, TimedOut, RetryAfter)):
+        print(f"[NETWORK] {type(err).__name__}: {err}")
+        return
+
+    # get_updates ошибки (polling loop) — update=None, нет смысла уведомлять
+    if update is None:
+        tb_str = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+        # Если в трейсбеке есть polling/network_loop — просто логируем
+        if any(kw in tb_str for kw in ("get_updates", "network_retry_loop", "polling_action_cb", "networkloop")):
+            print(f"[POLLING ERROR] {type(err).__name__}: {err}")
+            return
+    # ──────────────────────────────────────────────────────────────────────
+
+    tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
     print(f"[ERROR] {tb}")
 
     # Собираем контекст
