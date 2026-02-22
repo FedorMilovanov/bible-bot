@@ -26,7 +26,7 @@ from database import (
     get_user_position, get_leaderboard_page, get_total_users,
     format_time, calculate_days_playing, calculate_accuracy,
     record_question_stat, get_question_stats,
-    get_points_to_next_place, get_category_leaderboard,
+    get_points_to_next_place, get_category_leaderboard, get_context_leaderboard,
     is_bonus_eligible, compute_bonus,
     update_challenge_stats, update_weekly_leaderboard,
     get_weekly_leaderboard, get_user_achievements, get_current_week_id,
@@ -1085,12 +1085,9 @@ async def show_general_leaderboard(query, page=0):
     if nav:
         keyboard.append(nav)
     keyboard.append([
-        InlineKeyboardButton("🔬 Лингвисты",  callback_data="cat_lb_linguistics_ch1"),
-        InlineKeyboardButton("🔴 Богословы",  callback_data="cat_lb_hard"),
-    ])
-    keyboard.append([
-        InlineKeyboardButton("👑 Нерон",      callback_data="cat_lb_nero"),
-        InlineKeyboardButton("🌍 География",  callback_data="cat_lb_geography"),
+        InlineKeyboardButton("🔬 Лингвисты",         callback_data="cat_lb_linguistics_ch1"),
+        InlineKeyboardButton("🔴 Богословы",         callback_data="cat_lb_hard"),
+        InlineKeyboardButton("🏛 Знатоки контекста", callback_data="cat_lb_context"),
     ])
     keyboard.append([InlineKeyboardButton("🎯 Начать тест", callback_data="start_test")])
     keyboard.append([InlineKeyboardButton("⬅️ В меню",      callback_data="back_to_main")])
@@ -1108,11 +1105,18 @@ async def show_category_leaderboard(query, category_key):
         "practical_ch1":   "🙏 Применение",
         "linguistics_ch1": "🔬 Лингвистика",
         "intro1":          "📜 Введение ч.1",
+        "context":         "🏛 Знатоки контекста",
+        "context":         "🏛 Знатоки контекста",
         "intro2":          "📜 Введение ч.2",
         "intro3":          "📜 Введение ч.3",
     }
     cat_name = CATEGORY_NAMES.get(category_key, category_key)
-    users    = get_category_leaderboard(category_key, limit=10)
+
+    # Объединённый рейтинг "Знатоки контекста"
+    if category_key == "context":
+        users = get_context_leaderboard(limit=10)
+    else:
+        users = get_category_leaderboard(category_key, limit=10)
 
     if not users:
         text = f"{cat_name}\n\nПока никто не проходил этот тест."
@@ -1120,12 +1124,18 @@ async def show_category_leaderboard(query, category_key):
         text = f"🏆 *РЕЙТИНГ: {cat_name}*\n_(по числу верных ответов)_\n\n"
         for i, entry in enumerate(users, 1):
             name    = entry.get("first_name", "Unknown")[:15]
-            correct = entry.get(f"{category_key}_correct", 0)
-            total   = entry.get(f"{category_key}_total", 0)
-            best    = entry.get(f"{category_key}_best_score", 0)
-            acc     = calculate_accuracy(correct, total)
-            medal   = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
-            text   += f"{medal} *{name}* — {correct} верных ({acc}%) • лучший: {best}/10\n"
+            if category_key == "context":
+                correct = entry.get("_context_correct", 0)
+                acc     = entry.get("_context_acc", 0)
+                medal   = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+                text   += f"{medal} *{name}* — {correct} верных ({acc}%)\n"
+            else:
+                correct = entry.get(f"{category_key}_correct", 0)
+                total   = entry.get(f"{category_key}_total", 0)
+                best    = entry.get(f"{category_key}_best_score", 0)
+                acc     = calculate_accuracy(correct, total)
+                medal   = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+                text   += f"{medal} *{name}* — {correct} верных ({acc}%) • лучший: {best}/10\n"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ Общий рейтинг", callback_data="leaderboard")],
@@ -1742,4 +1752,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
