@@ -137,7 +137,7 @@ def _main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 О боте",                callback_data="about")],
         [InlineKeyboardButton("🎯 Начать тест",           callback_data="start_test")],
-        [InlineKeyboardButton("🎲 Random Challenge",       callback_data="challenge_menu")],
+        [InlineKeyboardButton("🎲 Челлендж (20) — бонус", callback_data="challenge_menu")],
         [InlineKeyboardButton("🏛 Исторический контекст", callback_data="historical_menu")],
         [InlineKeyboardButton("⚔️ Режим битвы",            callback_data="battle_menu")],
         [InlineKeyboardButton("🏆 Таблица лидеров",       callback_data="leaderboard")],
@@ -1742,3 +1742,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
