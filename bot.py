@@ -27,6 +27,9 @@ from database import (
     format_time, calculate_days_playing, calculate_accuracy,
     record_question_stat, get_question_stats,
     get_points_to_next_place, get_category_leaderboard,
+    is_bonus_eligible, compute_bonus,
+    update_challenge_stats, update_weekly_leaderboard,
+    get_weekly_leaderboard, get_user_achievements, get_current_week_id,
 )
 from questions import (
     easy_questions, easy_questions_v17_25,
@@ -134,6 +137,7 @@ def _main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 О боте",                callback_data="about")],
         [InlineKeyboardButton("🎯 Начать тест",           callback_data="start_test")],
+        [InlineKeyboardButton("🎲 Random Challenge",       callback_data="challenge_menu")],
         [InlineKeyboardButton("🏛 Исторический контекст", callback_data="historical_menu")],
         [InlineKeyboardButton("⚔️ Режим битвы",            callback_data="battle_menu")],
         [InlineKeyboardButton("🏆 Таблица лидеров",       callback_data="leaderboard")],
@@ -636,6 +640,10 @@ async def button_handler(update: Update, context):
         await show_my_stats(query)
     elif query.data == "historical_menu":
         await historical_menu(update, context)
+    elif query.data == "challenge_menu":
+        await challenge_menu(update, context)
+    elif query.data == "achievements":
+        await show_achievements(update, context)
     elif query.data == "coming_soon":
         await query.answer("🚧 Глава 2 в разработке — следи за обновлениями!", show_alert=True)
 
@@ -1013,9 +1021,11 @@ async def show_my_stats(query):
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎯 Начать тест", callback_data="start_test")],
-            [InlineKeyboardButton("⚔️ Битва",        callback_data="battle_menu")],
-            [InlineKeyboardButton("⬅️ Назад",         callback_data="back_to_main")],
+            [InlineKeyboardButton("🎯 Начать тест",  callback_data="start_test")],
+            [InlineKeyboardButton("🎲 Random",        callback_data="challenge_menu")],
+            [InlineKeyboardButton("🏅 Достижения",    callback_data="achievements")],
+            [InlineKeyboardButton("⚔️ Битва",          callback_data="battle_menu")],
+            [InlineKeyboardButton("⬅️ Назад",           callback_data="back_to_main")],
         ]),
         parse_mode="Markdown",
     )
@@ -1126,6 +1136,511 @@ async def show_category_leaderboard(query, category_key):
 
 
 
+
+# ═══════════════════════════════════════════════
+# RANDOM CHALLENGE — ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ═══════════════════════════════════════════════
+
+def build_progress_bar(current, total=20, length=10):
+    """Строит прогресс-бар: ▰▰▰▱▱▱▱▱▱▱"""
+    filled = round(current / total * length)
+    return "▰" * filled + "▱" * (length - filled)
+
+
+def pick_challenge_questions(mode):
+    """
+    Умная выборка 20 вопросов по квотам.
+    Normal:   6 easy, 6 medium, 6 hard, 1 practical, 1 linguistics
+    Hardcore: 4 easy, 5 medium, 7 hard, 4 linguistics
+    """
+    pool_easy   = easy_questions + easy_questions_v17_25
+    pool_medium = medium_questions + medium_questions_v17_25
+    pool_hard   = hard_questions + hard_questions_v17_25
+    pool_prac   = practical_ch1_questions + practical_v17_25_questions
+    pool_ling   = linguistics_ch1_questions + linguistics_ch1_questions_2 + linguistics_v17_25_questions
+
+    def safe_sample(pool, n):
+        pool = list(pool)
+        if len(pool) >= n:
+            return random.sample(pool, n)
+        return random.choices(pool, k=n)  # повторы если мало вопросов
+
+    if mode == "random20":
+        questions = (
+            safe_sample(pool_easy,   6) +
+            safe_sample(pool_medium, 6) +
+            safe_sample(pool_hard,   6) +
+            safe_sample(pool_prac,   1) +
+            safe_sample(pool_ling,   1)
+        )
+    else:  # hardcore20
+        questions = (
+            safe_sample(pool_easy,   4) +
+            safe_sample(pool_medium, 5) +
+            safe_sample(pool_hard,   7) +
+            safe_sample(pool_ling,   4)
+        )
+
+    random.shuffle(questions)
+    return questions
+
+
+def build_rules_card(mode, eligible):
+    """Строит красивый экран правил."""
+    today_status = "✅ доступен" if eligible else "❌ уже получен сегодня"
+
+    if mode == "random20":
+        title   = "🎲 *Random Challenge (20)*"
+        rules   = "• 20 вопросов • умный рандом • без таймера"
+        bonus_t = (
+            "20/20 → +100 💎\n"
+            "19/20 → +80 💎\n"
+            "18/20 → +60 💎\n"
+            "17/20 → +40 💎\n"
+            "16/20 → +25 💎\n"
+            "15/20 → +10 💎\n"
+            "ниже 15 → 0"
+        )
+        ppq = 1
+    else:
+        title   = "💀 *Hardcore Random (20)*"
+        rules   = "• 20 вопросов • уклон в hard/лингвистику • ⏱ 7 сек"
+        bonus_t = (
+            "20/20 → +200 💎\n"
+            "19/20 → +150 💎\n"
+            "18/20 → +110 💎\n"
+            "17/20 → +80 💎\n"
+            "16/20 → +50 💎\n"
+            "15/20 → +25 💎\n"
+            "ниже 15 → 0"
+        )
+        ppq = 2
+
+    return (
+        f"{title}\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"*Правила:*\n"
+        f"{rules}\n"
+        f"• Очков за вопрос: {ppq}\n"
+        f"• Подсказки: _выключены_\n"
+        f"• Супер-бонус: _1 раз в день_\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"*Бонусы:*\n"
+        f"{bonus_t}\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"*Статус бонуса сегодня:* {today_status}"
+    )
+
+
+# ═══════════════════════════════════════════════
+# RANDOM CHALLENGE — HANDLERS
+# ═══════════════════════════════════════════════
+
+async def challenge_menu(update: Update, context):
+    """Меню выбора режима челленджа."""
+    query = update.callback_query
+    await query.answer()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎲 Random Challenge (20)", callback_data="challenge_rules_random20")],
+        [InlineKeyboardButton("💀 Hardcore Random (20)",  callback_data="challenge_rules_hardcore20")],
+        [InlineKeyboardButton("🏆 Лидерборд недели",      callback_data="weekly_lb_random20")],
+        [InlineKeyboardButton("⬅️ Назад",                  callback_data="back_to_main")],
+    ])
+    await query.edit_message_text(
+        "🎲 *RANDOM CHALLENGE*\n\n"
+        "Умный рандом из всех категорий.\n"
+        "Бонус за высокий результат — *1 раз в день*.\n\n"
+        "🎲 *Normal* — без таймера, смешанный пул\n"
+        "💀 *Hardcore* — 7 сек, уклон в сложные вопросы",
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+
+
+async def challenge_rules(update: Update, context):
+    """Экран правил перед стартом."""
+    query  = update.callback_query
+    await query.answer()
+    mode   = query.data.replace("challenge_rules_", "")
+    user_id = query.from_user.id
+    eligible = is_bonus_eligible(user_id, mode)
+
+    text = build_rules_card(mode, eligible)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Начать!", callback_data=f"challenge_start_{mode}")],
+        [InlineKeyboardButton("⬅️ Назад",   callback_data="challenge_menu")],
+    ])
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def challenge_start(update: Update, context):
+    """Запускает сессию челленджа."""
+    query   = update.callback_query
+    await query.answer()
+    mode    = query.data.replace("challenge_start_", "")
+    user_id = query.from_user.id
+    eligible = is_bonus_eligible(user_id, mode)
+
+    questions = pick_challenge_questions(mode)
+
+    time_limit = 7 if mode == "hardcore20" else None
+    mode_name  = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
+
+    user_data[user_id] = {
+        "questions":           questions,
+        "level_name":          mode_name,
+        "level_key":           mode,
+        "current_question":    0,
+        "correct_answers":     0,
+        "answered_questions":  [],
+        "start_time":          time.time(),
+        "is_battle":           False,
+        "battle_points":       0,
+        "is_challenge":        True,
+        "challenge_mode":      mode,
+        "challenge_eligible":  eligible,
+        "challenge_time_limit": time_limit,
+    }
+
+    bonus_status = "✅ бонус доступен" if eligible else "❌ бонус уже получен"
+    await query.edit_message_text(
+        f"{mode_name}\n\n"
+        f"📋 20 вопросов • {bonus_status}\n\n"
+        f"Поехали! 💪",
+        parse_mode="Markdown",
+    )
+    await send_challenge_question(query.message, user_id)
+    return ANSWERING
+
+
+async def send_challenge_question(message, user_id):
+    """Отправляет вопрос в режиме челленджа с прогресс-баром."""
+    data  = user_data[user_id]
+    q_num = data["current_question"]
+    total = len(data["questions"])
+
+    if q_num >= total:
+        await show_challenge_results(message, user_id)
+        return
+
+    q            = data["questions"][q_num]
+    correct_text = q["options"][q["correct"]]
+    shuffled     = q["options"][:]
+    random.shuffle(shuffled)
+
+    data["current_options"]      = shuffled
+    data["current_correct_text"] = correct_text
+    data["question_sent_at"]     = time.time()
+
+    # Отменяем предыдущий таймер
+    old_task = data.get("timer_task")
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    progress   = build_progress_bar(q_num, total)
+    correct_so_far = data["correct_answers"]
+    bonus_icon = "✅" if data["challenge_eligible"] else "❌"
+    mode_name  = data["level_name"]
+    time_limit = data.get("challenge_time_limit")
+    timer_str  = f" • ⏱ {time_limit} сек" if time_limit else ""
+
+    header = (
+        f"{mode_name} • {bonus_icon} бонус\n"
+        f"Вопрос *{q_num + 1}/{total}*{timer_str}\n"
+        f"{progress}\n"
+        f"✅ Правильно: {correct_so_far}/{q_num}\n\n"
+    ) if q_num > 0 else (
+        f"{mode_name} • {bonus_icon} бонус\n"
+        f"Вопрос *{q_num + 1}/{total}*{timer_str}\n"
+        f"{progress}\n\n"
+    )
+
+    await message.reply_text(
+        f"{header}{q['question']}",
+        reply_markup=ReplyKeyboardMarkup(
+            [[opt] for opt in shuffled],
+            one_time_keyboard=True, resize_keyboard=True,
+        ),
+        parse_mode="Markdown",
+    )
+
+    # Таймер только для Hardcore
+    if time_limit:
+        data["timer_task"] = asyncio.create_task(
+            challenge_timeout(message, user_id, q_num)
+        )
+
+
+async def challenge_timeout(message, user_id, q_num_at_send):
+    """Таймер для Hardcore режима."""
+    data = user_data.get(user_id)
+    if not data:
+        return
+    time_limit = data.get("challenge_time_limit", 7)
+    await asyncio.sleep(time_limit)
+
+    if user_id not in user_data:
+        return
+    data = user_data[user_id]
+    if data.get("current_question") != q_num_at_send:
+        return
+
+    q            = data["questions"][q_num_at_send]
+    correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
+
+    data["answered_questions"].append({
+        "question_obj": q,
+        "user_answer":  "⏱ Время вышло",
+    })
+    try:
+        await message.reply_text(
+            f"⏱ *Время вышло!*\n✅ {correct_text}",
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="Markdown",
+        )
+    except Exception:
+        return
+
+    data["current_question"] += 1
+    if data["current_question"] < len(data["questions"]):
+        await send_challenge_question(message, user_id)
+    else:
+        await show_challenge_results(message, user_id)
+
+
+async def challenge_answer(update: Update, context):
+    """Обработчик ответов в режиме челленджа."""
+    user_id = update.effective_user.id
+    data    = user_data.get(user_id)
+
+    if not data or not data.get("is_challenge"):
+        return await answer(update, context)
+
+    q_num       = data["current_question"]
+    q           = data["questions"][q_num]
+    user_answer = update.message.text
+    correct_text    = data.get("current_correct_text") or q["options"][q["correct"]]
+    current_options = data.get("current_options") or q["options"]
+
+    if user_answer not in current_options:
+        await update.message.reply_text("Выбери вариант из списка")
+        return ANSWERING
+
+    # Отменяем таймер
+    timer_task = data.get("timer_task")
+    if timer_task and not timer_task.done():
+        timer_task.cancel()
+
+    is_correct = (user_answer == correct_text)
+    if is_correct:
+        data["correct_answers"] += 1
+        await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
+    else:
+        await update.message.reply_text(
+            f"❌ Неверно\n✅ {correct_text}",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+
+    # Статистика по вопросу
+    elapsed = time.time() - data.get("question_sent_at", time.time())
+    q_id = str(q.get("id", hash(q["question"])))
+    record_question_stat(q_id, data["level_key"], is_correct, elapsed)
+
+    data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
+    data["current_question"] += 1
+
+    if data["current_question"] < len(data["questions"]):
+        await send_challenge_question(update.message, user_id)
+        return ANSWERING
+    else:
+        await show_challenge_results(update.message, user_id)
+        return ConversationHandler.END
+
+
+async def show_challenge_results(message, user_id):
+    """Красивый экран результатов с анимацией подсчёта."""
+    data       = user_data[user_id]
+    score      = data["correct_answers"]
+    total      = len(data["questions"])
+    mode       = data["challenge_mode"]
+    eligible   = data["challenge_eligible"]
+    time_taken = time.time() - data["start_time"]
+    user       = message.from_user
+
+    # Анимация подсчёта
+    anim_msg = await message.reply_text("📊 Подсчитываю результат…")
+    await asyncio.sleep(0.4)
+    await anim_msg.edit_text("📊 Подсчитываю результат… ▰▱▱")
+    await asyncio.sleep(0.4)
+    await anim_msg.edit_text("📊 Подсчитываю результат… ▰▰▱")
+    await asyncio.sleep(0.4)
+    await anim_msg.edit_text("📊 Готово! ✨")
+
+    # Считаем очки
+    points_per_q = 1 if mode == "random20" else 2
+    earned_base  = score * points_per_q
+    bonus        = compute_bonus(score, mode, eligible)
+    total_earned = earned_base + bonus
+
+    # Записываем в БД
+    total_credited, new_achievements = update_challenge_stats(
+        user.id, user.username, user.first_name,
+        mode, score, total, time_taken, eligible
+    )
+    if eligible:
+        update_weekly_leaderboard(
+            user.id, user.username, user.first_name,
+            mode, score, time_taken
+        )
+
+    # Оценка
+    pct = round(score / total * 100)
+    if pct == 100:   grade = "🌟 Идеально!"
+    elif pct >= 90:  grade = "🔥 Отлично!"
+    elif pct >= 75:  grade = "👍 Хорошо"
+    elif pct >= 60:  grade = "📖 Неплохо"
+    else:            grade = "📚 Нужно повторить"
+
+    mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
+    position, _ = get_user_position(user.id)
+
+    result = (
+        f"━━━━━━━━━━━━━━━━\n"
+        f"{mode_name}\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"📊 Результат: *{score}/{total}* ({pct}%) {grade}\n"
+        f"⏱ Время: *{format_time(time_taken)}*\n"
+        f"🏅 Позиция: *#{position}*\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"💎 Очки за ответы: +{earned_base}\n"
+    )
+
+    if eligible:
+        if bonus > 0:
+            result += f"🎁 Супер-бонус: *+{bonus}*\n"
+        else:
+            result += f"🎁 Супер-бонус: 0 (нужно 15+)\n"
+        result += f"✨ Итого начислено: *+{total_earned}*\n"
+    else:
+        result += f"🎁 Бонус: _недоступен (уже получен сегодня)_\n"
+        result += f"✨ Начислено: *+{earned_base}*\n"
+
+    # Достижения
+    if new_achievements:
+        result += "━━━━━━━━━━━━━━━━\n"
+        result += "🏅 *Новые достижения:*\n"
+        for ach in new_achievements:
+            result += f"  {ach}\n"
+
+    result += "━━━━━━━━━━━━━━━━"
+
+    # Кнопки
+    answered  = data.get("answered_questions", [])
+    wrong     = [i for i in answered
+                 if i["user_answer"] != i["question_obj"]["options"][i["question_obj"]["correct"]]]
+    kb_rows = [
+        [InlineKeyboardButton(f"🔁 Сыграть ещё раз", callback_data=f"challenge_rules_{mode}")],
+        [InlineKeyboardButton("🏆 Лидерборд недели",  callback_data=f"weekly_lb_{mode}")],
+        [InlineKeyboardButton("🏅 Достижения",         callback_data="achievements")],
+        [InlineKeyboardButton("⬅️ Меню",               callback_data="back_to_main")],
+    ]
+    if wrong:
+        kb_rows.insert(1, [InlineKeyboardButton(
+            f"📌 Повторить ошибки ({len(wrong)})",
+            callback_data=f"retry_errors_{user_id}"
+        )])
+
+    await message.reply_text(result, reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="Markdown")
+
+    # Разбор ошибок (как в обычном тесте)
+    if wrong:
+        await message.reply_text(f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {total}):*", parse_mode="Markdown")
+        for i, item in enumerate(wrong, 1):
+            q            = item["question_obj"]
+            correct_text = q["options"][q["correct"]]
+            breakdown    = f"❌ *Ошибка {i}*\n_{q['question']}_\n\n"
+            breakdown   += f"Ваш ответ: *{item['user_answer']}*\n"
+            breakdown   += f"Правильно: *{correct_text}*\n\n"
+            breakdown   += f"💡 {q.get('explanation', '')}"
+            if len(breakdown) > 4000:
+                breakdown = breakdown[:3990] + "..."
+            await message.reply_text(breakdown, parse_mode="Markdown")
+    else:
+        await message.reply_text("🎯 *Все ответы верны!*", parse_mode="Markdown")
+
+
+# ═══════════════════════════════════════════════
+# ДОСТИЖЕНИЯ
+# ═══════════════════════════════════════════════
+
+async def show_achievements(update: Update, context):
+    """Экран достижений."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    achievements, streak_count, streak_last = get_user_achievements(user_id)
+
+    def ach_status(key, name, desc):
+        if key in achievements:
+            return f"✅ *{name}*\n   _{desc}_\n   📅 Получено: {achievements[key]}\n"
+        return f"🔒 *{name}*\n   _{desc}_\n"
+
+    text = (
+        "🏅 *МОИ ДОСТИЖЕНИЯ*\n"
+        "━━━━━━━━━━━━━━━━\n\n"
+        + ach_status("perfect_20",  "Perfect 20",         "Ответить на все 20 вопросов правильно")
+        + "\n"
+        + ach_status("streak_3",    "Серия 18+ (3 дня)",  "3 дня подряд набирать 18+ в Random Challenge")
+        + "\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"🔥 *Текущая серия:* {streak_count} дн."
+    )
+    if streak_last:
+        text += f"\n📅 Последний раз: {streak_last}"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")]
+    ])
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+# ═══════════════════════════════════════════════
+# ЕЖЕНЕДЕЛЬНЫЙ ЛИДЕРБОРД
+# ═══════════════════════════════════════════════
+
+async def show_weekly_leaderboard(update: Update, context):
+    """Еженедельный лидерборд по режиму."""
+    query  = update.callback_query
+    await query.answer()
+    mode   = query.data.replace("weekly_lb_", "")
+    users  = get_weekly_leaderboard(mode)
+
+    mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
+    week_id   = get_current_week_id()
+
+    if not users:
+        text = f"🏆 *{mode_name}*\nНеделя {week_id}\n\nПока нет результатов.\nБудь первым! 🚀"
+    else:
+        text = f"🏆 *{mode_name}*\nНеделя {week_id}\n\n"
+        for i, entry in enumerate(users, 1):
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+            name  = entry.get("first_name", "?")[:15]
+            score = entry.get("best_score", 0)
+            t     = format_time(entry.get("best_time", 0))
+            text += f"{medal} *{name}* — {score}/20 • ⏱ {t}\n"
+
+    other_mode      = "hardcore20" if mode == "random20" else "random20"
+    other_mode_name = "💀 Hardcore" if mode == "random20" else "🎲 Normal"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"Переключить → {other_mode_name}", callback_data=f"weekly_lb_{other_mode}")],
+        [InlineKeyboardButton("🎲 Сыграть",  callback_data=f"challenge_rules_{mode}")],
+        [InlineKeyboardButton("⬅️ Назад",    callback_data="challenge_menu")],
+    ])
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
 # ═══════════════════════════════════════════════
 # ОЧИСТКА УСТАРЕВШИХ БИТВ (JobQueue)
 # ═══════════════════════════════════════════════
@@ -1157,10 +1672,11 @@ def main():
             CallbackQueryHandler(level_selected,        pattern="^level_"),
             CallbackQueryHandler(start_battle_questions, pattern="^start_battle_"),
             CallbackQueryHandler(retry_errors,           pattern="^retry_errors_"),
+            CallbackQueryHandler(challenge_start,         pattern="^challenge_start_"),
         ],
         states={
             CHOOSING_LEVEL:  [CallbackQueryHandler(level_selected)],
-            ANSWERING:       [MessageHandler(filters.TEXT & ~filters.COMMAND, answer)],
+            ANSWERING:       [MessageHandler(filters.TEXT & ~filters.COMMAND, challenge_answer)],
             BATTLE_ANSWERING: [MessageHandler(filters.TEXT & ~filters.COMMAND, battle_answer)],
         },
         fallbacks=[
@@ -1183,10 +1699,13 @@ def main():
     app.add_handler(CallbackQueryHandler(historical_menu,   pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(
         button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu|coming_soon)$",
+        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu|coming_soon|challenge_menu|achievements)$",
     ))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
+    app.add_handler(CallbackQueryHandler(challenge_rules,   pattern="^challenge_rules_"))
+    app.add_handler(CallbackQueryHandler(show_weekly_leaderboard, pattern="^weekly_lb_"))
+    # challenge_start — через ConversationHandler entry_points ниже
 
     # JobQueue — подключаем только если доступен (требует pip install python-telegram-bot[job-queue])
     if app.job_queue is not None:
@@ -1206,4 +1725,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
