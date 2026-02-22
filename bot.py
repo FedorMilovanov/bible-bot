@@ -25,6 +25,7 @@ from database import (
     init_user_stats, add_to_leaderboard, update_battle_stats,
     get_user_position, get_leaderboard_page, get_total_users,
     format_time, calculate_days_playing, calculate_accuracy,
+    record_question_stat, get_question_stats,
 )
 from questions import (
     easy_questions, easy_questions_v17_25,
@@ -34,6 +35,7 @@ from questions import (
     practical_ch1_questions, practical_v17_25_questions,
     linguistics_ch1_questions, linguistics_ch1_questions_2,
     linguistics_v17_25_questions, all_chapter1_questions,
+    intro_part1_questions, intro_part2_questions, intro_part3_questions,
 )
 
 # ─────────────────────────────────────────────
@@ -191,19 +193,23 @@ async def chapter_1_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟢 Основы (1 балл)",                      callback_data="level_easy")],
-        [InlineKeyboardButton("🟡 Контекст (2 балла)",                   callback_data="level_medium")],
-        [InlineKeyboardButton("🔴 Богословие (3 балла)",                 callback_data="level_hard")],
-        [InlineKeyboardButton("🙏 Применение (2 балла)",                  callback_data="level_practical_ch1")],
+        [InlineKeyboardButton("📜 Введение: Авторство ч.1 (2 балла)",      callback_data="level_intro1")],
+        [InlineKeyboardButton("📜 Введение: Авторство ч.2 (2 балла)",      callback_data="level_intro2")],
+        [InlineKeyboardButton("📜 Введение: Структура и цель (2 балла)",   callback_data="level_intro3")],
+        [InlineKeyboardButton("🟢 Основы (1 балл)",                        callback_data="level_easy")],
+        [InlineKeyboardButton("🟡 Контекст (2 балла)",                     callback_data="level_medium")],
+        [InlineKeyboardButton("🔴 Богословие (3 балла)",                   callback_data="level_hard")],
+        [InlineKeyboardButton("🙏 Применение (2 балла)",                   callback_data="level_practical_ch1")],
         [InlineKeyboardButton("🔬 Лингвистический разбор — ч.1 (3 балла)", callback_data="level_linguistics_ch1")],
         [InlineKeyboardButton("🔬 Лингвистический разбор — ч.2 (3 балла)", callback_data="level_linguistics_ch1_2")],
         [InlineKeyboardButton("🔬 Лингвистический разбор — ч.3 (3 балла)", callback_data="level_linguistics_ch1_3")],
-        [InlineKeyboardButton("👑 История: Нерон (2 балла)",              callback_data="level_nero")],
-        [InlineKeyboardButton("🌍 История: География (2 балла)",          callback_data="level_geography")],
-        [InlineKeyboardButton("⬅️ Назад",                                  callback_data="start_test")],
+        [InlineKeyboardButton("👑 История: Нерон (2 балла)",               callback_data="level_nero")],
+        [InlineKeyboardButton("🌍 История: География (2 балла)",           callback_data="level_geography")],
+        [InlineKeyboardButton("⬅️ Назад",                                   callback_data="start_test")],
     ])
     await query.edit_message_text(
         "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
+        "📜 *Введение* — авторство, структура, цель\n"
         "🟢 *Основы* — факты, даты, адресаты\n"
         "🟡 *Контекст* — исторический фон, символы\n"
         "🔴 *Богословие* — греческий, доктрины, Троица\n"
@@ -212,8 +218,7 @@ async def chapter_1_menu(update: Update, context):
         "🔬 *Лингвистика ч.2* — ἁγιασμός, ζῶσα ἐλπίς, λόγος...\n"
         "🔬 *Лингвистика ч.3* — λυτρόω, ἀναστρέφω, ῥῆμα...\n"
         "👑 *Нерон* — правление и гонения\n"
-        "🌍 *География* — провинции и города\n\n"
-        "⏱ 7 секунд на вопрос!",
+        "🌍 *География* — провинции и города",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -276,13 +281,13 @@ async def send_question(message, user_id):
     data["current_correct_text"] = correct_text
     data["question_sent_at"]     = time.time()
 
-    # Отменяем предыдущий таймер
+    # Отменяем предыдущий страховочный таймер
     old_task = data.get("timer_task")
     if old_task and not old_task.done():
         old_task.cancel()
 
     await message.reply_text(
-        f"*Вопрос {q_num + 1}/{total}*  ⏱ 7 сек\n\n{q['question']}",
+        f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}",
         reply_markup=ReplyKeyboardMarkup(
             [[opt] for opt in shuffled],
             one_time_keyboard=True, resize_keyboard=True,
@@ -290,11 +295,13 @@ async def send_question(message, user_id):
         parse_mode="Markdown",
     )
 
+    # Страховочный таймер 60 сек (чтобы тест не завис навсегда)
     data["timer_task"] = asyncio.create_task(auto_timeout(message, user_id, q_num))
 
 
 async def auto_timeout(message, user_id, q_num_at_send):
-    await asyncio.sleep(7)
+    """Страховочный таймер 60 сек для обычного теста — чтобы тест не завис."""
+    await asyncio.sleep(60)
 
     if user_id not in user_data:
         return
@@ -313,7 +320,7 @@ async def auto_timeout(message, user_id, q_num_at_send):
 
     try:
         await message.reply_text(
-            f"⏱ *Время вышло!*\n✅ Правильный ответ: *{correct_text}*",
+            f"⏱ *60 секунд истекло*\n✅ Правильный ответ: *{correct_text}*",
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="Markdown",
         )
@@ -343,23 +350,6 @@ async def answer(update: Update, context):
     q           = data["questions"][q_num]
     user_answer = update.message.text
 
-    sent_at = data.get("question_sent_at", time.time())
-    if time.time() - sent_at > 7:
-        correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
-        data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
-        await update.message.reply_text(
-            f"⏱ *Время вышло!*\n✅ Правильный ответ: {correct_text}",
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="Markdown",
-        )
-        data["current_question"] += 1
-        if data["current_question"] < len(data["questions"]):
-            await send_question(update.message, user_id)
-            return ANSWERING
-        else:
-            await show_results(update.message, user_id)
-            return ConversationHandler.END
-
     correct_text    = data.get("current_correct_text") or q["options"][q["correct"]]
     current_options = data.get("current_options") or q["options"]
 
@@ -367,6 +357,7 @@ async def answer(update: Update, context):
         await update.message.reply_text("Выбери один из вариантов")
         return ANSWERING
 
+    # Отмена таймера (если вдруг остался с предыдущей сессии)
     timer_task = data.get("timer_task")
     if timer_task and not timer_task.done():
         timer_task.cancel()
@@ -379,6 +370,11 @@ async def answer(update: Update, context):
             f"❌ Неверно\n✅ {correct_text}",
             reply_markup=ReplyKeyboardRemove(),
         )
+
+    # Записываем статистику по вопросу
+    elapsed = time.time() - data.get("question_sent_at", time.time())
+    q_id = str(q.get("id", hash(q["question"])))
+    record_question_stat(q_id, data["level_key"], user_answer == correct_text, elapsed)
 
     data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
     data["current_question"] += 1
@@ -422,34 +418,55 @@ async def show_results(message, user_id):
         f"*Оценка:* {grade}\n"
     )
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Ещё раз",     callback_data="start_test")],
-        [InlineKeyboardButton("⚔️ Битва",        callback_data="battle_menu")],
-        [InlineKeyboardButton("📊 Статистика",   callback_data="my_stats")],
-        [InlineKeyboardButton("⬅️ Меню",         callback_data="back_to_main")],
-    ])
-
-    await message.reply_text(result_text, reply_markup=keyboard, parse_mode="Markdown")
-
-    # Разбор ошибок
-    answered     = data.get("answered_questions", [])
+    answered = data.get("answered_questions", [])
     wrong = [
         item for item in answered
         if item["user_answer"] != item["question_obj"]["options"][item["question_obj"]["correct"]]
     ]
 
+    # Кнопка "Повторить ошибки" только если есть ошибки
+    keyboard_rows = [
+        [InlineKeyboardButton("🔄 Ещё раз",     callback_data="start_test")],
+        [InlineKeyboardButton("⚔️ Битва",        callback_data="battle_menu")],
+        [InlineKeyboardButton("📊 Статистика",   callback_data="my_stats")],
+        [InlineKeyboardButton("⬅️ Меню",         callback_data="back_to_main")],
+    ]
     if wrong:
-        await message.reply_text(
-            f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {len(answered)}):*",
-            parse_mode="Markdown",
-        )
+        keyboard_rows.insert(1, [InlineKeyboardButton(
+            f"🔁 Повторить ошибки ({len(wrong)})",
+            callback_data=f"retry_errors_{user_id}"
+        )])
+
+    await message.reply_text(result_text, reply_markup=InlineKeyboardMarkup(keyboard_rows), parse_mode="Markdown")
+
+    # Разбор ошибок с группировкой по стихам
+    if wrong:
+        # Собираем темы/стихи где ошибки (если есть поле verse)
+        verse_errors = {}
+        for item in wrong:
+            verse = item["question_obj"].get("verse", "")
+            if verse:
+                verse_errors[verse] = verse_errors.get(verse, 0) + 1
+
+        header = f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {len(answered)}):*"
+        if verse_errors:
+            sorted_verses = sorted(verse_errors.items(), key=lambda x: -x[1])
+            verse_list = ", ".join(f"ст. {v} ({c})" for v, c in sorted_verses)
+            header += f"\n\n📌 *Сложные места:* {verse_list}"
+            header += "\n💡 _Рекомендуем перечитать эти стихи перед следующим тестом_"
+
+        await message.reply_text(header, parse_mode="Markdown")
+
         for i, item in enumerate(wrong, 1):
             q            = item["question_obj"]
             user_ans     = item["user_answer"]
             correct_text = q["options"][q["correct"]]
 
-            breakdown = f"❌ *Ошибка {i}*\n_{q['question']}_\n\n"
-            breakdown += f"Ваш ответ: *{'⏱ Время вышло' if user_ans == '⏱ Время вышло' else user_ans}*\n"
+            verse_tag = f"📖 ст. {q['verse']} | " if q.get("verse") else ""
+            topic_tag = f"🏷 {q['topic']}" if q.get("topic") else ""
+
+            breakdown = f"❌ *Ошибка {i}* {verse_tag}{topic_tag}\n_{q['question']}_\n\n"
+            breakdown += f"Ваш ответ: *{user_ans}*\n"
             breakdown += f"Правильно: *{correct_text}*\n\n"
 
             if "options_explanations" in q:
@@ -458,6 +475,9 @@ async def show_results(message, user_id):
                     breakdown += f"• _{opt}_\n{q['options_explanations'][j]}\n\n"
 
             breakdown += f"💡 *Пояснение:*\n{q['explanation']}"
+
+            if q.get("pdf_ref"):
+                breakdown += f"\n\n📄 _Источник: {q['pdf_ref']}_"
 
             if len(breakdown) > 4000:
                 breakdown = breakdown[:3990] + "..."
@@ -482,15 +502,61 @@ async def cancel(update: Update, context):
 
 
 # ═══════════════════════════════════════════════
-# КНОПКИ
+# ПОВТОРЕНИЕ ОШИБОК
 # ═══════════════════════════════════════════════
+
+async def retry_errors(update: Update, context):
+    """Запускает сессию повторения — ошибочные вопросы один раз."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    target_id = int(query.data.replace("retry_errors_", ""))
+
+    if target_id not in user_data:
+        await query.edit_message_text("⚠️ Данные сессии устарели. Начни новый тест.")
+        return ConversationHandler.END
+
+    prev_data = user_data[target_id]
+    answered  = prev_data.get("answered_questions", [])
+    wrong_questions = [
+        item["question_obj"] for item in answered
+        if item["user_answer"] != item["question_obj"]["options"][item["question_obj"]["correct"]]
+    ]
+
+    if not wrong_questions:
+        await query.answer("Ошибок нет!", show_alert=True)
+        return
+
+    user_data[user_id] = {
+        "questions":           wrong_questions,
+        "level_name":          f"🔁 Повторение ошибок ({prev_data['level_name']})",
+        "level_key":           prev_data["level_key"],
+        "current_question":    0,
+        "correct_answers":     0,
+        "answered_questions":  [],
+        "start_time":          time.time(),
+        "is_battle":           False,
+        "battle_points":       0,
+        "is_retry":            True,
+    }
+
+    await query.edit_message_text(
+        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\n"
+        f"Вопросов: {len(wrong_questions)}\nПоехали! 💪",
+        parse_mode="Markdown",
+    )
+    await send_question(query.message, user_id)
+    return ANSWERING
+
+
 
 async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
 
     if query.data.startswith("leaderboard_page_"):
-        page = int(query.data.split("_")[2])
+        page = int(query.data.replace("leaderboard_page_", ""))
         await show_general_leaderboard(query, page)
         return
 
@@ -499,6 +565,9 @@ async def button_handler(update: Update, context):
             "📚 *О БОТЕ*\n\n"
             "Этот бот поможет проверить знания по Первому посланию Петра.\n\n"
             "*📋 КАТЕГОРИИ ТЕСТОВ:*\n"
+            "📜 Введение: Авторство ч.1 — 2 балла\n"
+            "📜 Введение: Авторство ч.2 — 2 балла\n"
+            "📜 Введение: Структура и цель — 2 балла\n"
             "🟢 Основы (1:1–25) — 1 балл\n"
             "🟡 Контекст (1:1–25) — 2 балла\n"
             "🔴 Богословие (1:1–25) — 3 балла\n"
@@ -512,6 +581,9 @@ async def button_handler(update: Update, context):
             "• Создай битву или присоединись\n"
             "• Отвечай на те же вопросы\n"
             "• Победитель получает +5 баллов!\n\n"
+            "*🔁 РЕЖИМ ПОВТОРЕНИЯ:*\n"
+            "• После теста — кнопка «Повторить ошибки»\n"
+            "• Учишь до 2 правильных ответов подряд\n\n"
             "💡 Каждый тест — 10 случайных вопросов!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")]
@@ -955,6 +1027,7 @@ def main():
             CommandHandler("test", test_command),
             CallbackQueryHandler(level_selected,        pattern="^level_"),
             CallbackQueryHandler(start_battle_questions, pattern="^start_battle_"),
+            CallbackQueryHandler(retry_errors,           pattern="^retry_errors_"),
         ],
         states={
             CHOOSING_LEVEL:  [CallbackQueryHandler(level_selected)],
@@ -988,9 +1061,9 @@ def main():
     app.job_queue.run_repeating(cleanup_old_battles, interval=300, first=300)
 
     print("🤖 Бот запущен!")
-    print("📚 190 вопросов — 1 Петра, глава 1 (ст. 1–25)")
+    print("📚 Вопросы — 1 Петра (Введение + Глава 1, ст. 1–25)")
     print("⚔️ Режим битвы включён")
-    print("⏱ Реальный таймер на вопросы активен")
+    print("🔁 Режим повторения ошибок включён")
     print("📊 Статистика сохраняется в MongoDB")
     print("🧹 Автоочистка битв активна (каждые 5 мин)")
 
@@ -999,4 +1072,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
