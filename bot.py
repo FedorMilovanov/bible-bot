@@ -186,9 +186,9 @@ async def back_to_main(update: Update, context):
 
 async def choose_level(update, context, is_callback=False):
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏛 Исторический контекст",      callback_data="historical_menu")],
         [InlineKeyboardButton("📖 1 Петра — Глава 1",          callback_data="chapter_1_menu")],
         [InlineKeyboardButton("📖 Глава 2 — скоро...",         callback_data="coming_soon")],
-        [InlineKeyboardButton("🏛 Исторический контекст",      callback_data="historical_menu")],
         [InlineKeyboardButton("⬅️ Назад",                       callback_data="back_to_main")],
     ])
     text = (
