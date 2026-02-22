@@ -143,16 +143,26 @@ def _main_keyboard():
 
 async def start(update: Update, context):
     user = update.effective_user
-    init_user_stats(user.id, user.username, user.first_name)
+    is_new = init_user_stats(user.id, user.username, user.first_name)
+
+    # Сбрасываем ReplyKeyboard если осталась от теста
+    await update.message.reply_text("↩️", reply_markup=ReplyKeyboardRemove())
+
+    name = user.first_name or "друг"
+
+    welcome = (
+        f"👋 *Добро пожаловать, {name}!*\n\n"
+        "Здесь мы изучаем *1-е послание Петра* — "
+        "один из ключевых текстов Нового Завета.\n\n"
+        "📖 *Глава 1* — основной тест по тексту\n"
+        "🔬 *Лингвистика* — глубокий разбор слов и смыслов\n"
+        "🏛 *Исторический контекст* — Нерон, география, введение\n"
+        "⚔️ *Битвы* — соревнование с другими игроками\n\n"
+        "Нажми на кнопку ниже, чтобы начать! 👇"
+    )
+
     await update.message.reply_text(
-        "📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
-        "*Тема:* 1 Петра — Глава 1 (ст. 1–25)\n\n"
-        "📚 *Категории тестов:*\n"
-        "🟢 Основы • 🟡 Контекст • 🔴 Богословие\n"
-        "🙏 Применение • 🔬 Лингвистика (3 части)\n"
-        "👑 Правление Нерона • 🌍 География\n\n"
-        "⚔️ *Новый режим:* Битва с другими игроками!\n\n"
-        "Выбери действие:",
+        welcome,
         reply_markup=_main_keyboard(),
         parse_mode="Markdown",
     )
@@ -162,7 +172,9 @@ async def back_to_main(update: Update, context):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\nВыбери действие:",
+        "📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
+        "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
+        "Выбери действие:",
         reply_markup=_main_keyboard(),
         parse_mode="Markdown",
     )
@@ -175,6 +187,7 @@ async def back_to_main(update: Update, context):
 async def choose_level(update, context, is_callback=False):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 1 Петра — Глава 1",          callback_data="chapter_1_menu")],
+        [InlineKeyboardButton("📖 Глава 2 — скоро...",         callback_data="coming_soon")],
         [InlineKeyboardButton("🏛 Исторический контекст",      callback_data="historical_menu")],
         [InlineKeyboardButton("⬅️ Назад",                       callback_data="back_to_main")],
     ])
@@ -229,20 +242,19 @@ async def historical_menu(update: Update, context):
         [InlineKeyboardButton("📜 Введение: Авторство ч.1 (2 балла)",    callback_data="level_intro1")],
         [InlineKeyboardButton("📜 Введение: Авторство ч.2 (2 балла)",    callback_data="level_intro2")],
         [InlineKeyboardButton("📜 Введение: Структура и цель (2 балла)", callback_data="level_intro3")],
+        [InlineKeyboardButton("━━━━━━━━━━━━━━━",                          callback_data="coming_soon")],
         [InlineKeyboardButton("👑 Правление Нерона (2 балла)",           callback_data="level_nero")],
         [InlineKeyboardButton("🌍 География земли (2 балла)",            callback_data="level_geography")],
         [InlineKeyboardButton("⬅️ Назад",                                 callback_data="back_to_main")],
     ])
     await query.edit_message_text(
         "🏛 *ИСТОРИЧЕСКИЙ КОНТЕКСТ*\n\n"
-        "📜 *Введение в книгу:*\n"
+        "📜 *Введение в книгу* — основа:\n"
         "Авторство, датировка, структура и цели послания\n\n"
-        "👑 *Правление Нерона:*\n"
-        "Исторический фон, гонения на христиан\n\n"
-        "🌍 *География:*\n"
-        "Провинции и города малой Азии\n\n"
-        "_Эти тесты — для углублённого изучения контекста._\n"
-        "_Баллы за них не влияют на общий рейтинг._",
+        "➕ *Дополнительно:*\n"
+        "👑 Правление Нерона — исторический фон, гонения\n"
+        "🌍 География — провинции и города малой Азии\n\n"
+        "_Баллы за эти тесты не влияют на общий рейтинг._",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -624,6 +636,8 @@ async def button_handler(update: Update, context):
         await show_my_stats(query)
     elif query.data == "historical_menu":
         await historical_menu(update, context)
+    elif query.data == "coming_soon":
+        await query.answer("🚧 Глава 2 в разработке — следи за обновлениями!", show_alert=True)
 
 
 async def category_leaderboard_handler(update: Update, context):
@@ -1169,7 +1183,7 @@ def main():
     app.add_handler(CallbackQueryHandler(historical_menu,   pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(
         button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu)$",
+        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu|coming_soon)$",
     ))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
@@ -1192,3 +1206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
