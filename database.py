@@ -1,8 +1,10 @@
 # Работа с MongoDB
 
 import os
+import time
+import uuid
 from datetime import datetime
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING
 
 # --- ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ---
 MONGO_URL = os.getenv('MONGO_URL')
@@ -14,16 +16,194 @@ if MONGO_URL:
         collection = db["leaderboard"]
         battles_collection = db["battles"]
         questions_stats_collection = db["questions_stats"]
+        quiz_sessions_collection = db["quiz_sessions"]
+        reports_collection = db["reports"]
     except Exception as e:
         print(f"Ошибка подключения к БД: {e}")
         collection = None
         battles_collection = None
         questions_stats_collection = None
+        quiz_sessions_collection = None
+        reports_collection = None
 else:
     print("⚠️ ВНИМАНИЕ: Не задана переменная MONGO_URL.")
     collection = None
     battles_collection = None
     questions_stats_collection = None
+    quiz_sessions_collection = None
+    reports_collection = None
+
+# --- TTL INDEX для quiz_sessions (авто-удаление через 6 часов) ---
+def _ensure_quiz_sessions_ttl():
+    """Создаёт TTL-индекс по полю updated_at_dt (6 часов = 21600 секунд)."""
+    if quiz_sessions_collection is None:
+        return
+    try:
+        quiz_sessions_collection.create_index(
+            [("updated_at_dt", ASCENDING)],
+            expireAfterSeconds=21600,
+            name="ttl_updated_at",
+            background=True,
+        )
+    except Exception as e:
+        print(f"TTL index warning: {e}")
+
+_ensure_quiz_sessions_ttl()
+
+
+# ═══════════════════════════════════════════════
+# QUIZ SESSIONS — CRUD
+# ═══════════════════════════════════════════════
+
+def create_quiz_session(user_id: int, mode: str, question_ids: list,
+                        questions_data: list,
+                        level_key: str = None, level_name: str = None,
+                        time_limit: int = None) -> str:
+    """
+    Создаёт новую сессию теста в MongoDB.
+    questions_data — полные объекты вопросов (для восстановления).
+    Возвращает session_id (str uuid).
+    """
+    if quiz_sessions_collection is None:
+        return ""
+    session_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    doc = {
+        "_id": session_id,
+        "user_id": str(user_id),
+        "session_id": session_id,
+        "status": "in_progress",
+        "mode": mode,
+        "level_key": level_key,
+        "level_name": level_name,
+        "question_ids": question_ids,
+        "questions_data": questions_data,
+        "current_index": 0,
+        "correct_count": 0,
+        "answered_questions": [],
+        "time_limit": time_limit,
+        "question_sent_at": None,
+        "start_time": time.time(),
+        "started_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "updated_at_dt": now,
+    }
+    try:
+        quiz_sessions_collection.insert_one(doc)
+    except Exception as e:
+        print(f"create_quiz_session error: {e}")
+    return session_id
+
+
+def get_active_quiz_session(user_id: int):
+    """Возвращает активную (in_progress) сессию пользователя или None."""
+    if quiz_sessions_collection is None:
+        return None
+    try:
+        return quiz_sessions_collection.find_one(
+            {"user_id": str(user_id), "status": "in_progress"}
+        )
+    except Exception:
+        return None
+
+
+def get_quiz_session(session_id: str):
+    """Возвращает сессию по session_id."""
+    if quiz_sessions_collection is None:
+        return None
+    try:
+        return quiz_sessions_collection.find_one({"_id": session_id})
+    except Exception:
+        return None
+
+
+def update_quiz_session(session_id: str, fields: dict):
+    """Обновляет произвольные поля сессии + проставляет updated_at."""
+    if quiz_sessions_collection is None:
+        return
+    now = datetime.utcnow()
+    fields["updated_at"] = now.isoformat()
+    fields["updated_at_dt"] = now
+    try:
+        quiz_sessions_collection.update_one(
+            {"_id": session_id},
+            {"$set": fields}
+        )
+    except Exception as e:
+        print(f"update_quiz_session error: {e}")
+
+
+def advance_quiz_session(session_id: str, qid: str, user_answer: str,
+                         is_correct: bool, question_obj: dict):
+    """
+    Записывает ответ на текущий вопрос и сдвигает current_index.
+    Возвращает обновлённый документ сессии.
+    """
+    if quiz_sessions_collection is None:
+        return None
+    now = datetime.utcnow()
+    answer_record = {
+        "qid": qid,
+        "user_answer": user_answer,
+        "is_correct": is_correct,
+        "question_obj": question_obj,
+        "ts": now.isoformat(),
+    }
+    try:
+        quiz_sessions_collection.update_one(
+            {"_id": session_id},
+            {
+                "$inc": {
+                    "current_index": 1,
+                    "correct_count": 1 if is_correct else 0,
+                },
+                "$push": {"answered_questions": answer_record},
+                "$set": {
+                    "updated_at": now.isoformat(),
+                    "updated_at_dt": now,
+                },
+            }
+        )
+        return quiz_sessions_collection.find_one({"_id": session_id})
+    except Exception as e:
+        print(f"advance_quiz_session error: {e}")
+        return None
+
+
+def set_question_sent_at(session_id: str, ts: float = None):
+    """Записывает время отправки вопроса (unix timestamp)."""
+    update_quiz_session(session_id, {"question_sent_at": ts or time.time()})
+
+
+def finish_quiz_session(session_id: str):
+    """Помечает сессию как завершённую."""
+    update_quiz_session(session_id, {"status": "finished"})
+
+
+def cancel_quiz_session(session_id: str):
+    """Помечает сессию как отменённую."""
+    update_quiz_session(session_id, {"status": "cancelled"})
+
+
+def cancel_active_quiz_session(user_id: int):
+    """Отменяет активную сессию пользователя (если есть)."""
+    session = get_active_quiz_session(user_id)
+    if session:
+        cancel_quiz_session(session["_id"])
+
+
+def is_question_timed_out(session: dict) -> bool:
+    """
+    Проверяет, истёк ли таймер текущего вопроса.
+    Используется после рестарта вместо asyncio-задачи.
+    """
+    time_limit = session.get("time_limit")
+    if not time_limit:
+        return False
+    sent_at = session.get("question_sent_at")
+    if not sent_at:
+        return False
+    return (time.time() - sent_at) >= time_limit
 
 # --- ФУНКЦИИ БАЗЫ ДАННЫХ ---
 
@@ -582,3 +762,74 @@ def get_context_leaderboard(limit=10):
         return users[:limit]
     except Exception:
         return []
+
+# ═══════════════════════════════════════════════
+# REPORTS — CRUD + RATE LIMIT
+# ═══════════════════════════════════════════════
+
+# In-memory rate limit: {user_id: last_report_timestamp}
+_report_last_sent: dict = {}
+REPORT_COOLDOWN_SECONDS = 60
+
+
+def can_submit_report(user_id: int) -> bool:
+    """Проверяет rate limit: не чаще 1 репорта в 60 секунд."""
+    last = _report_last_sent.get(user_id, 0)
+    return (time.time() - last) >= REPORT_COOLDOWN_SECONDS
+
+
+def seconds_until_next_report(user_id: int) -> int:
+    """Сколько секунд осталось до разрешения нового репорта."""
+    last = _report_last_sent.get(user_id, 0)
+    remaining = REPORT_COOLDOWN_SECONDS - (time.time() - last)
+    return max(0, int(remaining))
+
+
+def insert_report(user_id: int, username: str, first_name: str,
+                  report_type: str, text: str,
+                  context: dict = None) -> str:
+    """
+    Вставляет репорт в коллекцию reports.
+    report_type: "bug" | "idea" | "question"
+    context: dict с полями mode, level_key, question_index и т.п. (опционально)
+    Возвращает report_id (str uuid).
+    """
+    report_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    doc = {
+        "_id": report_id,
+        "report_id": report_id,
+        "type": report_type,
+        "user_id": str(user_id),
+        "username": username or "",
+        "first_name": first_name or "",
+        "text": text,
+        "created_at": now.isoformat(),
+        "created_at_dt": now,
+        "context": context or {},
+        "admin_delivered": False,
+    }
+
+    if reports_collection is not None:
+        try:
+            reports_collection.insert_one(doc)
+        except Exception as e:
+            print(f"insert_report error: {e}")
+
+    # Обновляем rate limit в любом случае
+    _report_last_sent[user_id] = time.time()
+    return report_id
+
+
+def mark_report_delivered(report_id: str):
+    """Помечает репорт как доставленный админу."""
+    if reports_collection is None:
+        return
+    try:
+        reports_collection.update_one(
+            {"_id": report_id},
+            {"$set": {"admin_delivered": True}}
+        )
+    except Exception as e:
+        print(f"mark_report_delivered error: {e}")
