@@ -26,6 +26,7 @@ from database import (
     get_user_position, get_leaderboard_page, get_total_users,
     format_time, calculate_days_playing, calculate_accuracy,
     record_question_stat, get_question_stats,
+    get_points_to_next_place, get_category_leaderboard,
 )
 from questions import (
     easy_questions, easy_questions_v17_25,
@@ -80,19 +81,19 @@ LEVEL_CONFIG = {
     },
     "level_linguistics_ch1": {
         "pool":  linguistics_ch1_questions,
-        "name":  "🔬 Лингвистика ч.1 (ст. 1–16)",
+        "name":  "🔬 Лингвистика: Избранные и странники (ч.1)",
         "key":   "linguistics_ch1",
         "points_per_q": 3,
     },
     "level_linguistics_ch1_2": {
         "pool":  linguistics_ch1_questions_2,
-        "name":  "🔬 Лингвистика ч.2 (ст. 1–16)",
+        "name":  "🔬 Лингвистика: Живая надежда (ч.2)",
         "key":   "linguistics_ch1_2",
         "points_per_q": 3,
     },
     "level_linguistics_ch1_3": {
         "pool":  linguistics_v17_25_questions,
-        "name":  "🔬 Лингвистика ч.3 (ст. 17–25)",
+        "name":  "🔬 Лингвистика: Искупление и истина (ч.3)",
         "key":   "linguistics_ch1_3",
         "points_per_q": 3,
     },
@@ -131,11 +132,12 @@ pending_battles: dict = {}
 
 def _main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 О боте",           callback_data="about")],
-        [InlineKeyboardButton("🎯 Начать тест",      callback_data="start_test")],
-        [InlineKeyboardButton("⚔️ Режим битвы",       callback_data="battle_menu")],
-        [InlineKeyboardButton("🏆 Таблица лидеров",  callback_data="leaderboard")],
-        [InlineKeyboardButton("📊 Моя статистика",   callback_data="my_stats")],
+        [InlineKeyboardButton("📖 О боте",                callback_data="about")],
+        [InlineKeyboardButton("🎯 Начать тест",           callback_data="start_test")],
+        [InlineKeyboardButton("🏛 Исторический контекст", callback_data="historical_menu")],
+        [InlineKeyboardButton("⚔️ Режим битвы",            callback_data="battle_menu")],
+        [InlineKeyboardButton("🏆 Таблица лидеров",       callback_data="leaderboard")],
+        [InlineKeyboardButton("📊 Моя статистика",        callback_data="my_stats")],
     ])
 
 
@@ -173,8 +175,7 @@ async def back_to_main(update: Update, context):
 async def choose_level(update, context, is_callback=False):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 1 Петра — Глава 1",          callback_data="chapter_1_menu")],
-        [InlineKeyboardButton("👑 Правление Нерона (2 балла)", callback_data="level_nero")],
-        [InlineKeyboardButton("🌍 География земли (2 балла)",  callback_data="level_geography")],
+        [InlineKeyboardButton("🏛 Исторический контекст",      callback_data="historical_menu")],
         [InlineKeyboardButton("⬅️ Назад",                       callback_data="back_to_main")],
     ])
     text = (
@@ -193,32 +194,55 @@ async def chapter_1_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 Введение: Авторство ч.1 (2 балла)",      callback_data="level_intro1")],
-        [InlineKeyboardButton("📜 Введение: Авторство ч.2 (2 балла)",      callback_data="level_intro2")],
-        [InlineKeyboardButton("📜 Введение: Структура и цель (2 балла)",   callback_data="level_intro3")],
+
         [InlineKeyboardButton("🟢 Основы (1 балл)",                        callback_data="level_easy")],
         [InlineKeyboardButton("🟡 Контекст (2 балла)",                     callback_data="level_medium")],
         [InlineKeyboardButton("🔴 Богословие (3 балла)",                   callback_data="level_hard")],
         [InlineKeyboardButton("🙏 Применение (2 балла)",                   callback_data="level_practical_ch1")],
-        [InlineKeyboardButton("🔬 Лингвистический разбор — ч.1 (3 балла)", callback_data="level_linguistics_ch1")],
-        [InlineKeyboardButton("🔬 Лингвистический разбор — ч.2 (3 балла)", callback_data="level_linguistics_ch1_2")],
-        [InlineKeyboardButton("🔬 Лингвистический разбор — ч.3 (3 балла)", callback_data="level_linguistics_ch1_3")],
-        [InlineKeyboardButton("👑 История: Нерон (2 балла)",               callback_data="level_nero")],
-        [InlineKeyboardButton("🌍 История: География (2 балла)",           callback_data="level_geography")],
+        [InlineKeyboardButton("🔬 Лингвистика: Избранные и странники ч.1 (3 балла)", callback_data="level_linguistics_ch1")],
+        [InlineKeyboardButton("🔬 Лингвистика: Живая надежда ч.2 (3 балла)", callback_data="level_linguistics_ch1_2")],
+        [InlineKeyboardButton("🔬 Лингвистика: Искупление и истина ч.3 (3 балла)", callback_data="level_linguistics_ch1_3")],
+
         [InlineKeyboardButton("⬅️ Назад",                                   callback_data="start_test")],
     ])
     await query.edit_message_text(
         "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
-        "📜 *Введение* — авторство, структура, цель\n"
+        
         "🟢 *Основы* — факты, даты, адресаты\n"
         "🟡 *Контекст* — исторический фон, символы\n"
         "🔴 *Богословие* — греческий, доктрины, Троица\n"
         "🙏 *Применение* — практические вопросы\n"
-        "🔬 *Лингвистика ч.1* — πρόγνωσις, παρεπίδημος, φρουρέω...\n"
-        "🔬 *Лингвистика ч.2* — ἁγιασμός, ζῶσα ἐλπίς, λόγος...\n"
-        "🔬 *Лингвистика ч.3* — λυτρόω, ἀναστρέφω, ῥῆμα...\n"
+        "🔬 *Лингвистика ч.1* — прогноз, диаспора, защита...\n"
+        "🔬 *Лингвистика ч.2* — святость, логос, рождение свыше...\n"
+        "🔬 *Лингвистика ч.3* — выкуп, образ жизни, глагол...\n"
         "👑 *Нерон* — правление и гонения\n"
         "🌍 *География* — провинции и города",
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+
+
+async def historical_menu(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📜 Введение: Авторство ч.1 (2 балла)",    callback_data="level_intro1")],
+        [InlineKeyboardButton("📜 Введение: Авторство ч.2 (2 балла)",    callback_data="level_intro2")],
+        [InlineKeyboardButton("📜 Введение: Структура и цель (2 балла)", callback_data="level_intro3")],
+        [InlineKeyboardButton("👑 Правление Нерона (2 балла)",           callback_data="level_nero")],
+        [InlineKeyboardButton("🌍 География земли (2 балла)",            callback_data="level_geography")],
+        [InlineKeyboardButton("⬅️ Назад",                                 callback_data="back_to_main")],
+    ])
+    await query.edit_message_text(
+        "🏛 *ИСТОРИЧЕСКИЙ КОНТЕКСТ*\n\n"
+        "📜 *Введение в книгу:*\n"
+        "Авторство, датировка, структура и цели послания\n\n"
+        "👑 *Правление Нерона:*\n"
+        "Исторический фон, гонения на христиан\n\n"
+        "🌍 *География:*\n"
+        "Провинции и города малой Азии\n\n"
+        "_Эти тесты — для углублённого изучения контекста._\n"
+        "_Баллы за них не влияют на общий рейтинг._",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -572,9 +596,9 @@ async def button_handler(update: Update, context):
             "🟡 Контекст (1:1–25) — 2 балла\n"
             "🔴 Богословие (1:1–25) — 3 балла\n"
             "🙏 Применение (1:1–25) — 2 балла\n"
-            "🔬 Лингвистика ч.1 — 3 балла\n"
-            "🔬 Лингвистика ч.2 — 3 балла\n"
-            "🔬 Лингвистика ч.3 (ст. 17–25) — 3 балла\n"
+            "🔬 Лингвистика: Избранные и странники ч.1 — 3 балла\n"
+            "🔬 Лингвистика: Живая надежда ч.2 — 3 балла\n"
+            "🔬 Лингвистика: Искупление и истина ч.3 — 3 балла\n"
             "👑 Нерон — 2 балла\n"
             "🌍 География — 2 балла\n\n"
             "*⚔️ РЕЖИМ БИТВЫ:*\n"
@@ -598,6 +622,16 @@ async def button_handler(update: Update, context):
         await show_general_leaderboard(query, 0)
     elif query.data == "my_stats":
         await show_my_stats(query)
+    elif query.data == "historical_menu":
+        await historical_menu(update, context)
+
+
+async def category_leaderboard_handler(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    category_key = query.data.replace("cat_lb_", "")
+    await show_category_leaderboard(query, category_key)
+
 
 
 # ═══════════════════════════════════════════════
@@ -976,17 +1010,46 @@ async def show_my_stats(query):
 async def show_general_leaderboard(query, page=0):
     users       = get_leaderboard_page(page)
     total_users = get_total_users()
+    user_id     = query.from_user.id
 
     if not users:
         text = "🏆 *ТАБЛИЦА ЛИДЕРОВ*\n\nПока никто не проходил тесты.\nБудь первым! 🚀"
     else:
-        text       = f"🏆 *ТАБЛИЦА ЛИДЕРОВ* (Стр. {page + 1})\n\n"
+        text = f"🏆 *ТАБЛИЦА ЛИДЕРОВ* (Стр. {page + 1} из {(total_users - 1) // 10 + 1}) • Всего: {total_users}\n"
         start_rank = page * 10 + 1
+
         for i, entry in enumerate(users, start_rank):
-            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, "")
-            name  = entry.get("first_name", "Unknown")[:15]
-            text += f"{medal} *{i}.* {name}\n"
-            text += f"   💎 {entry.get('total_points',0)} • 🎯 {entry.get('total_tests',0)} тестов • ⚔️ {entry.get('battles_won',0)} побед\n\n"
+            name   = entry.get("first_name", "Unknown")[:15]
+            pts    = entry.get("total_points", 0)
+            tests  = entry.get("total_tests", 0)
+            wins   = entry.get("battles_won", 0)
+
+            if i == 1:
+                text += f"\n🥇 *{name}*\n"
+                text += f"    💎 {pts} очков • 🎯 {tests} тестов • ⚔️ {wins} побед\n"
+            elif i == 2:
+                text += f"\n🥈 *{name}*\n"
+                text += f"    💎 {pts} очков • 🎯 {tests} тестов • ⚔️ {wins} побед\n"
+            elif i == 3:
+                text += f"\n🥉 *{name}*\n"
+                text += f"    💎 {pts} очков • 🎯 {tests} тестов • ⚔️ {wins} побед\n"
+            else:
+                if i == 4:
+                    text += "\n━━━━━━━━━━━━━━━━━━━━\n"
+                text += f"*{i}.* {name} — 💎 {pts}\n"
+
+    # Карточка "Я в рейтинге"
+    position, my_entry = get_user_position(user_id)
+    if my_entry and position:
+        my_pts    = my_entry.get("total_points", 0)
+        gap       = get_points_to_next_place(user_id)
+        text += "\n━━━━━━━━━━━━━━━━━━━━\n"
+        text += f"👤 *Ваше место:* #{position} из {total_users}\n"
+        text += f"💎 У вас: *{my_pts} очков*\n"
+        if gap is not None:
+            text += f"🎯 До следующего места: *+{gap} очков*"
+        else:
+            text += "🏆 Вы на первом месте!"
 
     nav = []
     if page > 0:
@@ -997,10 +1060,56 @@ async def show_general_leaderboard(query, page=0):
     keyboard = []
     if nav:
         keyboard.append(nav)
+    keyboard.append([
+        InlineKeyboardButton("🔬 Лингвисты",  callback_data="cat_lb_linguistics_ch1"),
+        InlineKeyboardButton("🔴 Богословы",  callback_data="cat_lb_hard"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("👑 Нерон",      callback_data="cat_lb_nero"),
+        InlineKeyboardButton("🌍 География",  callback_data="cat_lb_geography"),
+    ])
     keyboard.append([InlineKeyboardButton("🎯 Начать тест", callback_data="start_test")])
     keyboard.append([InlineKeyboardButton("⬅️ В меню",      callback_data="back_to_main")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def show_category_leaderboard(query, category_key):
+    CATEGORY_NAMES = {
+        "easy":            "🟢 Основы",
+        "medium":          "🟡 Контекст",
+        "hard":            "🔴 Богословие",
+        "nero":            "👑 Нерон",
+        "geography":       "🌍 География",
+        "practical_ch1":   "🙏 Применение",
+        "linguistics_ch1": "🔬 Лингвистика",
+        "intro1":          "📜 Введение ч.1",
+        "intro2":          "📜 Введение ч.2",
+        "intro3":          "📜 Введение ч.3",
+    }
+    cat_name = CATEGORY_NAMES.get(category_key, category_key)
+    users    = get_category_leaderboard(category_key, limit=10)
+
+    if not users:
+        text = f"{cat_name}\n\nПока никто не проходил этот тест."
+    else:
+        text = f"🏆 *РЕЙТИНГ: {cat_name}*\n_(по числу верных ответов)_\n\n"
+        for i, entry in enumerate(users, 1):
+            name    = entry.get("first_name", "Unknown")[:15]
+            correct = entry.get(f"{category_key}_correct", 0)
+            total   = entry.get(f"{category_key}_total", 0)
+            best    = entry.get(f"{category_key}_best_score", 0)
+            acc     = calculate_accuracy(correct, total)
+            medal   = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+            text   += f"{medal} *{name}* — {correct} верных ({acc}%) • лучший: {best}/10\n"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Общий рейтинг", callback_data="leaderboard")],
+        [InlineKeyboardButton("⬅️ В меню",         callback_data="back_to_main")],
+    ])
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
 
 
 # ═══════════════════════════════════════════════
@@ -1056,12 +1165,14 @@ def main():
     app.add_handler(CallbackQueryHandler(cancel_battle,  pattern="^cancel_battle_"))
 
     # Общие
-    app.add_handler(CallbackQueryHandler(chapter_1_menu, pattern="^chapter_1_menu$"))
+    app.add_handler(CallbackQueryHandler(chapter_1_menu,   pattern="^chapter_1_menu$"))
+    app.add_handler(CallbackQueryHandler(historical_menu,   pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(
         button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+)$",
+        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|historical_menu)$",
     ))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
+    app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
 
     # JobQueue — подключаем только если доступен (требует pip install python-telegram-bot[job-queue])
     if app.job_queue is not None:
@@ -1081,4 +1192,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
