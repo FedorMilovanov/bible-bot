@@ -2455,13 +2455,16 @@ async def report_confirm(update: Update, context):
 
     # Карточка для админа
     label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
-    uname = f"@{user.username}" if user.username else f"id={user_id}"
+    # Используем plain имя без @ для безопасности — Telegram может парсить @username_с_подчёркиванием как курсив
+    uname_display = f"@{user.username}" if user.username else f"id={user_id}"
+    uname_safe = uname_display.replace("_", "\\_")  # экранируем для Markdown в тексте карточки
+    uname_plain = uname_display  # без parse_mode (caption фото)
     ctx_str = ", ".join(f"{k}={v}" for k, v in ctx.items() if v is not None) or "нет"
     from datetime import datetime as _dt
     ts = _dt.now().strftime("%Y-%m-%d %H:%M")
     admin_card = (
         f"{label}\n"
-        f"От: {uname} (id={user_id})\n"
+        f"От: {uname_safe} (id={user_id})\n"
         f"Время: {ts}\n"
         f"Контекст: {ctx_str}\n\n"
         f"{draft['text'][:1500]}"
@@ -2476,8 +2479,10 @@ async def report_confirm(update: Update, context):
             await context.bot.send_photo(
                 chat_id=ADMIN_USER_ID,
                 photo=draft["photo_file_id"],
-                caption=f"{label} от {uname} • {ts}",
+                # caption без parse_mode — plain text, нет риска Markdown-ломки
+                caption=f"{label} от {uname_plain} • {ts}",
             )
+        # Карточку тоже без parse_mode во избежание проблем с именами
         await context.bot.send_message(
             chat_id=ADMIN_USER_ID,
             text=_truncate(admin_card),
