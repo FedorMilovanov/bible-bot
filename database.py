@@ -13,14 +13,17 @@ if MONGO_URL:
         db = cluster["bible_bot_db"]
         collection = db["leaderboard"]
         battles_collection = db["battles"]
+        questions_stats_collection = db["questions_stats"]
     except Exception as e:
         print(f"Ошибка подключения к БД: {e}")
         collection = None
         battles_collection = None
+        questions_stats_collection = None
 else:
     print("⚠️ ВНИМАНИЕ: Не задана переменная MONGO_URL.")
     collection = None
     battles_collection = None
+    questions_stats_collection = None
 
 # --- ФУНКЦИИ БАЗЫ ДАННЫХ ---
 
@@ -65,6 +68,9 @@ def init_user_stats(user_id, username, first_name):
             "linguistics_ch1_attempts": 0, "linguistics_ch1_correct": 0, "linguistics_ch1_total": 0, "linguistics_ch1_best_score": 0,
             "linguistics_ch1_2_attempts": 0, "linguistics_ch1_2_correct": 0, "linguistics_ch1_2_total": 0, "linguistics_ch1_2_best_score": 0,
             "linguistics_ch1_3_attempts": 0, "linguistics_ch1_3_correct": 0, "linguistics_ch1_3_total": 0, "linguistics_ch1_3_best_score": 0,
+            "intro1_attempts": 0, "intro1_correct": 0, "intro1_total": 0, "intro1_best_score": 0,
+            "intro2_attempts": 0, "intro2_correct": 0, "intro2_total": 0, "intro2_best_score": 0,
+            "intro3_attempts": 0, "intro3_correct": 0, "intro3_total": 0, "intro3_best_score": 0,
             # Статистика битв
             "battles_played": 0,
             "battles_won": 0,
@@ -78,7 +84,7 @@ def add_to_leaderboard(user_id, username, first_name, level_key, score, total, t
     if collection is None:
         return
 
-    points_per_question = {"easy": 1, "medium": 2, "hard": 3, "nero": 2, "geography": 2, "practical_ch1": 2, "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3}
+    points_per_question = {"easy": 1, "medium": 2, "hard": 3, "nero": 2, "geography": 2, "practical_ch1": 2, "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3, "intro1": 2, "intro2": 2, "intro3": 2}
     earned_points = score * points_per_question.get(level_key, 1)
     user_id_str = str(user_id)
     
@@ -185,3 +191,63 @@ def calculate_accuracy(correct, total):
     if total == 0:
         return 0
     return round((correct / total) * 100)
+
+
+def record_question_stat(question_id: str, level_key: str, is_correct: bool, time_seconds: float):
+    """
+    Записывает результат ответа на конкретный вопрос.
+    question_id — уникальный идентификатор вопроса (например, хэш текста или поле 'id').
+    """
+    if questions_stats_collection is None:
+        return
+    try:
+        doc = questions_stats_collection.find_one({"_id": question_id})
+        if doc:
+            total      = doc.get("total_answers", 0) + 1
+            correct    = doc.get("correct_answers", 0) + (1 if is_correct else 0)
+            prev_avg   = doc.get("avg_time_seconds", time_seconds)
+            # Скользящее среднее времени
+            avg_time   = round(prev_avg + (time_seconds - prev_avg) / total, 2)
+            # Считаем какие дистракторы выбирали (если неверно — в wrong_choices)
+            questions_stats_collection.update_one(
+                {"_id": question_id},
+                {"$set": {
+                    "total_answers":   total,
+                    "correct_answers": correct,
+                    "accuracy_pct":    round(correct / total * 100),
+                    "avg_time_seconds": avg_time,
+                    "level_key":       level_key,
+                    "last_updated":    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }}
+            )
+        else:
+            questions_stats_collection.insert_one({
+                "_id":             question_id,
+                "level_key":       level_key,
+                "total_answers":   1,
+                "correct_answers": 1 if is_correct else 0,
+                "accuracy_pct":    100 if is_correct else 0,
+                "avg_time_seconds": round(time_seconds, 2),
+                "last_updated":    datetime.now().strftime("%Y-%m-%d %H:%M"),
+            })
+    except Exception as e:
+        print(f"Ошибка записи статистики вопроса: {e}")
+
+
+def get_question_stats(level_key: str = None, limit: int = 20):
+    """
+    Возвращает статистику вопросов.
+    Если level_key задан — фильтрует по категории.
+    Сортирует по accuracy_pct (сначала сложные).
+    """
+    if questions_stats_collection is None:
+        return []
+    try:
+        query  = {"level_key": level_key} if level_key else {}
+        return list(
+            questions_stats_collection.find(query)
+            .sort("accuracy_pct", 1)  # сначала самые сложные
+            .limit(limit)
+        )
+    except Exception:
+        return []
