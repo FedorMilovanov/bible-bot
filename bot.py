@@ -605,6 +605,12 @@ async def button_handler(update: Update, context):
 # ═══════════════════════════════════════════════
 
 async def show_battle_menu(query):
+    # Очищаем устаревшие битвы (старше 10 минут) при каждом открытии меню
+    cutoff = time.time() - 600
+    stale  = [bid for bid, b in list(pending_battles.items()) if b.get("created_at", 0) < cutoff]
+    for bid in stale:
+        del pending_battles[bid]
+
     available = [
         (bid, b["creator_name"])
         for bid, b in pending_battles.items()
@@ -1057,18 +1063,22 @@ def main():
     ))
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
 
-    # ✅ Автоматическая очистка устаревших битв каждые 5 минут
-    app.job_queue.run_repeating(cleanup_old_battles, interval=300, first=300)
+    # JobQueue — подключаем только если доступен (требует pip install python-telegram-bot[job-queue])
+    if app.job_queue is not None:
+        app.job_queue.run_repeating(cleanup_old_battles, interval=300, first=300)
+        print("🧹 Автоочистка битв активна (JobQueue)")
+    else:
+        print("⚠️  JobQueue недоступен — очистка битв встроена в show_battle_menu")
 
     print("🤖 Бот запущен!")
     print("📚 Вопросы — 1 Петра (Введение + Глава 1, ст. 1–25)")
     print("⚔️ Режим битвы включён")
     print("🔁 Режим повторения ошибок включён")
     print("📊 Статистика сохраняется в MongoDB")
-    print("🧹 Автоочистка битв активна (каждые 5 мин)")
 
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+
