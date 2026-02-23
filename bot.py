@@ -629,7 +629,10 @@ async def send_question(bot, user_id):
     else:
         buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
 
-    buttons.append([InlineKeyboardButton("❌ Выйти в меню", callback_data="cancel_quiz")])
+    buttons.append([
+        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
+    ])
     keyboard = InlineKeyboardMarkup(buttons)
     progress = build_progress_bar(q_num, total)
     text = f"*Вопрос {q_num + 1}/{total}* {progress}\n\n{q['question']}{options_text}"
@@ -707,16 +710,30 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
         data["current_question"] += 1
 
         qmid, qcid = data.get("quiz_message_id"), data.get("quiz_chat_id")
+        timeout_text = f"⏱ *Время вышло ({timeout_seconds} сек)*\n✅ Правильный ответ: *{correct_text}*"
         if qmid and qcid:
             try:
                 await bot.edit_message_text(
                     chat_id=qcid, message_id=qmid,
-                    text=f"⏱ *Время вышло ({timeout_seconds} сек)*\n✅ Правильный ответ: *{correct_text}*",
+                    text=timeout_text,
                     parse_mode="Markdown",
                 )
             except Exception:
+                # edit не удался — шлём новым сообщением
+                try:
+                    await bot.send_message(chat_id=qcid, text=timeout_text, parse_mode="Markdown")
+                except Exception:
+                    pass
+            # Сбрасываем quiz_message_id, чтобы следующий send_question
+            # создал свежее сообщение с кнопками, а не редактировал этот пузырь
+            data["quiz_message_id"] = None
+        elif qcid:
+            try:
+                await bot.send_message(chat_id=qcid, text=timeout_text, parse_mode="Markdown")
+            except Exception:
                 pass
-            await asyncio.sleep(FEEDBACK_DELAY_WRONG)
+        # Пауза всегда — вне зависимости от наличия qmid
+        await asyncio.sleep(FEEDBACK_DELAY_WRONG)
 
         is_challenge = data.get("is_challenge", False)
         if data["current_question"] < len(data["questions"]):
@@ -935,19 +952,25 @@ async def show_results(bot, user_id):
                 )
             except Exception:
                 # Совсем не вышло — шлём новым сообщением
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=result_text,
+                        reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    logger.error("show_results: не удалось отправить результаты", exc_info=True)
+        else:
+            try:
                 await bot.send_message(
                     chat_id=chat_id,
                     text=result_text,
                     reply_markup=InlineKeyboardMarkup(keyboard_rows),
                     parse_mode="Markdown",
                 )
-        else:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=result_text,
-                reply_markup=InlineKeyboardMarkup(keyboard_rows),
-                parse_mode="Markdown",
-            )
+            except Exception:
+                logger.error("show_results: не удалось отправить результаты (no quiz_mid)", exc_info=True)
 
     if not wrong and not photo_sent:
         # Дополнительно отмечаем идеальный результат только если нет картинки
@@ -2306,7 +2329,10 @@ async def send_challenge_question(bot, user_id):
     else:
         buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
 
-    buttons.append([InlineKeyboardButton("❌ Выйти в меню", callback_data="cancel_quiz")])
+    buttons.append([
+        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
+    ])
     keyboard = InlineKeyboardMarkup(buttons)
     text = (
         f"{data['level_name']}\n"
