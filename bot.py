@@ -630,7 +630,7 @@ async def send_question(bot, user_id):
         buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
 
     buttons.append([
-        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("⚠️ Неточность?", callback_data=f"report_inaccuracy_{q_num}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
     keyboard = InlineKeyboardMarkup(buttons)
@@ -678,6 +678,56 @@ async def _finalize_quiz_bubble(bot, user_id, text="✅ *Тест завершё
             )
         except Exception:
             pass
+
+
+async def report_inaccuracy_handler(update: Update, context):
+    """
+    Обрабатывает нажатие «⚠️ Неточность?» во время теста.
+    Автоматически определяет текущий вопрос и отправляет сообщение админу в директ.
+    """
+    query = update.callback_query
+    await query.answer("✅ Сообщение отправлено автору. Спасибо!", show_alert=False)
+
+    user = update.effective_user
+    user_id = user.id
+    data = user_data.get(user_id, {})
+
+    q_num = data.get("current_question", 0)
+    q_list = data.get("questions", [])
+    level_name = data.get("level_name", "—")
+    username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user_id})"
+
+    if q_list and q_num < len(q_list):
+        q = q_list[q_num]
+        q_text = q.get("question", "—")
+        options = q.get("options", [])
+        correct_idx = q.get("correct", 0)
+        correct_ans = options[correct_idx] if options else "—"
+        options_str = "\n".join(f"  {i+1}. {opt}" for i, opt in enumerate(options))
+        msg = (
+            f"⚠️ *СООБЩЕНИЕ О НЕТОЧНОСТИ*\n\n"
+            f"👤 От: {username}\n"
+            f"📚 Тест: _{level_name}_\n"
+            f"❓ Вопрос {q_num + 1}: _{q_text}_\n\n"
+            f"📋 Варианты:\n{options_str}\n\n"
+            f"✅ Правильный ответ в базе: _{correct_ans}_"
+        )
+    else:
+        msg = (
+            f"⚠️ *СООБЩЕНИЕ О НЕТОЧНОСТИ*\n\n"
+            f"👤 От: {username}\n"
+            f"📚 Тест: _{level_name}_\n"
+            f"❓ Вопрос: {q_num + 1} (детали недоступны)"
+        )
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=msg,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.warning("report_inaccuracy: не удалось отправить сообщение админу: %s", e)
 
 
 async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeout_seconds: int):
@@ -2330,7 +2380,7 @@ async def send_challenge_question(bot, user_id):
         buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
 
     buttons.append([
-        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("⚠️ Неточность?", callback_data=f"report_inaccuracy_{q_num}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
     keyboard = InlineKeyboardMarkup(buttons)
@@ -3194,6 +3244,8 @@ def main():
     )
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
+
+    app.add_handler(CallbackQueryHandler(report_inaccuracy_handler, pattern=r"^report_inaccuracy_"))
 
     # Inline-ответы на вопросы (основной тест, challenge и битвы)
     app.add_handler(CallbackQueryHandler(quiz_inline_answer,       pattern=r"^qa_\d+$"))
