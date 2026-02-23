@@ -16,6 +16,7 @@ from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQueryResultArticle, InputTextMessageContent,
 )
+from telegram.error import NetworkError, TimedOut, RetryAfter, BadRequest, ChatMigrated
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
     ConversationHandler, CallbackQueryHandler, InlineQueryHandler,
@@ -79,8 +80,7 @@ REPORT_TYPE_LABELS = {
     "question": "❓ Вопрос по материалу",
 }
 report_drafts: dict = {}
-_report_last_sent: dict = {}
-REPORT_COOLDOWN_SECONDS = 60
+# _report_last_sent и REPORT_COOLDOWN_SECONDS управляются в database.py
 
 _STUCK_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("🆘 Сброс",    callback_data="reset_session"),
@@ -2301,10 +2301,9 @@ async def report_start(update: Update, context):
         report_type = "bug"
     user_id = query.from_user.id
 
-    last_ts = _report_last_sent.get(user_id, 0)
-    remaining = REPORT_COOLDOWN_SECONDS - (time.time() - last_ts)
-    if remaining > 0:
-        await query.answer(f"⏳ Слишком часто. Попробуй через {int(remaining)} сек.", show_alert=True)
+    if not can_submit_report(user_id):
+        remaining = seconds_until_next_report(user_id)
+        await query.answer(f"⏳ Слишком часто. Попробуй через {remaining} сек.", show_alert=True)
         return
 
     report_drafts[user_id] = {"type": report_type, "text": None, "photo_file_id": None}
@@ -2395,7 +2394,16 @@ async def report_confirm(update: Update, context):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     admin_card = f"{label}\nОт: {uname_plain} (id={user_id})\nВремя: {ts}\nКонтекст: {ctx_str}\n\n{draft['text'][:1500]}"
 
-    _report_last_sent[user_id] = time.time()
+    # Сохраняем в MongoDB и обновляем кулдаун
+    report_id = insert_report(
+        user_id=user_id,
+        username=user.username,
+        first_name=user.first_name,
+        report_type=draft["type"],
+        text=draft["text"] or "",
+        context=ctx,
+    )
+
     admin_delivered = False
     try:
         if draft.get("photo_file_id"):
@@ -2407,6 +2415,8 @@ async def report_confirm(update: Update, context):
             )
         await context.bot.send_message(chat_id=ADMIN_USER_ID, text=safe_truncate(admin_card))
         admin_delivered = True
+        if report_id:
+            mark_report_delivered(report_id)
     except Exception as e:
         print(f"[REPORT] Could not deliver to admin: {e}")
 
@@ -2505,16 +2515,26 @@ async def cleanup_stale_userdata_job(context):
 async def on_error(update: object, context):
     """Глобальный обработчик ошибок."""
     import traceback
-    from telegram.error import NetworkError, TimedOut, RetryAfter
 
     err = context.error
-    if isinstance(err, (NetworkError, TimedOut, RetryAfter)):
-        print(f"[NETWORK] {type(err).__name__}: {err}")
+
+    # 1. Фильтруем сетевые ошибки (Render часто рвет соединение, это норма)
+    if isinstance(err, (NetworkError, TimedOut)):
+        print(f"⚠️ Network noise ignored: {err}")
         return
 
-    # Игнорируем "Message is not modified" — частая ошибка при edit
-    from telegram.error import BadRequest
+    # 2. Фильтруем RetryAfter — Telegram просит подождать, не спамим
+    if isinstance(err, RetryAfter):
+        print(f"⚠️ RetryAfter ignored: retry in {err.retry_after}s")
+        return
+
+    # 3. Фильтруем "Message is not modified" (юзер жмет кнопку дважды)
     if isinstance(err, BadRequest) and "not modified" in str(err).lower():
+        return
+
+    # 4. Фильтруем ChatMigrated (группа перешла в супергруппу)
+    if isinstance(err, ChatMigrated):
+        print(f"⚠️ ChatMigrated ignored: new_chat_id={err.new_chat_id}")
         return
 
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
