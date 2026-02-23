@@ -1,13 +1,21 @@
-# Работа с MongoDB — Рефакторинг v2
+# database.py — Рефакторинг v3
+# MongoDB: сессии, битвы, лидерборд, репорты, достижения
 
 import os
 import time
 import uuid
-from datetime import datetime, timedelta
+import logging
+import functools
+from datetime import datetime, date, timedelta
 from pymongo import MongoClient, ASCENDING, DESCENDING
 
-# --- ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ---
-MONGO_URL = os.getenv('MONGO_URL')
+logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════
+# ПОДКЛЮЧЕНИЕ
+# ═══════════════════════════════════════════════
+
+MONGO_URL = os.getenv("MONGO_URL")
 
 if MONGO_URL:
     try:
@@ -19,14 +27,109 @@ if MONGO_URL:
         quiz_sessions_collection = db["quiz_sessions"]
         reports_collection = db["reports"]
         weekly_lb_collection = db["weekly_leaderboard"]
+        logger.info("✅ MongoDB подключена")
     except Exception as e:
-        print(f"Ошибка подключения к БД: {e}")
+        logger.error("Ошибка подключения к БД: %s", e)
         collection = battles_collection = questions_stats_collection = None
         quiz_sessions_collection = reports_collection = weekly_lb_collection = None
 else:
-    print("⚠️ ВНИМАНИЕ: Не задана переменная MONGO_URL.")
+    logger.warning("⚠️ MONGO_URL не задана")
     collection = battles_collection = questions_stats_collection = None
     quiz_sessions_collection = reports_collection = weekly_lb_collection = None
+
+
+# ═══════════════════════════════════════════════
+# КОНСТАНТЫ
+# ═══════════════════════════════════════════════
+
+ALL_LEVEL_KEYS = [
+    "easy", "easy_p1", "easy_p2",
+    "medium", "medium_p1", "medium_p2",
+    "hard", "hard_p1", "hard_p2",
+    "practical_ch1", "practical_p1", "practical_p2",
+    "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+    "nero", "geography",
+    "intro1", "intro2", "intro3",
+    "random20", "hardcore20",
+]
+
+_ALL_LEVEL_KEYS_SET = frozenset(ALL_LEVEL_KEYS)
+
+POINTS_PER_QUESTION = {
+    "easy": 1, "easy_p1": 1, "easy_p2": 1,
+    "medium": 2, "medium_p1": 2, "medium_p2": 2,
+    "hard": 3, "hard_p1": 3, "hard_p2": 3,
+    "practical_ch1": 2, "practical_p1": 2, "practical_p2": 2,
+    "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
+    "intro1": 2, "intro2": 2, "intro3": 2,
+    "nero": 2, "geography": 2,
+    "random20": 1, "hardcore20": 2,
+}
+
+REPORT_COOLDOWN_SECONDS = 60
+
+
+# ═══════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════
+
+def _uid(user_id) -> str:
+    """Приводит user_id к строке для _id в MongoDB."""
+    return str(user_id)
+
+
+def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
+def _today_utc() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _safe_level_key(key: str) -> str:
+    """Проверяет что ключ уровня допустимый (защита от injection)."""
+    if key in _ALL_LEVEL_KEYS_SET:
+        return key
+    logger.warning("Invalid level_key: %s — defaulting to 'easy'", key)
+    return "easy"
+
+
+def _validate_score(score: int, total: int) -> tuple:
+    """Не позволяет записать невозможные результаты."""
+    total = max(1, min(int(total), 100))
+    score = max(0, min(int(score), total))
+    return score, total
+
+
+def mongo_retry(max_retries=2, delay=0.3):
+    """Простой retry-декоратор для операций MongoDB."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        time.sleep(delay * (attempt + 1))
+            logger.error("%s failed after %d attempts: %s",
+                         func.__name__, max_retries + 1, last_error)
+            return None
+        return wrapper
+    return decorator
+
+
+def check_db_connection() -> bool:
+    """Проверяет доступность MongoDB."""
+    if collection is None:
+        return False
+    try:
+        cluster.admin.command("ping")
+        return True
+    except Exception:
+        return False
 
 
 # ═══════════════════════════════════════════════
@@ -35,7 +138,7 @@ else:
 
 def _ensure_indexes():
     """Создаёт все необходимые индексы при старте."""
-    # TTL для quiz_sessions — 6 часов по updated_at_dt
+
     if quiz_sessions_collection is not None:
         try:
             quiz_sessions_collection.create_index(
@@ -44,59 +147,78 @@ def _ensure_indexes():
                 name="ttl_updated_at",
                 background=True,
             )
+            quiz_sessions_collection.create_index(
+                [("user_id", ASCENDING), ("status", ASCENDING)],
+                name="idx_user_status",
+                background=True,
+            )
         except Exception as e:
-            print(f"quiz_sessions TTL index warning: {e}")
+            logger.warning("quiz_sessions index: %s", e)
 
-    # TTL для battles — 30 дней по created_at_dt (задание 1.1)
     if battles_collection is not None:
         try:
             battles_collection.create_index(
                 [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=2592000,  # 30 дней
+                expireAfterSeconds=2592000,
                 name="ttl_battles_created_at",
                 background=True,
             )
-            # Индекс для быстрого поиска ожидающих битв
             battles_collection.create_index(
                 [("status", ASCENDING), ("created_at_dt", DESCENDING)],
+                name="idx_status_created",
                 background=True,
             )
         except Exception as e:
-            print(f"battles TTL index warning: {e}")
+            logger.warning("battles index: %s", e)
 
-    # Индекс для users — last_activity (для GC)
     if collection is not None:
         try:
             collection.create_index(
                 [("last_activity", DESCENDING)],
+                name="idx_last_activity",
+                background=True,
+            )
+            collection.create_index(
+                [("total_points", DESCENDING)],
+                name="idx_total_points",
+                background=True,
+            )
+            collection.create_index(
+                [("created_at", ASCENDING)],
+                name="idx_created_at",
                 background=True,
             )
         except Exception as e:
-            print(f"leaderboard index warning: {e}")
+            logger.warning("leaderboard index: %s", e)
 
-    # TTL для reports — 90 дней
     if reports_collection is not None:
         try:
             reports_collection.create_index(
                 [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=7776000,  # 90 дней
+                expireAfterSeconds=7776000,
                 name="ttl_reports_created_at",
                 background=True,
             )
         except Exception as e:
-            print(f"reports TTL index warning: {e}")
+            logger.warning("reports index: %s", e)
 
-    # TTL для weekly_leaderboard — 60 дней
     if weekly_lb_collection is not None:
         try:
             weekly_lb_collection.create_index(
                 [("updated_at_dt", ASCENDING)],
-                expireAfterSeconds=5184000,  # 60 дней
+                expireAfterSeconds=5184000,
                 name="ttl_weekly_lb_updated_at",
                 background=True,
             )
+            weekly_lb_collection.create_index(
+                [("week_id", ASCENDING), ("mode", ASCENDING),
+                 ("best_score", DESCENDING), ("best_time", ASCENDING)],
+                name="idx_weekly_lb_lookup",
+                background=True,
+            )
         except Exception as e:
-            print(f"weekly_lb TTL index warning: {e}")
+            logger.warning("weekly_lb index: %s", e)
+
 
 _ensure_indexes()
 
@@ -108,14 +230,15 @@ _ensure_indexes()
 def create_quiz_session(user_id: int, mode: str, question_ids: list,
                         questions_data: list,
                         level_key: str = None, level_name: str = None,
-                        time_limit: int = None) -> str:
+                        time_limit: int = None,
+                        chat_id: int = None) -> str:
     if quiz_sessions_collection is None:
         return ""
     session_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = _now_utc()
     doc = {
         "_id": session_id,
-        "user_id": str(user_id),
+        "user_id": _uid(user_id),
         "session_id": session_id,
         "status": "in_progress",
         "mode": mode,
@@ -128,16 +251,17 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
         "answered_questions": [],
         "time_limit": time_limit,
         "question_sent_at": None,
+        "chat_id": chat_id,
         "start_time": time.time(),
         "started_at": now.isoformat(),
-        "created_at": now,           # ISODate для TTL
+        "created_at": now,
         "updated_at": now.isoformat(),
         "updated_at_dt": now,
     }
     try:
         quiz_sessions_collection.insert_one(doc)
     except Exception as e:
-        print(f"create_quiz_session error: {e}")
+        logger.error("create_quiz_session error: %s", e)
     return session_id
 
 
@@ -146,7 +270,7 @@ def get_active_quiz_session(user_id: int):
         return None
     try:
         return quiz_sessions_collection.find_one(
-            {"user_id": str(user_id), "status": "in_progress"}
+            {"user_id": _uid(user_id), "status": "in_progress"}
         )
     except Exception:
         return None
@@ -164,7 +288,7 @@ def get_quiz_session(session_id: str):
 def update_quiz_session(session_id: str, fields: dict):
     if quiz_sessions_collection is None:
         return
-    now = datetime.utcnow()
+    now = _now_utc()
     fields["updated_at"] = now.isoformat()
     fields["updated_at_dt"] = now
     try:
@@ -173,14 +297,14 @@ def update_quiz_session(session_id: str, fields: dict):
             {"$set": fields}
         )
     except Exception as e:
-        print(f"update_quiz_session error: {e}")
+        logger.error("update_quiz_session error: %s", e)
 
 
 def advance_quiz_session(session_id: str, qid: str, user_answer: str,
                          is_correct: bool, question_obj: dict):
     if quiz_sessions_collection is None:
         return None
-    now = datetime.utcnow()
+    now = _now_utc()
     answer_record = {
         "qid": qid,
         "user_answer": user_answer,
@@ -205,7 +329,7 @@ def advance_quiz_session(session_id: str, qid: str, user_answer: str,
         )
         return quiz_sessions_collection.find_one({"_id": session_id})
     except Exception as e:
-        print(f"advance_quiz_session error: {e}")
+        logger.error("advance_quiz_session error: %s", e)
         return None
 
 
@@ -214,7 +338,11 @@ def set_question_sent_at(session_id: str, ts: float = None):
 
 
 def finish_quiz_session(session_id: str):
-    update_quiz_session(session_id, {"status": "finished"})
+    now = _now_utc()
+    update_quiz_session(session_id, {
+        "status": "finished",
+        "end_time": now,
+    })
 
 
 def cancel_quiz_session(session_id: str):
@@ -237,16 +365,59 @@ def is_question_timed_out(session: dict) -> bool:
     return (time.time() - sent_at) >= time_limit
 
 
+def get_stale_sessions(max_age_hours: int = 2, limit: int = 50) -> list:
+    """Незавершённые сессии старше N часов (для напоминаний)."""
+    if quiz_sessions_collection is None:
+        return []
+    cutoff = _now_utc() - timedelta(hours=max_age_hours)
+    try:
+        return list(
+            quiz_sessions_collection.find({
+                "status": "in_progress",
+                "updated_at_dt": {"$lt": cutoff},
+            }).limit(limit)
+        )
+    except Exception:
+        return []
+
+
+def get_user_history(user_id: int, limit: int = 10) -> list:
+    """Последние N завершённых сессий пользователя."""
+    if quiz_sessions_collection is None:
+        return []
+    try:
+        pipeline = [
+            {"$match": {"user_id": _uid(user_id), "status": "finished"}},
+            {"$sort": {"updated_at_dt": -1}},
+            {"$limit": limit},
+            {"$project": {
+                "level_name": 1,
+                "level_key": 1,
+                "correct_count": 1,
+                "total_questions": {
+                    "$size": {"$ifNull": ["$questions_data", []]}
+                },
+                "updated_at_dt": 1,
+                "end_time": 1,
+                "mode": 1,
+                "start_time": 1,
+            }},
+        ]
+        return list(quiz_sessions_collection.aggregate(pipeline))
+    except Exception as e:
+        logger.error("get_user_history error: %s", e)
+        return []
+
+
 # ═══════════════════════════════════════════════
-# BATTLES — MongoDB-backed CRUD  (задание 1.2)
+# BATTLES — MongoDB CRUD
 # ═══════════════════════════════════════════════
 
 def create_battle_doc(battle_id: str, creator_id: int, creator_name: str,
                       questions: list) -> dict:
-    """Создаёт документ битвы в MongoDB. Возвращает doc или None."""
     if battles_collection is None:
         return None
-    now = datetime.utcnow()
+    now = _now_utc()
     doc = {
         "_id": battle_id,
         "creator_id": creator_id,
@@ -266,18 +437,18 @@ def create_battle_doc(battle_id: str, creator_id: int, creator_name: str,
         "opponent_points": 0,
         "opponent_finished": False,
         "created_at": now.isoformat(),
-        "created_at_dt": now,   # ISODate для TTL
+        "created_at_dt": now,
         "updated_at": now.isoformat(),
     }
     try:
         battles_collection.insert_one(doc)
         return doc
     except Exception as e:
-        print(f"create_battle_doc error: {e}")
+        logger.error("create_battle_doc error: %s", e)
         return None
 
 
-def get_battle(battle_id: str) -> dict | None:
+def get_battle(battle_id: str):
     if battles_collection is None:
         return None
     try:
@@ -289,18 +460,17 @@ def get_battle(battle_id: str) -> dict | None:
 def update_battle(battle_id: str, fields: dict):
     if battles_collection is None:
         return
-    fields["updated_at"] = datetime.utcnow().isoformat()
+    fields["updated_at"] = _now_utc().isoformat()
     try:
         battles_collection.update_one({"_id": battle_id}, {"$set": fields})
     except Exception as e:
-        print(f"update_battle error: {e}")
+        logger.error("update_battle error: %s", e)
 
 
 def get_waiting_battles(limit: int = 10) -> list:
-    """Возвращает битвы со статусом 'waiting', отсортированные по дате."""
     if battles_collection is None:
         return []
-    cutoff = datetime.utcnow() - timedelta(minutes=10)
+    cutoff = _now_utc() - timedelta(minutes=10)
     try:
         return list(
             battles_collection.find(
@@ -317,53 +487,49 @@ def delete_battle(battle_id: str):
     try:
         battles_collection.delete_one({"_id": battle_id})
     except Exception as e:
-        print(f"delete_battle error: {e}")
+        logger.error("delete_battle error: %s", e)
 
 
-def cleanup_stale_battles():
-    """Удаляет битвы старше 10 минут (вызывается из JobQueue)."""
+def cleanup_stale_battles() -> int:
     if battles_collection is None:
         return 0
-    cutoff = datetime.utcnow() - timedelta(minutes=10)
+    cutoff = _now_utc() - timedelta(minutes=10)
     try:
         result = battles_collection.delete_many(
             {"status": "waiting", "created_at_dt": {"$lt": cutoff}}
         )
         return result.deleted_count
     except Exception as e:
-        print(f"cleanup_stale_battles error: {e}")
+        logger.error("cleanup_stale_battles error: %s", e)
         return 0
 
 
 # ═══════════════════════════════════════════════
-# ОСНОВНЫЕ ФУНКЦИИ БД — ПОЛЬЗОВАТЕЛИ
+# ПОЛЬЗОВАТЕЛИ
 # ═══════════════════════════════════════════════
-
-HISTORICAL_CATEGORIES = {"nero", "geography"}
-
 
 def get_user_stats(user_id):
     if collection is None:
         return None
-    user_id_str = str(user_id)
-    entry = collection.find_one({"_id": user_id_str})
-    if not entry:
+    try:
+        return collection.find_one({"_id": _uid(user_id)})
+    except Exception:
         return None
-    return entry
 
 
 def init_user_stats(user_id, username, first_name):
     if collection is None:
-        return
-    user_id_str = str(user_id)
-    entry = collection.find_one({"_id": user_id_str})
+        return False
+    uid = _uid(user_id)
+    entry = collection.find_one({"_id": uid})
+    now = _now_utc()
+
     if not entry:
-        now = datetime.utcnow()
         new_entry = {
-            "_id": user_id_str,
+            "_id": uid,
             "username": username or "Без username",
             "first_name": first_name or "Пользователь",
-            "first_play_date": datetime.now().strftime("%Y-%m-%d"),
+            "first_play_date": _today_utc(),
             "created_at": now,
             "last_activity": now,
             "total_points": 0,
@@ -378,12 +544,10 @@ def init_user_stats(user_id, username, first_name):
             "achievements": {},
             "challenge_streak_count": 0,
             "challenge_streak_last_date": "",
+            "daily_streak": 0,
+            "daily_streak_last": "",
         }
-        # Инициализируем поля для каждой категории
-        for key in ["easy", "medium", "hard", "nero", "geography",
-                    "practical_ch1", "linguistics_ch1", "linguistics_ch1_2",
-                    "linguistics_ch1_3", "intro1", "intro2", "intro3",
-                    "random20", "hardcore20"]:
+        for key in ALL_LEVEL_KEYS:
             new_entry[f"{key}_attempts"] = 0
             new_entry[f"{key}_correct"] = 0
             new_entry[f"{key}_total"] = 0
@@ -392,61 +556,166 @@ def init_user_stats(user_id, username, first_name):
             collection.insert_one(new_entry)
             return True
         except Exception as e:
-            print(f"init_user_stats error: {e}")
+            logger.error("init_user_stats error: %s", e)
+            return False
     else:
-        # Обновляем last_activity при каждом обращении
         try:
             collection.update_one(
-                {"_id": user_id_str},
+                {"_id": uid},
                 {"$set": {
-                    "last_activity": datetime.utcnow(),
+                    "last_activity": now,
                     "username": username or entry.get("username", ""),
                     "first_name": first_name or entry.get("first_name", ""),
                 }}
             )
         except Exception:
             pass
-    return False
+        return False
 
 
 def touch_user_activity(user_id: int):
-    """Обновляет поле last_activity (для GC). Вызывается при каждом действии."""
     if collection is None:
         return
     try:
         collection.update_one(
-            {"_id": str(user_id)},
-            {"$set": {"last_activity": datetime.utcnow()}}
+            {"_id": _uid(user_id)},
+            {"$set": {"last_activity": _now_utc()}}
         )
     except Exception:
         pass
 
 
+def update_daily_streak(user_id: int) -> int:
+    """Обновляет ежедневную серию входов. Возвращает текущий streak."""
+    if collection is None:
+        return 0
+    uid = _uid(user_id)
+    today = _today_utc()
+    entry = collection.find_one(
+        {"_id": uid},
+        {"daily_streak": 1, "daily_streak_last": 1}
+    )
+    if not entry:
+        return 0
+
+    streak = entry.get("daily_streak", 0)
+    last = entry.get("daily_streak_last", "")
+
+    if last == today:
+        return streak
+
+    try:
+        if last:
+            last_dt = datetime.strptime(last, "%Y-%m-%d")
+            today_dt = datetime.strptime(today, "%Y-%m-%d")
+            delta = (today_dt - last_dt).days
+            if delta == 1:
+                streak += 1
+            elif delta > 1:
+                streak = 1
+        else:
+            streak = 1
+
+        collection.update_one(
+            {"_id": uid},
+            {"$set": {
+                "daily_streak": streak,
+                "daily_streak_last": today,
+            }}
+        )
+    except Exception as e:
+        logger.error("update_daily_streak error: %s", e)
+
+    return streak
+
+
 # ═══════════════════════════════════════════════
-# ADMIN STATS (задание 4.3)
+# ADMIN
 # ═══════════════════════════════════════════════
 
 def get_admin_stats() -> dict:
-    """Возвращает статистику для /admin команды."""
     if collection is None:
-        return {}
-    now = datetime.utcnow()
+        return {"db_healthy": False}
+    now = _now_utc()
     day_ago = now - timedelta(hours=24)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    total_users = collection.count_documents({})
-    new_today = collection.count_documents({"created_at": {"$gte": today_start}})
-    online_24h = collection.count_documents({"last_activity": {"$gte": day_ago}})
+    try:
+        total_users = collection.count_documents({})
+        new_today = collection.count_documents({"created_at": {"$gte": today_start}})
+        online_24h = collection.count_documents({"last_activity": {"$gte": day_ago}})
+    except Exception:
+        total_users = new_today = online_24h = 0
 
     return {
         "total_users": total_users,
         "new_today": new_today,
         "online_24h": online_24h,
+        "db_healthy": check_db_connection(),
     }
 
 
+def get_detailed_admin_stats() -> dict:
+    """Расширенная статистика для admin-панели."""
+    stats = get_admin_stats()
+    if collection is None:
+        return stats
+    try:
+        pipeline = [
+            {"$group": {
+                "_id": None,
+                "avg_points": {"$avg": "$total_points"},
+                "avg_tests": {"$avg": "$total_tests"},
+                "avg_accuracy": {"$avg": {
+                    "$cond": [
+                        {"$gt": ["$total_questions_answered", 0]},
+                        {"$divide": [
+                            "$total_correct_answers",
+                            "$total_questions_answered"
+                        ]},
+                        0,
+                    ]
+                }},
+                "total_tests_all": {"$sum": "$total_tests"},
+                "total_battles_all": {"$sum": "$battles_played"},
+            }}
+        ]
+        result = list(collection.aggregate(pipeline))
+        if result:
+            r = result[0]
+            stats["avg_points"] = round(r.get("avg_points", 0), 1)
+            stats["avg_tests"] = round(r.get("avg_tests", 0), 1)
+            stats["avg_accuracy"] = round(
+                r.get("avg_accuracy", 0) * 100, 1
+            )
+            stats["total_tests_all"] = r.get("total_tests_all", 0)
+            stats["total_battles_all"] = r.get("total_battles_all", 0)
+
+        if quiz_sessions_collection is not None:
+            stats["active_sessions"] = (
+                quiz_sessions_collection.count_documents(
+                    {"status": "in_progress"}
+                )
+            )
+
+        if battles_collection is not None:
+            stats["waiting_battles"] = (
+                battles_collection.count_documents({"status": "waiting"})
+            )
+
+        if reports_collection is not None:
+            stats["unread_reports"] = (
+                reports_collection.count_documents(
+                    {"admin_delivered": False}
+                )
+            )
+    except Exception as e:
+        logger.error("get_detailed_admin_stats error: %s", e)
+
+    return stats
+
+
 def get_all_user_ids() -> list:
-    """Возвращает список всех user_id для рассылки."""
     if collection is None:
         return []
     try:
@@ -459,64 +728,52 @@ def get_all_user_ids() -> list:
 # LEADERBOARD & STATS
 # ═══════════════════════════════════════════════
 
-def add_to_leaderboard(user_id, username, first_name, level_key, score, total, time_seconds):
+def add_to_leaderboard(user_id, username, first_name,
+                       level_key, score, total, time_seconds):
     if collection is None:
         return
-    user_id_str = str(user_id)
-    now = datetime.utcnow()
+    uid = _uid(user_id)
+    now = _now_utc()
+    level_key = _safe_level_key(level_key)
+    score, total = _validate_score(score, total)
 
-    update_fields = {
+    ppq = POINTS_PER_QUESTION.get(level_key, 1)
+
+    set_fields = {
         "username": username or "",
         "first_name": first_name or "Пользователь",
         "last_activity": now,
     }
 
-    if level_key not in HISTORICAL_CATEGORIES:
-        POINTS_MAP = {
-            "easy": 1, "medium": 2, "hard": 3,
-            "practical_ch1": 2, "linguistics_ch1": 3,
-            "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
-            "intro1": 2, "intro2": 2, "intro3": 2,
-        }
-        pts = score * POINTS_MAP.get(level_key, 1)
-        update_fields["total_points"] = pts  # will use $inc below
+    inc_fields = {
+        "total_tests": 1,
+        "total_questions_answered": total,
+        "total_correct_answers": score,
+        "total_time_spent": time_seconds,
+        f"{level_key}_attempts": 1,
+        f"{level_key}_correct": score,
+        f"{level_key}_total": total,
+        "total_points": score * ppq,
+    }
 
     try:
-        inc_fields = {
-            "total_tests": 1,
-            "total_questions_answered": total,
-            "total_correct_answers": score,
-            "total_time_spent": time_seconds,
-            f"{level_key}_attempts": 1,
-            f"{level_key}_correct": score,
-            f"{level_key}_total": total,
-        }
-        if level_key not in HISTORICAL_CATEGORIES:
-            POINTS_MAP = {
-                "easy": 1, "medium": 2, "hard": 3,
-                "practical_ch1": 2, "linguistics_ch1": 3,
-                "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
-                "intro1": 2, "intro2": 2, "intro3": 2,
-            }
-            inc_fields["total_points"] = score * POINTS_MAP.get(level_key, 1)
-
         collection.update_one(
-            {"_id": user_id_str},
+            {"_id": uid},
             {
                 "$inc": inc_fields,
-                "$set": update_fields,
+                "$set": set_fields,
                 "$max": {f"{level_key}_best_score": score},
             },
-            upsert=True
+            upsert=True,
         )
     except Exception as e:
-        print(f"add_to_leaderboard error: {e}")
+        logger.error("add_to_leaderboard error: %s", e)
 
 
 def update_battle_stats(user_id, result):
     if collection is None:
         return
-    user_id_str = str(user_id)
+    uid = _uid(user_id)
     inc = {"battles_played": 1}
     if result == "win":
         inc["battles_won"] = 1
@@ -528,23 +785,31 @@ def update_battle_stats(user_id, result):
         inc["total_points"] = 2
     try:
         collection.update_one(
-            {"_id": user_id_str},
-            {"$inc": inc, "$set": {"last_activity": datetime.utcnow()}},
-            upsert=True
+            {"_id": uid},
+            {"$inc": inc, "$set": {"last_activity": _now_utc()}},
+            upsert=True,
         )
     except Exception as e:
-        print(f"update_battle_stats error: {e}")
+        logger.error("update_battle_stats error: %s", e)
 
 
 def get_user_position(user_id):
     if collection is None:
         return None, None
-    user_id_str = str(user_id)
-    entry = collection.find_one({"_id": user_id_str})
+    uid = _uid(user_id)
+    try:
+        entry = collection.find_one({"_id": uid})
+    except Exception:
+        return None, None
     if not entry:
         return None, None
     pts = entry.get("total_points", 0)
-    position = collection.count_documents({"total_points": {"$gt": pts}}) + 1
+    try:
+        position = collection.count_documents(
+            {"total_points": {"$gt": pts}}
+        ) + 1
+    except Exception:
+        position = 0
     return position, entry
 
 
@@ -574,15 +839,21 @@ def get_total_users():
 def get_points_to_next_place(user_id):
     if collection is None:
         return None
-    user_id_str = str(user_id)
-    entry = collection.find_one({"_id": user_id_str})
+    uid = _uid(user_id)
+    try:
+        entry = collection.find_one({"_id": uid})
+    except Exception:
+        return None
     if not entry:
         return None
     pts = entry.get("total_points", 0)
-    above = collection.find_one(
-        {"total_points": {"$gt": pts}},
-        sort=[("total_points", ASCENDING)]
-    )
+    try:
+        above = collection.find_one(
+            {"total_points": {"$gt": pts}},
+            sort=[("total_points", ASCENDING)]
+        )
+    except Exception:
+        return None
     if not above:
         return None
     return above.get("total_points", pts) - pts
@@ -591,9 +862,12 @@ def get_points_to_next_place(user_id):
 def get_category_leaderboard(category_key, limit=10):
     if collection is None:
         return []
+    category_key = _safe_level_key(category_key)
     try:
         return list(
-            collection.find({f"{category_key}_attempts": {"$gt": 0}})
+            collection.find(
+                {f"{category_key}_attempts": {"$gt": 0}}
+            )
             .sort(f"{category_key}_correct", DESCENDING)
             .limit(limit)
         )
@@ -602,28 +876,47 @@ def get_category_leaderboard(category_key, limit=10):
 
 
 def get_context_leaderboard(limit=10):
+    """Лидерборд по историческому контексту (aggregation pipeline)."""
     if collection is None:
         return []
+    ctx_keys = ["nero", "geography", "intro1", "intro2", "intro3"]
     try:
-        users = list(collection.find(
-            {"$or": [
-                {"nero_correct": {"$gt": 0}},
-                {"geography_correct": {"$gt": 0}},
-                {"intro1_correct": {"$gt": 0}},
-                {"intro2_correct": {"$gt": 0}},
-                {"intro3_correct": {"$gt": 0}},
-            ]}
-        ))
-        for u in users:
-            correct = sum(u.get(f"{k}_correct", 0)
-                         for k in ["nero", "geography", "intro1", "intro2", "intro3"])
-            total = sum(u.get(f"{k}_total", 0)
-                       for k in ["nero", "geography", "intro1", "intro2", "intro3"])
-            u["_context_correct"] = correct
-            u["_context_acc"] = round(correct / total * 100) if total else 0
-        users.sort(key=lambda x: x["_context_correct"], reverse=True)
-        return users[:limit]
-    except Exception:
+        pipeline = [
+            {"$match": {"$or": [
+                {f"{k}_correct": {"$gt": 0}} for k in ctx_keys
+            ]}},
+            {"$addFields": {
+                "_context_correct": {"$add": [
+                    {"$ifNull": [f"${k}_correct", 0]} for k in ctx_keys
+                ]},
+                "_context_total": {"$add": [
+                    {"$ifNull": [f"${k}_total", 0]} for k in ctx_keys
+                ]},
+            }},
+            {"$addFields": {
+                "_context_acc": {
+                    "$cond": [
+                        {"$gt": ["$_context_total", 0]},
+                        {"$round": [
+                            {"$multiply": [
+                                {"$divide": [
+                                    "$_context_correct",
+                                    "$_context_total"
+                                ]},
+                                100,
+                            ]},
+                            0,
+                        ]},
+                        0,
+                    ]
+                }
+            }},
+            {"$sort": {"_context_correct": -1}},
+            {"$limit": limit},
+        ]
+        return list(collection.aggregate(pipeline))
+    except Exception as e:
+        logger.error("get_context_leaderboard error: %s", e)
         return []
 
 
@@ -632,7 +925,6 @@ def get_context_leaderboard(limit=10):
 # ═══════════════════════════════════════════════
 
 def get_current_week_id():
-    from datetime import date
     d = date.today()
     return f"{d.year}-W{d.isocalendar()[1]:02d}"
 
@@ -640,47 +932,54 @@ def get_current_week_id():
 def is_bonus_eligible(user_id: int, mode: str) -> bool:
     if collection is None:
         return True
-    entry = collection.find_one({"_id": str(user_id)})
+    entry = collection.find_one({"_id": _uid(user_id)})
     if not entry:
         return True
     last_bonus_key = f"{mode}_last_bonus_date"
     last_date = entry.get(last_bonus_key, "")
-    today = datetime.now().strftime("%Y-%m-%d")
-    return last_date != today
+    return last_date != _today_utc()
 
 
 def compute_bonus(score: int, mode: str, eligible: bool) -> int:
     if not eligible:
         return 0
     if mode == "random20":
-        thresholds = [(20, 100), (19, 80), (18, 60), (17, 40), (16, 25), (15, 10)]
+        thresholds = [
+            (20, 100), (19, 80), (18, 60),
+            (17, 40), (16, 25), (15, 10),
+        ]
     else:
-        thresholds = [(20, 200), (19, 150), (18, 110), (17, 80), (16, 50), (15, 25)]
+        thresholds = [
+            (20, 200), (19, 150), (18, 110),
+            (17, 80), (16, 50), (15, 25),
+        ]
     for min_score, bonus in thresholds:
         if score >= min_score:
             return bonus
     return 0
 
 
-def update_challenge_stats(user_id, username, first_name, mode, score, total,
-                            time_seconds, eligible):
+def update_challenge_stats(user_id, username, first_name, mode,
+                           score, total, time_seconds, eligible):
     if collection is None:
         return 0, []
-    user_id_str = str(user_id)
-    today = datetime.now().strftime("%Y-%m-%d")
-    ppq = 1 if mode == "random20" else 2
+    uid = _uid(user_id)
+    today = _today_utc()
+    score, total = _validate_score(score, total)
+
+    ppq = POINTS_PER_QUESTION.get(mode, 1)
     earned_base = score * ppq
     bonus = compute_bonus(score, mode, eligible)
     total_earned = earned_base + bonus
 
-    entry = collection.find_one({"_id": user_id_str}) or {}
+    entry = collection.find_one({"_id": uid}) or {}
     achievements = entry.get("achievements", {})
     new_achievements = []
 
     upd = {
         "username": username or "",
         "first_name": first_name or "Пользователь",
-        "last_activity": datetime.utcnow(),
+        "last_activity": _now_utc(),
     }
     inc = {
         "total_tests": 1,
@@ -696,34 +995,44 @@ def update_challenge_stats(user_id, username, first_name, mode, score, total,
     if eligible:
         upd[f"{mode}_last_bonus_date"] = today
 
-    # Streak logic
+    # ── Streak logic ───────────────────────────
     if score >= 18 and mode in ("random20", "hardcore20"):
         streak_count = entry.get("challenge_streak_count", 0)
         streak_last = entry.get("challenge_streak_last_date", "")
+
         if streak_last == "":
             streak_count = 1
         else:
             try:
                 last_dt = datetime.strptime(streak_last, "%Y-%m-%d")
-                delta = (datetime.strptime(today, "%Y-%m-%d") - last_dt).days
+                today_dt = datetime.strptime(today, "%Y-%m-%d")
+                delta = (today_dt - last_dt).days
                 if delta == 1:
                     streak_count += 1
                 elif delta == 0:
-                    pass
+                    pass  # уже засчитано сегодня
                 else:
                     streak_count = 1
             except Exception:
                 streak_count = 1
+
         upd["challenge_streak_count"] = streak_count
         upd["challenge_streak_last_date"] = today
 
         if streak_count >= 3 and "streak_3" not in achievements:
             achievements["streak_3"] = today
-            new_achievements.append("🔥 3-дневная серия 18+ — разблокировано!")
+            new_achievements.append(
+                "🔥 3-дневная серия 18+ — разблокировано!"
+            )
     else:
-        upd["challenge_streak_count"] = 0
-        upd["challenge_streak_last_date"] = today
+        # Сбрасываем streak только если это ПЕРВАЯ попытка за день
+        # и она провальная (если уже была успешная — не трогаем)
+        streak_last = entry.get("challenge_streak_last_date", "")
+        if streak_last != today:
+            upd["challenge_streak_count"] = 0
+            upd["challenge_streak_last_date"] = today
 
+    # ── Perfect 20 ─────────────────────────────
     if score == 20 and "perfect_20" not in achievements:
         achievements["perfect_20"] = today
         new_achievements.append("⭐ Perfect 20 — разблокировано!")
@@ -733,39 +1042,51 @@ def update_challenge_stats(user_id, username, first_name, mode, score, total,
 
     try:
         collection.update_one(
-            {"_id": user_id_str},
-            {"$inc": inc, "$set": upd, "$max": {f"{mode}_best_score": score}},
-            upsert=True
+            {"_id": uid},
+            {
+                "$inc": inc,
+                "$set": upd,
+                "$max": {f"{mode}_best_score": score},
+            },
+            upsert=True,
         )
     except Exception as e:
-        print(f"update_challenge_stats error: {e}")
+        logger.error("update_challenge_stats error: %s", e)
 
     return total_earned, new_achievements
 
 
-def update_weekly_leaderboard(user_id, username, first_name, mode, score, time_seconds):
+def update_weekly_leaderboard(user_id, username, first_name,
+                              mode, score, time_seconds):
     if weekly_lb_collection is None:
         return
     week_id = get_current_week_id()
     doc_id = f"{week_id}_{mode}_{user_id}"
-    existing = weekly_lb_collection.find_one({"_id": doc_id})
-    if not existing or score > existing.get("best_score", 0) or \
-       (score == existing.get("best_score", 0) and time_seconds < existing.get("best_time", 9999)):
-        weekly_lb_collection.update_one(
-            {"_id": doc_id},
-            {"$set": {
-                "week_id": week_id,
-                "mode": mode,
-                "user_id": str(user_id),
-                "username": username or "",
-                "first_name": first_name or "Пользователь",
-                "best_score": score,
-                "best_time": time_seconds,
-                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "updated_at_dt": datetime.utcnow(),
-            }},
-            upsert=True
-        )
+    now = _now_utc()
+
+    try:
+        existing = weekly_lb_collection.find_one({"_id": doc_id})
+        if (not existing
+                or score > existing.get("best_score", 0)
+                or (score == existing.get("best_score", 0)
+                    and time_seconds < existing.get("best_time", 9999))):
+            weekly_lb_collection.update_one(
+                {"_id": doc_id},
+                {"$set": {
+                    "week_id": week_id,
+                    "mode": mode,
+                    "user_id": _uid(user_id),
+                    "username": username or "",
+                    "first_name": first_name or "Пользователь",
+                    "best_score": score,
+                    "best_time": time_seconds,
+                    "updated_at": now.isoformat(),
+                    "updated_at_dt": now,
+                }},
+                upsert=True,
+            )
+    except Exception as e:
+        logger.error("update_weekly_leaderboard error: %s", e)
 
 
 def get_weekly_leaderboard(mode, limit=10):
@@ -774,7 +1095,9 @@ def get_weekly_leaderboard(mode, limit=10):
     week_id = get_current_week_id()
     try:
         return list(
-            weekly_lb_collection.find({"week_id": week_id, "mode": mode})
+            weekly_lb_collection.find(
+                {"week_id": week_id, "mode": mode}
+            )
             .sort([("best_score", DESCENDING), ("best_time", ASCENDING)])
             .limit(limit)
         )
@@ -785,7 +1108,7 @@ def get_weekly_leaderboard(mode, limit=10):
 def get_user_achievements(user_id):
     if collection is None:
         return {}, 0, ""
-    entry = collection.find_one({"_id": str(user_id)})
+    entry = collection.find_one({"_id": _uid(user_id)})
     if not entry:
         return {}, 0, ""
     return (
@@ -800,7 +1123,7 @@ def get_user_achievements(user_id):
 # ═══════════════════════════════════════════════
 
 def format_time(seconds: float) -> str:
-    seconds = int(seconds)
+    seconds = max(0, int(seconds))
     if seconds < 60:
         return f"{seconds}с"
     m, s = divmod(seconds, 60)
@@ -810,7 +1133,7 @@ def format_time(seconds: float) -> str:
 def calculate_days_playing(first_date_str: str) -> int:
     try:
         first = datetime.strptime(first_date_str, "%Y-%m-%d")
-        return max(1, (datetime.now() - first).days + 1)
+        return max(1, (datetime.utcnow() - first).days + 1)
     except Exception:
         return 1
 
@@ -821,7 +1144,8 @@ def calculate_accuracy(correct: int, total: int) -> int:
     return round(correct / total * 100)
 
 
-def record_question_stat(q_id: str, category: str, is_correct: bool, elapsed: float):
+def record_question_stat(q_id: str, category: str,
+                         is_correct: bool, elapsed: float):
     if questions_stats_collection is None:
         return
     try:
@@ -835,46 +1159,111 @@ def record_question_stat(q_id: str, category: str, is_correct: bool, elapsed: fl
                 },
                 "$set": {"category": category},
             },
-            upsert=True
+            upsert=True,
         )
     except Exception:
         pass
 
 
-def get_question_stats(q_id: str):
+def get_question_stats(q_id: str = None):
+    """Если q_id задан — возвращает стат одного вопроса.
+    Иначе — список всех вопросов (для admin)."""
     if questions_stats_collection is None:
-        return None
-    return questions_stats_collection.find_one({"_id": q_id})
+        return None if q_id else []
+    if q_id:
+        try:
+            return questions_stats_collection.find_one({"_id": q_id})
+        except Exception:
+            return None
+    try:
+        return list(
+            questions_stats_collection.find()
+            .sort("total_attempts", DESCENDING)
+        )
+    except Exception:
+        return []
+
+
+def get_hardest_questions(limit: int = 10) -> list:
+    """Топ самых сложных вопросов (наименьший % правильных)."""
+    if questions_stats_collection is None:
+        return []
+    try:
+        pipeline = [
+            {"$match": {"total_attempts": {"$gte": 5}}},
+            {"$addFields": {
+                "accuracy": {
+                    "$multiply": [
+                        {"$divide": [
+                            "$correct_attempts",
+                            "$total_attempts"
+                        ]},
+                        100,
+                    ]
+                }
+            }},
+            {"$sort": {"accuracy": 1}},
+            {"$limit": limit},
+        ]
+        return list(questions_stats_collection.aggregate(pipeline))
+    except Exception as e:
+        logger.error("get_hardest_questions error: %s", e)
+        return []
 
 
 # ═══════════════════════════════════════════════
 # REPORTS
 # ═══════════════════════════════════════════════
 
-_report_last_sent: dict = {}
-REPORT_COOLDOWN_SECONDS = 60
-
-
 def can_submit_report(user_id: int) -> bool:
-    last = _report_last_sent.get(user_id, 0)
-    return (time.time() - last) >= REPORT_COOLDOWN_SECONDS
+    """Проверяет кулдаун через MongoDB (переживает рестарт)."""
+    if collection is None:
+        return True
+    try:
+        entry = collection.find_one(
+            {"_id": _uid(user_id)}, {"last_report_at": 1}
+        )
+        if not entry or "last_report_at" not in entry:
+            return True
+        last = entry["last_report_at"]
+        if isinstance(last, datetime):
+            elapsed = (_now_utc() - last).total_seconds()
+        else:
+            elapsed = REPORT_COOLDOWN_SECONDS + 1
+        return elapsed >= REPORT_COOLDOWN_SECONDS
+    except Exception:
+        return True
 
 
 def seconds_until_next_report(user_id: int) -> int:
-    last = _report_last_sent.get(user_id, 0)
-    remaining = REPORT_COOLDOWN_SECONDS - (time.time() - last)
-    return max(0, int(remaining))
+    if collection is None:
+        return 0
+    try:
+        entry = collection.find_one(
+            {"_id": _uid(user_id)}, {"last_report_at": 1}
+        )
+        if not entry or "last_report_at" not in entry:
+            return 0
+        last = entry["last_report_at"]
+        if isinstance(last, datetime):
+            elapsed = (_now_utc() - last).total_seconds()
+            return max(0, int(REPORT_COOLDOWN_SECONDS - elapsed))
+        return 0
+    except Exception:
+        return 0
 
 
 def insert_report(user_id: int, username: str, first_name: str,
                   report_type: str, text: str, context: dict = None) -> str:
     report_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = _now_utc()
+    text = (text or "")[:2000]
+
     doc = {
         "_id": report_id,
         "report_id": report_id,
         "type": report_type,
-        "user_id": str(user_id),
+        "user_id": _uid(user_id),
         "username": username or "",
         "first_name": first_name or "",
         "text": text,
@@ -883,12 +1272,23 @@ def insert_report(user_id: int, username: str, first_name: str,
         "context": context or {},
         "admin_delivered": False,
     }
+
     if reports_collection is not None:
         try:
             reports_collection.insert_one(doc)
         except Exception as e:
-            print(f"insert_report error: {e}")
-    _report_last_sent[user_id] = time.time()
+            logger.error("insert_report error: %s", e)
+
+    # Обновляем кулдаун в коллекции users (переживает рестарт)
+    if collection is not None:
+        try:
+            collection.update_one(
+                {"_id": _uid(user_id)},
+                {"$set": {"last_report_at": now}}
+            )
+        except Exception:
+            pass
+
     return report_id
 
 
@@ -901,4 +1301,4 @@ def mark_report_delivered(report_id: str):
             {"$set": {"admin_delivered": True}}
         )
     except Exception as e:
-        print(f"mark_report_delivered error: {e}")
+        logger.error("mark_report_delivered error: %s", e)
