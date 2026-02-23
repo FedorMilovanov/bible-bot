@@ -700,12 +700,9 @@ async def send_question(bot, user_id):
         buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
 
     buttons.append([
-        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("⚠️ Неточность?", callback_data=f"qreport_{q_num}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
-    keyboard = InlineKeyboardMarkup(buttons)
-    progress = build_progress_bar(q_num, total)
-    text = f"*Вопрос {q_num + 1}/{total}* {progress}\n\n{q['question']}{options_text}"
 
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
@@ -2427,15 +2424,9 @@ async def send_challenge_question(bot, user_id):
         buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
 
     buttons.append([
-        InlineKeyboardButton("·  ·  ·", callback_data="cancel_quiz"),
+        InlineKeyboardButton("⚠️ Неточность?", callback_data=f"qreport_{q_num}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
-    keyboard = InlineKeyboardMarkup(buttons)
-    text = (
-        f"{data['level_name']}\n"
-        f"Вопрос *{q_num + 1}/{total}*{timer_str}\n{progress}\n\n"
-        f"{q['question']}{options_text}"
-    )
 
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
@@ -2912,6 +2903,69 @@ async def button_handler(update: Update, context):
 # ═══════════════════════════════════════════════
 # СИСТЕМА РЕПОРТОВ
 # ═══════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════
+# РЕПОРТ О НЕТОЧНОСТИ В ВОПРОСЕ
+# ═══════════════════════════════════════════════
+
+async def question_report_handler(update: Update, context):
+    """
+    Кнопка «⚠️ Неточность?» под вопросом.
+    Автоматически отправляет карточку вопроса администратору.
+    Пользователь видит только всплывающее подтверждение — без лишних шагов.
+    """
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    # Читаем номер вопроса из callback_data ("qreport_3" → 3)
+    try:
+        q_num = int(query.data.replace("qreport_", ""))
+    except ValueError:
+        await query.answer("⚠️ Не удалось определить вопрос.", show_alert=True)
+        return
+
+    data = user_data.get(user_id)
+    if not data or q_num >= len(data.get("questions", [])):
+        await query.answer("⚠️ Сессия не найдена — попробуй снова.", show_alert=True)
+        return
+
+    q = data["questions"][q_num]
+    level_name = data.get("level_name", "?")
+    user_name = query.from_user.first_name or "?"
+    username_str = f"@{query.from_user.username}" if query.from_user.username else f"id={user_id}"
+
+    correct_text = q["options"][q["correct"]]
+    options_list = "\n".join(
+        f"  {'✅' if i == q['correct'] else '▫️'} {opt}"
+        for i, opt in enumerate(q["options"])
+    )
+    q_id = get_qid(q)
+
+    card = (
+        f"⚠️ *СООБЩЕНИЕ О НЕТОЧНОСТИ В ВОПРОСЕ*\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"👤 От: {user_name} ({username_str})\n"
+        f"📚 Тест: _{level_name}_\n"
+        f"🔢 Вопрос №{q_num + 1} (id: `{q_id}`)\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"❓ *{q['question']}*\n\n"
+        f"{options_list}\n\n"
+        f"✅ Правильный ответ: _{correct_text}_"
+    )
+    if q.get("explanation"):
+        card += f"\n💡 Пояснение: _{q['explanation']}_"
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=safe_truncate(card),
+            parse_mode="Markdown",
+        )
+        await query.answer("✅ Спасибо! Сообщение отправлено автору.", show_alert=False)
+    except Exception as e:
+        logger.error("question_report_handler: не удалось доставить репорт: %s", e)
+        await query.answer("⚠️ Не удалось отправить. Попробуй позже.", show_alert=True)
+
 
 async def report_menu(update: Update, context):
     query = update.callback_query
@@ -3395,6 +3449,9 @@ def main():
 
     # Inline mode (задание 4.1)
     app.add_handler(InlineQueryHandler(inline_query_handler))
+
+    # Репорт о неточности в вопросе (кнопка под quiz bubble)
+    app.add_handler(CallbackQueryHandler(question_report_handler, pattern=r"^qreport_\d+$"))
 
     # Общие кнопки
     app.add_handler(CallbackQueryHandler(chapter_1_menu,   pattern="^chapter_1_menu$"))
