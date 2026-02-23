@@ -289,13 +289,17 @@ async def level_selected(update: Update, context):
         "is_battle":          False,
         "battle_points":      0,
         "processing_answer":  False,  # Race condition guard
+        "username":           update.effective_user.username,
+        "first_name":         update.effective_user.first_name,
+        "quiz_chat_id":       query.message.chat_id,
+        "quiz_message_id":    None,  # будет заполнено в send_question
     }
 
     await query.edit_message_text(
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)}\nНачинаем! ⏱",
         parse_mode="Markdown",
     )
-    await send_question(query.message, user_id)
+    await send_question(context.bot, user_id)
     return ANSWERING
 
 
@@ -303,13 +307,18 @@ async def level_selected(update: Update, context):
 # ВОПРОСЫ И ОТВЕТЫ
 # ═══════════════════════════════════════════════
 
-async def send_question(message, user_id):
+async def send_question(bot, user_id):
+    """
+    Отправляет или редактирует сообщение с вопросом.
+    Первый вопрос — новое сообщение; последующие — редактирование того же «пузыря».
+    """
     data = user_data[user_id]
     q_num = data["current_question"]
     total = len(data["questions"])
 
     if q_num >= total:
-        await show_results(message, user_id)
+        await _finalize_quiz_bubble(bot, user_id)
+        await show_results(bot, user_id)
         return
 
     q = data["questions"][q_num]
@@ -319,11 +328,10 @@ async def send_question(message, user_id):
 
     data["current_options"]      = shuffled
     data["current_correct_text"] = correct_text
-    data["processing_answer"]    = False  # Готовы принять ответ
+    data["processing_answer"]    = False
     sent_at = time.time()
     data["question_sent_at"]     = sent_at
 
-    # Отменяем предыдущий таймер
     old_task = data.get("timer_task")
     if old_task and not old_task.done():
         old_task.cancel()
@@ -332,20 +340,62 @@ async def send_question(message, user_id):
     if session_id:
         set_question_sent_at(session_id, sent_at)
 
-    await message.reply_text(
-        f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}",
-        reply_markup=ReplyKeyboardMarkup(
-            [[opt] for opt in shuffled],
-            one_time_keyboard=True, resize_keyboard=True,
-        ),
-        parse_mode="Markdown",
-    )
+    # Inline-кнопки: если вариант слишком длинный — номера в тексте, цифры-кнопки
+    MAX_BTN_LEN = 60
+    options_text = ""
+    if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
+        options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
+        buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"qa_{i}") for i in range(len(shuffled))]]
+    else:
+        buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
 
-    # Страховочный таймер 60 сек
-    data["timer_task"] = asyncio.create_task(auto_timeout(message, user_id, q_num))
+    keyboard = InlineKeyboardMarkup(buttons)
+    text = f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}{options_text}"
+
+    quiz_message_id = data.get("quiz_message_id")
+    quiz_chat_id    = data.get("quiz_chat_id")
+
+    if quiz_message_id and quiz_chat_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=quiz_chat_id, message_id=quiz_message_id,
+                text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
+        except Exception as e:
+            err_str = str(e).lower()
+            if "not modified" not in err_str:
+                # Если редактирование не удалось по другой причине — шлём новым сообщением
+                msg = await bot.send_message(
+                    chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+                )
+                data["quiz_message_id"] = msg.message_id
+                data["quiz_chat_id"]    = msg.chat.id
+    else:
+        msg = await bot.send_message(
+            chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+        )
+        data["quiz_message_id"] = msg.message_id
+        data["quiz_chat_id"]    = msg.chat.id
+
+    data["timer_task"] = asyncio.create_task(auto_timeout(bot, user_id, q_num))
 
 
-async def auto_timeout(message, user_id, q_num_at_send):
+async def _finalize_quiz_bubble(bot, user_id, text="✅ *Тест завершён!*"):
+    """Финально редактирует «пузырь» вопроса — убирает кнопки."""
+    data = user_data.get(user_id, {})
+    qmid  = data.get("quiz_message_id")
+    qcid  = data.get("quiz_chat_id")
+    if qmid and qcid:
+        try:
+            await bot.edit_message_text(
+                chat_id=qcid, message_id=qmid,
+                text=text, parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+
+async def auto_timeout(bot, user_id, q_num_at_send):
     """Страховочный таймер 60 сек для обычного теста."""
     await asyncio.sleep(60)
 
@@ -353,7 +403,6 @@ async def auto_timeout(message, user_id, q_num_at_send):
         return
     data = user_data[user_id]
 
-    # Race condition guard: если уже обрабатывается ответ — не трогаем
     if data.get("processing_answer") or data.get("current_question") != q_num_at_send:
         return
 
@@ -369,18 +418,25 @@ async def auto_timeout(message, user_id, q_num_at_send):
             advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
         data["current_question"] += 1
 
-        try:
-            await message.reply_text(
-                f"⏱ *60 секунд истекло*\n✅ Правильный ответ: *{correct_text}*",
-                reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown",
-            )
-        except Exception:
-            return
+        # Редактируем «пузырь» — показываем правильный ответ
+        qmid = data.get("quiz_message_id")
+        qcid = data.get("quiz_chat_id")
+        if qmid and qcid:
+            try:
+                await bot.edit_message_text(
+                    chat_id=qcid, message_id=qmid,
+                    text=f"⏱ *60 секунд истекло*\n✅ Правильный ответ: *{correct_text}*",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(2)
 
         if data["current_question"] < len(data["questions"]):
-            await send_question(message, user_id)
+            await send_question(bot, user_id)
         else:
-            await show_results(message, user_id)
+            await _finalize_quiz_bubble(bot, user_id)
+            await show_results(bot, user_id)
     finally:
         if user_id in user_data:
             user_data[user_id]["processing_answer"] = False
@@ -403,78 +459,34 @@ async def answer(update: Update, context):
     if data.get("is_battle"):
         return await battle_answer(update, context)
 
-    # Race condition guard
+    # Для обычного теста ответы теперь через Inline-кнопки (quiz_inline_answer).
+    # Этот обработчик остаётся для совместимости (например, вбит текст вручную).
     if data.get("processing_answer"):
         return ANSWERING
 
-    q_num       = data["current_question"]
-    q           = data["questions"][q_num]
-    user_answer = update.message.text
-    correct_text = q["options"][q["correct"]]
-    all_options  = q["options"]
-
-    if user_answer not in all_options:
-        count = _inc_bad_input(user_id)
-        if count >= _BAD_INPUT_LIMIT:
-            _reset_bad_input(user_id)
-            await update.message.reply_text(
-                "🤔 Похоже что-то пошло не так. Выбери вариант кнопкой, сбрось тест или сообщи автору.",
-                reply_markup=_STUCK_KB,
-            )
-        else:
-            await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
-        return ANSWERING
-
-    # Захватываем блокировку
-    data["processing_answer"] = True
-
-    # Отменяем таймер
-    timer_task = data.get("timer_task")
-    if timer_task and not timer_task.done():
-        timer_task.cancel()
-
-    is_correct = (user_answer == correct_text)
-    _reset_bad_input(user_id)
-    if is_correct:
-        data["correct_answers"] += 1
-        await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
-    else:
-        await update.message.reply_text(f"❌ Неверно\n✅ {correct_text}", reply_markup=ReplyKeyboardRemove())
-
-    elapsed = time.time() - data.get("question_sent_at", time.time())
-    q_id = str(q.get("id", hash(q["question"])))
-    record_question_stat(q_id, data["level_key"], is_correct, elapsed)
-
-    data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
-    data["current_question"] += 1
-
-    session_id = data.get("session_id")
-    if session_id:
-        advance_quiz_session(session_id, q_id, user_answer, is_correct, q)
-
-    data["processing_answer"] = False
-
-    if data["current_question"] < len(data["questions"]):
-        await send_question(update.message, user_id)
-        return ANSWERING
-    else:
-        await show_results(update.message, user_id)
-        return ConversationHandler.END
+    await update.message.reply_text(
+        "👆 Используй кнопки под вопросом для ответа.",
+        reply_markup=_STUCK_KB,
+    )
+    return ANSWERING
 
 
-async def show_results(message, user_id):
+async def show_results(bot, user_id):
+    """Отправляет результаты теста новым сообщением."""
     data       = user_data[user_id]
     score      = data["correct_answers"]
     total      = len(data["questions"])
     percentage = (score / total) * 100
     time_taken = time.time() - data["start_time"]
-    user       = message.from_user
+    chat_id    = data.get("quiz_chat_id")
+    username   = data.get("username")
+    first_name = data.get("first_name", "Игрок")
 
     session_id = data.get("session_id")
     if session_id:
         finish_quiz_session(session_id)
 
-    add_to_leaderboard(user_id, user.username, user.first_name, data["level_key"], score, total, time_taken)
+    add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken)
     position, entry = get_user_position(user_id)
 
     cfg = next((v for v in LEVEL_CONFIG.values() if v["key"] == data["level_key"]), None)
@@ -513,21 +525,27 @@ async def show_results(message, user_id):
             callback_data=f"retry_errors_{user_id}"
         )])
 
-    await message.reply_text(result_text, reply_markup=InlineKeyboardMarkup(keyboard_rows), parse_mode="Markdown")
+    await bot.send_message(
+        chat_id=chat_id,
+        text=result_text,
+        reply_markup=InlineKeyboardMarkup(keyboard_rows),
+        parse_mode="Markdown",
+    )
 
     # Генерация картинки результатов (задание 4.2)
     try:
         rank_name = get_rank_name(percentage)
         img_bytes = await generate_result_image(
-            bot=message.get_bot(),
+            bot=bot,
             user_id=user_id,
-            first_name=user.first_name or "Игрок",
+            first_name=first_name,
             score=score,
             total=total,
             rank_name=rank_name,
         )
         if img_bytes:
-            await message.reply_photo(
+            await bot.send_photo(
+                chat_id=chat_id,
                 photo=img_bytes,
                 caption=f"🏆 {score}/{total} • {rank_name}",
             )
@@ -547,7 +565,7 @@ async def show_results(message, user_id):
             verse_list = ", ".join(f"ст. {v} ({c})" for v, c in sorted_verses)
             header += f"\n\n📌 *Сложные места:* {verse_list}"
             header += "\n💡 _Рекомендуем перечитать эти стихи_"
-        await message.reply_text(header, parse_mode="Markdown")
+        await bot.send_message(chat_id=chat_id, text=header, parse_mode="Markdown")
 
         for i, item in enumerate(wrong, 1):
             q            = item["question_obj"]
@@ -564,11 +582,122 @@ async def show_results(message, user_id):
             breakdown += f"💡 *Пояснение:*\n{q['explanation']}"
             if q.get("pdf_ref"):
                 breakdown += f"\n\n📄 _Источник: {q['pdf_ref']}_"
-            await message.reply_text(safe_truncate(breakdown, 4000), parse_mode="Markdown")
+            await bot.send_message(chat_id=chat_id, text=safe_truncate(breakdown, 4000), parse_mode="Markdown")
 
-        await message.reply_text("⬆️ Выбери действие:", reply_markup=InlineKeyboardMarkup(keyboard_rows))
+        await bot.send_message(
+            chat_id=chat_id, text="⬆️ Выбери действие:",
+            reply_markup=InlineKeyboardMarkup(keyboard_rows),
+        )
     else:
-        await message.reply_text("🎯 *Все ответы верны — отличная работа!*", parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="🎯 *Все ответы верны — отличная работа!*",
+            parse_mode="Markdown",
+        )
+
+
+# ═══════════════════════════════════════════════
+# INLINE-ОТВЕТ НА ВОПРОС (основной тест)
+# ═══════════════════════════════════════════════
+
+async def quiz_inline_answer(update: Update, context):
+    """
+    Обрабатывает нажатие кнопки ответа в обычном тесте.
+    Редактирует «пузырь» → показывает фидбек → показывает следующий вопрос.
+    """
+    query = update.callback_query
+    user_id = query.from_user.id
+    _touch(user_id)
+
+    if user_id not in user_data:
+        await query.answer("⚠️ Сессия не найдена. Начни тест заново.", show_alert=True)
+        return
+
+    data = user_data[user_id]
+
+    if data.get("processing_answer"):
+        await query.answer()
+        return
+
+    q_num = data["current_question"]
+    if q_num >= len(data["questions"]):
+        await query.answer()
+        return
+
+    # Индекс нажатой кнопки
+    try:
+        btn_index = int(query.data.replace("qa_", ""))
+    except ValueError:
+        await query.answer()
+        return
+
+    shuffled = data.get("current_options", [])
+    if btn_index >= len(shuffled):
+        await query.answer()
+        return
+
+    user_answer  = shuffled[btn_index]
+    correct_text = data.get("current_correct_text") or data["questions"][q_num]["options"][data["questions"][q_num]["correct"]]
+    session_id_at_start = data.get("session_id")
+
+    data["processing_answer"] = True
+    await query.answer()
+
+    try:
+        timer_task = data.get("timer_task")
+        if timer_task and not timer_task.done():
+            timer_task.cancel()
+
+        is_correct = (user_answer == correct_text)
+        _reset_bad_input(user_id)
+        if is_correct:
+            data["correct_answers"] += 1
+            feedback = f"✅ *Верно!*\n\n_{correct_text}_"
+        else:
+            feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
+
+        q = data["questions"][q_num]
+        elapsed = time.time() - data.get("question_sent_at", time.time())
+        q_id = str(q.get("id", hash(q["question"])))
+        record_question_stat(q_id, data["level_key"], is_correct, elapsed)
+
+        data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
+        data["current_question"] += 1
+
+        if session_id_at_start:
+            advance_quiz_session(session_id_at_start, q_id, user_answer, is_correct, q)
+
+        qmid = data.get("quiz_message_id")
+        qcid = data.get("quiz_chat_id")
+        if qmid and qcid:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=qcid, message_id=qmid,
+                    text=feedback, parse_mode="Markdown",
+                )
+            except Exception as e:
+                if "not modified" not in str(e).lower():
+                    print(f"quiz_inline_answer edit error: {e}")
+
+        await asyncio.sleep(1.5)
+
+        # Проверяем, что сессия не сменилась
+        if user_id not in user_data:
+            return
+        current_data = user_data[user_id]
+        if current_data.get("session_id") != session_id_at_start:
+            return
+
+        if current_data["current_question"] < len(current_data["questions"]):
+            await send_question(context.bot, user_id)
+        else:
+            await _finalize_quiz_bubble(context.bot, user_id)
+            await show_results(context.bot, user_id)
+    except Exception as e:
+        print(f"quiz_inline_answer unexpected error: {e}")
+    finally:
+        if user_id in user_data and user_data[user_id].get("session_id") == session_id_at_start:
+            user_data[user_id]["processing_answer"] = False
 
 
 # ═══════════════════════════════════════════════
@@ -609,13 +738,17 @@ async def retry_errors(update: Update, context):
         "battle_points":       0,
         "is_retry":            True,
         "processing_answer":   False,
+        "username":            query.from_user.username,
+        "first_name":          query.from_user.first_name,
+        "quiz_chat_id":        query.message.chat_id,
+        "quiz_message_id":     None,
     }
 
     await query.edit_message_text(
         f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong_questions)}\nПоехали! 💪",
         parse_mode="Markdown",
     )
-    await send_question(query.message, user_id)
+    await send_question(context.bot, user_id)
     return ANSWERING
 
 
@@ -650,12 +783,17 @@ async def _restore_session_to_memory(user_id: int, db_session: dict):
         "challenge_eligible":   is_bonus_eligible(user_id, mode) if is_challenge else False,
         "challenge_time_limit": time_limit,
         "processing_answer":    False,
+        "username":             None,   # будет обновлено при первом ответе
+        "first_name":           "Игрок",
+        "quiz_chat_id":         None,   # будет установлено при возобновлении
+        "quiz_message_id":      None,
     }
 
 
 async def _handle_timeout_after_restart(message, user_id: int, db_session: dict):
     await _restore_session_to_memory(user_id, db_session)
     data = user_data[user_id]
+    data["quiz_chat_id"] = message.chat_id
     q_num = data["current_question"]
     q = data["questions"][q_num]
     correct_text = q["options"][q["correct"]]
@@ -664,17 +802,19 @@ async def _handle_timeout_after_restart(message, user_id: int, db_session: dict)
     advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
     data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
     data["current_question"] += 1
+    bot = message.get_bot()
     try:
-        await message.reply_text(
-            f"⏱ *Время вышло!*\n✅ {correct_text}",
-            reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown",
+        await bot.send_message(
+            chat_id=message.chat_id,
+            text=f"⏱ *Время вышло!*\n✅ {correct_text}",
+            parse_mode="Markdown",
         )
     except Exception:
         pass
     if data["current_question"] < len(data["questions"]):
-        await send_challenge_question(message, user_id)
+        await send_challenge_question(bot, user_id)
     else:
-        await show_challenge_results(message, user_id)
+        await show_challenge_results(bot, user_id)
 
 
 async def resume_session_handler(update: Update, context):
@@ -691,6 +831,10 @@ async def resume_session_handler(update: Update, context):
 
     await _restore_session_to_memory(user_id, db_session)
     data = user_data[user_id]
+    # Store user info and chat_id for the new inline flow
+    data["username"]    = query.from_user.username
+    data["first_name"]  = query.from_user.first_name or "Игрок"
+    data["quiz_chat_id"] = query.message.chat_id
     mode = db_session.get("mode", "level")
 
     if is_question_timed_out(db_session):
@@ -708,7 +852,7 @@ async def resume_session_handler(update: Update, context):
     if mode in ("random20", "hardcore20"):
         await send_challenge_question(query.message, user_id)
     else:
-        await send_question(query.message, user_id)
+        await send_question(context.bot, user_id)
     return ANSWERING
 
 
@@ -730,7 +874,7 @@ async def restart_session_handler(update: Update, context):
     if mode in ("random20", "hardcore20"):
         eligible = is_bonus_eligible(user_id, mode)
         questions = pick_challenge_questions(mode)
-        time_limit = 7 if mode == "hardcore20" else None
+        time_limit = 10 if mode == "hardcore20" else None
         mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
         question_ids = [str(hash(q["question"])) for q in questions]
         new_session_id = create_quiz_session(
@@ -748,6 +892,10 @@ async def restart_session_handler(update: Update, context):
             "is_challenge": True, "challenge_mode": mode,
             "challenge_eligible": eligible, "challenge_time_limit": time_limit,
             "processing_answer": False,
+            "username":      query.from_user.username,
+            "first_name":    query.from_user.first_name or "Игрок",
+            "quiz_chat_id":  query.message.chat_id,
+            "quiz_message_id": None,
         }
         await query.edit_message_text(f"{mode_name}\n\n📋 20 вопросов\nПоехали! 💪", parse_mode="Markdown")
         await send_challenge_question(query.message, user_id)
@@ -772,12 +920,16 @@ async def restart_session_handler(update: Update, context):
             "last_activity": time.time(),
             "is_battle": False, "battle_points": 0,
             "processing_answer": False,
+            "username":      query.from_user.username,
+            "first_name":    query.from_user.first_name or "Игрок",
+            "quiz_chat_id":  query.message.chat_id,
+            "quiz_message_id": None,
         }
         await query.edit_message_text(
             f"🔁 *Начинаем заново*\n{cfg['name']}\n\n📝 Вопросов: {len(questions)}",
             parse_mode="Markdown",
         )
-        await send_question(query.message, user_id)
+        await send_question(context.bot, user_id)
     return ANSWERING
 
 
@@ -1335,7 +1487,7 @@ async def challenge_menu(update: Update, context):
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎲 Normal (20) — без таймера", callback_data="challenge_rules_random20")],
-            [InlineKeyboardButton("💀 Hardcore (20) — 7 сек",     callback_data="challenge_rules_hardcore20")],
+            [InlineKeyboardButton("💀 Hardcore (20) — 10 сек",     callback_data="challenge_rules_hardcore20")],
             [InlineKeyboardButton("🏆 Лидерборд недели",          callback_data="weekly_lb_random20")],
             [InlineKeyboardButton("⬅️ Назад",                      callback_data="back_to_main")],
         ]),
@@ -1351,7 +1503,7 @@ async def challenge_rules(update: Update, context):
     eligible = is_bonus_eligible(user_id, mode)
     today_status = "✅ доступен" if eligible else "❌ уже получен сегодня"
     title = "🎲 *Random Challenge (20)*" if mode == "random20" else "💀 *Hardcore Random (20)*"
-    timer_info = "• без таймера" if mode == "random20" else "• ⏱ 7 сек на вопрос"
+    timer_info = "• без таймера" if mode == "random20" else "• ⏱ 10 сек на вопрос"
     await query.edit_message_text(
         f"{title}\n━━━━━━━━━━━━━━━━\n{timer_info}\n"
         f"*Статус бонуса:* {today_status}",
@@ -1371,7 +1523,7 @@ async def challenge_start(update: Update, context):
     _touch(user_id)
     eligible = is_bonus_eligible(user_id, mode)
     questions = pick_challenge_questions(mode)
-    time_limit = 7 if mode == "hardcore20" else None
+    time_limit = 10 if mode == "hardcore20" else None
     mode_name  = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
 
     cancel_active_quiz_session(user_id)
@@ -1399,6 +1551,10 @@ async def challenge_start(update: Update, context):
         "challenge_eligible":   eligible,
         "challenge_time_limit": time_limit,
         "processing_answer":    False,
+        "username":             query.from_user.username,
+        "first_name":           query.from_user.first_name or "Игрок",
+        "quiz_chat_id":         query.message.chat_id,
+        "quiz_message_id":      None,
     }
 
     await query.edit_message_text(
@@ -1409,13 +1565,17 @@ async def challenge_start(update: Update, context):
     return ANSWERING
 
 
-async def send_challenge_question(message, user_id):
+async def send_challenge_question(message_or_bot, user_id):
+    """
+    message_or_bot: Message (для первого вопроса) или bot (для редактирования).
+    Использует InlineKeyboard и edit-in-place.
+    """
     data  = user_data[user_id]
     q_num = data["current_question"]
     total = len(data["questions"])
 
     if q_num >= total:
-        await show_challenge_results(message, user_id)
+        await show_challenge_results(message_or_bot, user_id)
         return
 
     q = data["questions"][q_num]
@@ -1441,17 +1601,61 @@ async def send_challenge_question(message, user_id):
     time_limit = data.get("challenge_time_limit")
     timer_str  = f" • ⏱ {time_limit} сек" if time_limit else ""
 
-    await message.reply_text(
-        f"{data['level_name']}\nВопрос *{q_num + 1}/{total}*{timer_str}\n{progress}\n\n{q['question']}",
-        reply_markup=ReplyKeyboardMarkup([[opt] for opt in shuffled], one_time_keyboard=True, resize_keyboard=True),
-        parse_mode="Markdown",
+    MAX_BTN_LEN = 60
+    options_text = ""
+    if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
+        options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
+        buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"cha_{i}") for i in range(len(shuffled))]]
+    else:
+        buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
+
+    keyboard = InlineKeyboardMarkup(buttons)
+    text = (
+        f"{data['level_name']}\n"
+        f"Вопрос *{q_num + 1}/{total}*{timer_str}\n{progress}\n\n"
+        f"{q['question']}{options_text}"
     )
 
+    quiz_message_id = data.get("quiz_message_id")
+    quiz_chat_id    = data.get("quiz_chat_id")
+
+    # Получаем bot object
+    if hasattr(message_or_bot, 'send_message'):
+        bot = message_or_bot
+        chat_id = quiz_chat_id
+    else:
+        bot = message_or_bot.get_bot()
+        chat_id = message_or_bot.chat_id
+
+    if quiz_message_id and quiz_chat_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=quiz_chat_id, message_id=quiz_message_id,
+                text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
+        except Exception as e:
+            err_str = str(e).lower()
+            if "not modified" not in err_str:
+                msg = await bot.send_message(
+                    chat_id=chat_id or quiz_chat_id, text=text,
+                    reply_markup=keyboard, parse_mode="Markdown",
+                )
+                data["quiz_message_id"] = msg.message_id
+                data["quiz_chat_id"]    = msg.chat.id
+    else:
+        msg = await bot.send_message(
+            chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+        )
+        data["quiz_message_id"] = msg.message_id
+        data["quiz_chat_id"]    = msg.chat.id
+
     if time_limit:
-        data["timer_task"] = asyncio.create_task(challenge_timeout(message, user_id, q_num))
+        data["timer_task"] = asyncio.create_task(
+            challenge_timeout(bot, user_id, q_num)
+        )
 
 
-async def challenge_timeout(message, user_id, q_num_at_send):
+async def challenge_timeout(bot, user_id, q_num_at_send):
     data = user_data.get(user_id)
     if not data:
         return
@@ -1462,7 +1666,6 @@ async def challenge_timeout(message, user_id, q_num_at_send):
         return
     data = user_data[user_id]
 
-    # Race condition guard
     if data.get("processing_answer") or data.get("current_question") != q_num_at_send:
         return
 
@@ -1479,24 +1682,30 @@ async def challenge_timeout(message, user_id, q_num_at_send):
         data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
         data["current_question"] += 1
 
-        try:
-            await message.reply_text(
-                f"⏱ *Время вышло!*\n✅ {correct_text}",
-                reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown",
-            )
-        except Exception:
-            return
+        qmid = data.get("quiz_message_id")
+        qcid = data.get("quiz_chat_id")
+        if qmid and qcid:
+            try:
+                await bot.edit_message_text(
+                    chat_id=qcid, message_id=qmid,
+                    text=f"⏱ *Время вышло!*\n✅ {correct_text}",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(1.5)
 
         if data["current_question"] < len(data["questions"]):
-            await send_challenge_question(message, user_id)
+            await send_challenge_question(bot, user_id)
         else:
-            await show_challenge_results(message, user_id)
+            await show_challenge_results(bot, user_id)
     finally:
         if user_id in user_data:
             user_data[user_id]["processing_answer"] = False
 
 
 async def challenge_answer(update: Update, context):
+    """Fallback — для совместимости при текстовом вводе."""
     user_id = update.effective_user.id
     _touch(user_id)
     data    = user_data.get(user_id)
@@ -1512,75 +1721,140 @@ async def challenge_answer(update: Update, context):
         elif not data or not data.get("is_challenge"):
             return await answer(update, context)
 
-    # Race condition guard
     if data.get("processing_answer"):
         return ANSWERING
 
-    q_num        = data["current_question"]
-    q            = data["questions"][q_num]
-    user_answer  = update.message.text
-    correct_text = q["options"][q["correct"]]
+    await update.message.reply_text(
+        "👆 Используй кнопки под вопросом для ответа.",
+        reply_markup=_STUCK_KB,
+    )
+    return ANSWERING
 
-    if user_answer not in q["options"]:
-        count = _inc_bad_input(user_id)
-        if count >= _BAD_INPUT_LIMIT:
-            _reset_bad_input(user_id)
-            await update.message.reply_text(
-                "🤔 Похоже что-то пошло не так.", reply_markup=_STUCK_KB,
-            )
-        else:
-            await update.message.reply_text("Выбери вариант кнопкой или нажми /reset")
-        return ANSWERING
+
+async def challenge_inline_answer(update: Update, context):
+    """
+    Обрабатывает нажатие кнопки ответа в режиме Challenge.
+    """
+    query = update.callback_query
+    user_id = query.from_user.id
+    _touch(user_id)
+
+    if user_id not in user_data:
+        await query.answer("⚠️ Сессия не найдена.", show_alert=True)
+        return
+
+    data = user_data[user_id]
+
+    if data.get("processing_answer"):
+        await query.answer()
+        return
+
+    q_num = data["current_question"]
+    if q_num >= len(data["questions"]):
+        await query.answer()
+        return
+
+    try:
+        btn_index = int(query.data.replace("cha_", ""))
+    except ValueError:
+        await query.answer()
+        return
+
+    shuffled = data.get("current_options", [])
+    if btn_index >= len(shuffled):
+        await query.answer()
+        return
+
+    user_answer  = shuffled[btn_index]
+    correct_text = data.get("current_correct_text") or data["questions"][q_num]["options"][data["questions"][q_num]["correct"]]
+    session_id_at_start = data.get("session_id")  # guard against race with new session
 
     data["processing_answer"] = True
+    await query.answer()
 
-    timer_task = data.get("timer_task")
-    if timer_task and not timer_task.done():
-        timer_task.cancel()
+    try:
+        timer_task = data.get("timer_task")
+        if timer_task and not timer_task.done():
+            timer_task.cancel()
 
-    is_correct = (user_answer == correct_text)
-    _reset_bad_input(user_id)
-    if is_correct:
-        data["correct_answers"] += 1
-        await update.message.reply_text("✅ Верно!", reply_markup=ReplyKeyboardRemove())
-    else:
-        await update.message.reply_text(f"❌ Неверно\n✅ {correct_text}", reply_markup=ReplyKeyboardRemove())
+        is_correct = (user_answer == correct_text)
+        _reset_bad_input(user_id)
+        if is_correct:
+            data["correct_answers"] += 1
+            feedback = f"✅ *Верно!*\n\n_{correct_text}_"
+        else:
+            feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
 
-    elapsed = time.time() - data.get("question_sent_at", time.time())
-    q_id = str(q.get("id", hash(q["question"])))
-    record_question_stat(q_id, data["level_key"], is_correct, elapsed)
+        q = data["questions"][q_num]
+        elapsed = time.time() - data.get("question_sent_at", time.time())
+        q_id = str(q.get("id", hash(q["question"])))
+        record_question_stat(q_id, data["level_key"], is_correct, elapsed)
 
-    data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
-    data["current_question"] += 1
+        data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
+        data["current_question"] += 1
 
-    session_id = data.get("session_id")
-    if session_id:
-        advance_quiz_session(session_id, q_id, user_answer, is_correct, q)
+        if session_id_at_start:
+            advance_quiz_session(session_id_at_start, q_id, user_answer, is_correct, q)
 
-    data["processing_answer"] = False
+        qmid = data.get("quiz_message_id")
+        qcid = data.get("quiz_chat_id")
+        if qmid and qcid:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=qcid, message_id=qmid,
+                    text=feedback, parse_mode="Markdown",
+                )
+            except Exception as e:
+                err = str(e).lower()
+                if "not modified" not in err:
+                    print(f"challenge_inline_answer edit error: {e}")
 
-    if data["current_question"] < len(data["questions"]):
-        await send_challenge_question(update.message, user_id)
-        return ANSWERING
-    else:
-        await show_challenge_results(update.message, user_id)
-        return ConversationHandler.END
+        await asyncio.sleep(1.5)
+
+        # После sleep — проверяем, что сессия не сменилась (пользователь не начал новый тест)
+        if user_id not in user_data:
+            return
+        current_data = user_data[user_id]
+        if current_data.get("session_id") != session_id_at_start:
+            return  # новая сессия — не трогаем
+
+        if current_data["current_question"] < len(current_data["questions"]):
+            await send_challenge_question(context.bot, user_id)
+        else:
+            await show_challenge_results(context.bot, user_id)
+    except Exception as e:
+        print(f"challenge_inline_answer unexpected error: {e}")
+    finally:
+        # Всегда сбрасываем блокировку
+        if user_id in user_data and user_data[user_id].get("session_id") == session_id_at_start:
+            user_data[user_id]["processing_answer"] = False
 
 
-async def show_challenge_results(message, user_id):
+async def show_challenge_results(bot_or_message, user_id):
     data       = user_data[user_id]
     score      = data["correct_answers"]
     total      = len(data["questions"])
     mode       = data["challenge_mode"]
     eligible   = data["challenge_eligible"]
     time_taken = time.time() - data["start_time"]
-    user       = message.from_user
+    chat_id    = data.get("quiz_chat_id")
+    username   = data.get("username")
+    first_name = data.get("first_name", "Игрок")
+
+    # Resolve bot and chat_id
+    if hasattr(bot_or_message, 'send_message'):
+        bot = bot_or_message
+    else:
+        bot = bot_or_message.get_bot()
+        if not chat_id:
+            chat_id = bot_or_message.chat_id
 
     session_id = data.get("session_id")
     if session_id:
         finish_quiz_session(session_id)
 
-    anim_msg = await message.reply_text("📊 Подсчитываю результат…")
+    # Анимация подсчёта
+    anim_msg = await bot.send_message(chat_id=chat_id, text="📊 Подсчитываю результат…")
     for step in ("📊 Подсчитываю… ▰▱▱", "📊 Подсчитываю… ▰▰▱", "📊 Готово! ✨"):
         try:
             await asyncio.sleep(0.4)
@@ -1594,16 +1868,16 @@ async def show_challenge_results(message, user_id):
     total_earned = earned_base + bonus
 
     total_credited, new_achievements = update_challenge_stats(
-        user.id, user.username, user.first_name,
+        user_id, username, first_name,
         mode, score, total, time_taken, eligible
     )
     if eligible:
-        update_weekly_leaderboard(user.id, user.username, user.first_name, mode, score, time_taken)
+        update_weekly_leaderboard(user_id, username, first_name, mode, score, time_taken)
 
     pct = round(score / total * 100)
     grade = "🌟 Идеально!" if pct == 100 else "🔥 Отлично!" if pct >= 90 else "👍 Хорошо" if pct >= 75 else "📚 Нужно повторить"
     mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
-    position, _ = get_user_position(user.id)
+    position, _ = get_user_position(user_id)
 
     result = (
         f"━━━━━━━━━━━━━━━━\n{mode_name}\n━━━━━━━━━━━━━━━━\n"
@@ -1635,30 +1909,37 @@ async def show_challenge_results(message, user_id):
     if wrong:
         kb_rows.insert(1, [InlineKeyboardButton(f"📌 Повторить ошибки ({len(wrong)})", callback_data=f"retry_errors_{user_id}")])
 
-    await message.reply_text(result, reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="Markdown")
+    await bot.send_message(
+        chat_id=chat_id, text=result,
+        reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="Markdown",
+    )
 
     # Картинка результатов
     try:
         rank_name = get_rank_name(pct)
         img_bytes = await generate_result_image(
-            bot=message.get_bot(),
+            bot=bot,
             user_id=user_id,
-            first_name=user.first_name or "Игрок",
+            first_name=first_name,
             score=score, total=total, rank_name=rank_name,
         )
         if img_bytes:
-            await message.reply_photo(photo=img_bytes, caption=f"🏆 {score}/{total} • {rank_name}")
+            await bot.send_photo(chat_id=chat_id, photo=img_bytes, caption=f"🏆 {score}/{total} • {rank_name}")
     except Exception as e:
         print(f"Challenge result image error: {e}")
 
     if wrong:
-        await message.reply_text(f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {total}):*", parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {total}):*",
+            parse_mode="Markdown",
+        )
         for i, item in enumerate(wrong, 1):
             q         = item["question_obj"]
             breakdown = f"❌ *Ошибка {i}*\n_{q['question']}_\n\nВаш: *{item['user_answer']}*\nВерно: *{q['options'][q['correct']]}*\n\n💡 {q.get('explanation', '')}"
-            await message.reply_text(safe_truncate(breakdown, 4000), parse_mode="Markdown")
+            await bot.send_message(chat_id=chat_id, text=safe_truncate(breakdown, 4000), parse_mode="Markdown")
     else:
-        await message.reply_text("🎯 *Все ответы верны!*", parse_mode="Markdown")
+        await bot.send_message(chat_id=chat_id, text="🎯 *Все ответы верны!*", parse_mode="Markdown")
 
 
 # ═══════════════════════════════════════════════
@@ -2018,31 +2299,46 @@ async def cancel_report_command(update: Update, context):
 
 async def _general_message_fallback(update: Update, context):
     """
-    Резервный обработчик: проверяет MongoDB и восстанавливает сессию.
-    Позволяет продолжать тест после рестарта бота без ввода команд.
+    Резервный обработчик текстовых сообщений.
+    Если идёт тест — подсказывает нажать кнопки.
+    Если нет сессии — пытается восстановить из MongoDB.
     """
     user_id = update.effective_user.id
 
+    # Если сессия уже в памяти — тест идёт через inline-кнопки
     if user_id in user_data:
+        data = user_data[user_id]
+        if data.get("is_battle"):
+            return  # битвы используют текстовый ввод — пропускаем
+        # Для обычного теста и challenge — напоминаем про кнопки
+        await update.message.reply_text(
+            "👆 Нажми кнопку под вопросом для ответа.",
+            reply_markup=_STUCK_KB,
+        )
         return
 
+    # Нет сессии в памяти — пробуем восстановить из БД
     db_session = get_active_quiz_session(user_id)
     if not db_session:
         return
 
     mode = db_session.get("mode", "level")
-    # Автоматически восстанавливаем состояние
     await _restore_session_to_memory(user_id, db_session)
 
-    # Проверяем таймаут
+    if user_id in user_data:
+        user_data[user_id]["quiz_chat_id"]  = update.message.chat_id
+        user_data[user_id]["username"]      = update.effective_user.username
+        user_data[user_id]["first_name"]    = update.effective_user.first_name or "Игрок"
+
     if is_question_timed_out(db_session):
         await _handle_timeout_after_restart(update.message, user_id, db_session)
         return
 
+    # Восстановили — показываем текущий вопрос с кнопками
     if mode in ("random20", "hardcore20"):
-        await challenge_answer(update, context)
+        await send_challenge_question(context.bot, user_id)
     else:
-        await answer(update, context)
+        await send_question(context.bot, user_id)
 
 
 async def cleanup_old_battles_job(context):
@@ -2076,6 +2372,11 @@ async def on_error(update: object, context):
     err = context.error
     if isinstance(err, (NetworkError, TimedOut, RetryAfter)):
         print(f"[NETWORK] {type(err).__name__}: {err}")
+        return
+
+    # Игнорируем "Message is not modified" — частая ошибка при edit
+    from telegram.error import BadRequest
+    if isinstance(err, BadRequest) and "not modified" in str(err).lower():
         return
 
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
@@ -2138,6 +2439,10 @@ def main():
     )
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
+
+    # Inline-ответы на вопросы (основной тест и challenge)
+    app.add_handler(CallbackQueryHandler(quiz_inline_answer,       pattern=r"^qa_\d+$"))
+    app.add_handler(CallbackQueryHandler(challenge_inline_answer,  pattern=r"^cha_\d+$"))
 
     # Session recovery
     app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
