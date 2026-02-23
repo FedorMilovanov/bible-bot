@@ -93,6 +93,69 @@ from typing import Optional
 # Хранилище активных сессий (в памяти)
 user_data: dict = {}
 
+# ─────────────────────────────────────────────
+# SINGLE SCREEN UX STATE
+# ─────────────────────────────────────────────
+# Хранит screen_mid и screen_chat_id для каждого пользователя
+ui_state: dict[int, dict] = {}
+
+
+async def _try_delete(bot, chat_id: int, message_id: int):
+    """Безопасно удаляет сообщение, не бросая исключений."""
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+async def send_screen(bot, user_id: int, chat_id: int, text: str,
+                      reply_markup=None, parse_mode="Markdown",
+                      source_message=None):
+    """
+    Single Screen UX:
+    1) Удаляет предыдущий screen message пользователя (если был)
+    2) Удаляет source_message (кнопка/команда откуда нажали), если передан
+    3) Отправляет новое сообщение через send_message (всегда внизу)
+    4) Сохраняет screen_mid/screen_chat_id в ui_state
+    """
+    # Удаляем предыдущий screen message
+    prev = ui_state.get(user_id)
+    if prev:
+        await _try_delete(bot, prev["screen_chat_id"], prev["screen_mid"])
+
+    # Удаляем источник callback (если есть и он отличается от предыдущего screen)
+    if source_message:
+        src_mid = getattr(source_message, "message_id", None)
+        src_cid = getattr(source_message, "chat_id", None)
+        if src_mid and src_cid:
+            if not prev or src_mid != prev.get("screen_mid"):
+                await _try_delete(bot, src_cid, src_mid)
+
+    # Отправляем новый screen message (внизу чата)
+    try:
+        msg = await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
+        ui_state[user_id] = {"screen_mid": msg.message_id, "screen_chat_id": chat_id}
+    except Exception as e:
+        logger.error("send_screen: не удалось отправить экран: %s", e)
+
+
+async def send_main_menu(bot, user_id: int, chat_id: int, source_message=None):
+    """Отправляет главное меню как screen message (внизу чата)."""
+    await send_screen(
+        bot, user_id, chat_id,
+        text="📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
+             "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
+             "Выбери действие:",
+        reply_markup=_main_keyboard(),
+        source_message=source_message,
+    )
+
+
 # Счётчик неверных вводов подряд
 _bad_input_count: dict = {}
 _BAD_INPUT_LIMIT = BAD_INPUT_LIMIT
@@ -282,25 +345,19 @@ async def start(update: Update, context):
         welcome += f"\n\n🔥 *Серия: {streak} дней подряд!*"
     else:
         welcome += "\n\n💡 _Заходи каждый день для серии!_"
-    # Всегда новое сообщение — меню "прыгает" вниз
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
+    # Single Screen UX — всегда новое сообщение внизу, старый screen удаляется
+    await send_screen(
+        context.bot, user.id, update.effective_chat.id,
         text=welcome,
         reply_markup=_main_keyboard(),
-        parse_mode="Markdown",
     )
 
 
 async def back_to_main(update: Update, context):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
-        "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
-        "Выбери действие:",
-        reply_markup=_main_keyboard(),
-        parse_mode="Markdown",
-    )
+    user_id = query.from_user.id
+    await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
 
 
 # ═══════════════════════════════════════════════
@@ -316,9 +373,12 @@ async def choose_level(update, context, is_callback=False):
     ])
     text = f"🎯 *ВЫБЕРИ КАТЕГОРИЮ*\n\n📖 *1 Петра по главам:*\nГлава 1 — 5 видов вопросов\n\n⏱ На каждый вопрос — {QUIZ_TIMEOUT} сек!"
     if is_callback and hasattr(update, "callback_query"):
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        query = update.callback_query
+        user_id = query.from_user.id
+        await send_screen(context.bot, user_id, query.message.chat_id, text, keyboard, source_message=query.message)
     else:
-        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        user_id = update.effective_user.id
+        await send_screen(context.bot, user_id, update.effective_chat.id, text, keyboard)
 
 
 async def chapter_1_menu(update: Update, context):
@@ -348,11 +408,13 @@ async def chapter_1_menu(update: Update, context):
         [InlineKeyboardButton("🔬 Лингвистика ч.3",    callback_data="level_linguistics_ch1_3")],
         [InlineKeyboardButton("⬅️ Назад",               callback_data="start_test")],
     ])
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
         "🟢 Легкий (1 балл) • 🟡 Средний (2 балла) • 🔴 Сложный (3 балла)\n"
         "🙏 Применение (2 балла) • 🔬 Лингвистика (3 балла)",
-        reply_markup=keyboard, parse_mode="Markdown",
+        reply_markup=keyboard,
+        source_message=query.message,
     )
 
 
@@ -368,11 +430,13 @@ async def historical_menu(update: Update, context):
         [InlineKeyboardButton("🎲 Случайный факт",                        callback_data="random_fact_intro")],
         [InlineKeyboardButton("⬅️ Назад",                                 callback_data="back_to_main")],
     ])
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         "🏛 *ИСТОРИЧЕСКИЙ КОНТЕКСТ*\n\n"
         "📜 Введение — баллы засчитываются в общий рейтинг!\n"
         "💡 Перед тестами Введения можно нажать кнопку и получить *справку*.",
-        reply_markup=keyboard, parse_mode="Markdown",
+        reply_markup=keyboard,
+        source_message=query.message,
     )
 
 
@@ -402,13 +466,14 @@ async def intro_hint_handler(update: Update, context):
 
     hint_text = f"📖 *Справка: {level_name}*\n\n" + "\n\n".join(facts) if facts else "Нет данных."
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         hint_text,
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Начать тест", callback_data=f"intro_start_{level_cb}")],
             [InlineKeyboardButton("⬅️ Назад", callback_data="historical_menu")],
         ]),
+        source_message=query.message,
     )
 
 
@@ -455,9 +520,10 @@ async def intro_start_handler(update: Update, context):
         "quiz_message_id":    None,
     }
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} • 💎 2 балла за ответ\nНачинаем! ⏱",
-        parse_mode="Markdown",
+        source_message=query.message,
     )
     await send_question(context.bot, user_id)
 
@@ -471,13 +537,14 @@ async def random_fact_handler(update: Update, context):
     q = random.choice(all_intro)
     fact = q["explanation"]
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         f"🎲 *А вы знали?*\n\n_{fact}_",
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎲 Ещё факт",  callback_data="random_fact_intro")],
             [InlineKeyboardButton("⬅️ Назад",      callback_data="historical_menu")],
         ]),
+        source_message=query.message,
     )
 
 
@@ -502,33 +569,35 @@ async def level_selected(update: Update, context):
 
     # Для тестов «Введение» предлагаем справку перед стартом
     if cfg["pool_key"] in ("intro1", "intro2", "intro3"):
-        await query.edit_message_text(
+        await send_screen(
+            context.bot, user_id, query.message.chat_id,
             f"📜 *{cfg['name']}*\n\n"
             "Это вопросы по введению к 1 Петра: авторство, датировка, структура.\n\n"
             "Хочешь получить краткую *💡 справку* перед тестом?",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💡 Справка (3 факта)", callback_data=f"intro_hint_{query.data}")],
                 [InlineKeyboardButton("▶️ Начать без справки", callback_data=f"intro_start_{query.data}")],
                 [InlineKeyboardButton("⬅️ Назад", callback_data="historical_menu")],
             ]),
+            source_message=query.message,
         )
         return ConversationHandler.END
 
     # Экран подтверждения перед стартом
     pool_size = len(get_pool_by_key(cfg["pool_key"]))
     num_q = min(10, pool_size)
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
         f"📝 *{cfg['name']}*\n\n"
         f"• Вопросов: {num_q}\n"
         f"• Баллов за ответ: {cfg['points_per_q']}\n"
         f"• Таймер: 60 сек\n\n"
         f"Начинаем?",
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Начать", callback_data=f"confirm_level_{query.data}")],
             [InlineKeyboardButton("⬅️ Назад",  callback_data="start_test")],
         ]),
+        source_message=query.message,
     )
     return ConversationHandler.END
 
@@ -576,9 +645,10 @@ async def confirm_level_handler(update: Update, context):
         "quiz_message_id":    None,
     }
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)}\nНачинаем! ⏱",
-        parse_mode="Markdown",
+        source_message=query.message,
     )
     await send_question(context.bot, user_id)
 
@@ -1428,7 +1498,9 @@ async def cancel_session_handler(update: Update, context):
     await query.answer()
     session_id = query.data.replace("cancel_session_", "")
     cancel_quiz_session(session_id)
-    await query.edit_message_text("❌ Тест отменён.", reply_markup=_main_keyboard())
+    user_id = query.from_user.id
+    user_data.pop(user_id, None)
+    await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
 
 
 # ═══════════════════════════════════════════════
@@ -1448,7 +1520,12 @@ async def show_battle_menu(query):
     text += "• Побеждает тот, кто ответит лучше\n"
     text += "• Победа = +5 баллов, ничья = +2\n\n"
     text += f"📋 *Доступных битв:* {len(available)}\n" if available else "📋 *Нет доступных битв*\nСоздай свою!\n"
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await send_screen(
+        query.bot, query.from_user.id, query.message.chat_id,
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        source_message=query.message,
+    )
 
 
 async def create_battle(update: Update, context):
@@ -1855,7 +1932,11 @@ async def admin_command(update: Update, context):
         [InlineKeyboardButton("🧹 Очистка данных",    callback_data="admin_cleanup")],
         [InlineKeyboardButton("📢 Рассылка",          callback_data="admin_broadcast_prompt")],
     ])
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    await send_screen(
+        context.bot, user_id, update.effective_chat.id,
+        text,
+        reply_markup=keyboard,
+    )
 
 
 async def admin_callback_handler(update: Update, context):
@@ -2003,13 +2084,14 @@ async def show_my_stats(query):
     position, entry = get_user_position(user_id)
 
     if not entry:
-        await query.edit_message_text(
+        await send_screen(
+            query.bot, user_id, query.message.chat_id,
             "📊 *МОЯ СТАТИСТИКА*\n\nВы ещё не проходили тесты.\nИспользуйте /test чтобы начать!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎯 Начать тест", callback_data="start_test")],
                 [InlineKeyboardButton("⬅️ Назад",       callback_data="back_to_main")],
             ]),
-            parse_mode="Markdown",
+            source_message=query.message,
         )
         return
 
@@ -2034,7 +2116,8 @@ async def show_my_stats(query):
 
 
 
-    await query.edit_message_text(
+    await send_screen(
+        query.bot, user_id, query.message.chat_id,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎯 Начать тест",  callback_data="start_test")],
@@ -2042,7 +2125,7 @@ async def show_my_stats(query):
             [InlineKeyboardButton("📜 История",       callback_data="my_history")],
             [InlineKeyboardButton("⬅️ Назад",         callback_data="back_to_main")],
         ]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2070,9 +2153,14 @@ async def show_history(update: Update, context):
     else:
         text = "📜 *ИСТОРИЯ*\n\nПока пусто — пройди первый тест!"
 
-    await safe_edit(query, text, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Назад", callback_data="my_stats")],
-    ]))
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Назад", callback_data="my_stats")],
+        ]),
+        source_message=query.message,
+    )
 
 
 async def show_general_leaderboard(query, page=0):
@@ -2110,7 +2198,12 @@ async def show_general_leaderboard(query, page=0):
         InlineKeyboardButton("🔴 Богословы", callback_data="cat_lb_hard"),
     ])
     keyboard.append([InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await send_screen(
+        query.bot, query.from_user.id, query.message.chat_id,
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        source_message=query.message,
+    )
 
 
 async def show_category_leaderboard(query, category_key):
@@ -2134,13 +2227,14 @@ async def show_category_leaderboard(query, category_key):
             else:
                 text += f"{medal} *{name}* — {entry.get(f'{category_key}_correct', 0)} верных\n"
 
-    await query.edit_message_text(
+    await send_screen(
+        query.bot, query.from_user.id, query.message.chat_id,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Общий рейтинг", callback_data="leaderboard")],
             [InlineKeyboardButton("⬅️ В меню",         callback_data="back_to_main")],
         ]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2197,7 +2291,8 @@ async def challenge_menu(update: Update, context):
         f"• 💀 Hardcore: {badge(hardcore_ok)}\n\n"
         "Выбери режим:"
     )
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎲 Normal (20) — без таймера", callback_data="challenge_rules_random20")],
@@ -2205,7 +2300,7 @@ async def challenge_menu(update: Update, context):
             [InlineKeyboardButton("🏆 Лидерборд недели",          callback_data="weekly_lb_random20")],
             [InlineKeyboardButton("⬅️ Назад",                      callback_data="back_to_main")],
         ]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2218,14 +2313,15 @@ async def challenge_rules(update: Update, context):
     today_status = "✅ доступен" if eligible else "❌ уже получен сегодня"
     title = "🎲 *Random Challenge (20)*" if mode == "random20" else "💀 *Hardcore Random (20)*"
     timer_info = "• без таймера" if mode == "random20" else "• ⏱ 10 сек на вопрос"
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         f"{title}\n━━━━━━━━━━━━━━━━\n{timer_info}\n"
         f"*Статус бонуса:* {today_status}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Начать!", callback_data=f"challenge_start_{mode}")],
             [InlineKeyboardButton("⬅️ Назад",   callback_data="challenge_menu")],
         ]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2272,9 +2368,10 @@ async def challenge_start(update: Update, context):
         "quiz_message_id":      None,
     }
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
         f"{mode_name}\n\n📋 20 вопросов • {'✅ бонус доступен' if eligible else '❌ бонус уже получен'}\n\nПоехали! 💪",
-        parse_mode="Markdown",
+        source_message=query.message,
     )
     await send_challenge_question(context.bot, user_id)
     return ANSWERING
@@ -2425,7 +2522,7 @@ async def show_challenge_results(bot, user_id):
     if session_id:
         finish_quiz_session(session_id)
 
-    # Анимация подсчёта
+    # Анимация подсчёта (временное сообщение, удаляем после)
     anim_msg = await bot.send_message(chat_id=chat_id, text="📊 Подсчитываю результат…")
     for step in ("📊 Подсчитываю… ▰▱▱", "📊 Подсчитываю… ▰▰▱", "📊 Готово! ✨"):
         try:
@@ -2433,6 +2530,8 @@ async def show_challenge_results(bot, user_id):
             await anim_msg.edit_text(step)
         except Exception:
             pass
+    # Удаляем анимацию
+    await _try_delete(bot, chat_id, anim_msg.message_id)
 
     points_per_q = 1 if mode == "random20" else 2
     earned_base  = score * points_per_q
@@ -2545,10 +2644,11 @@ async def show_achievements(update: Update, context):
     if streak_last:
         text += f"\n📅 Последний раз: {streak_last}"
 
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         text,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")]]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2573,14 +2673,15 @@ async def show_weekly_leaderboard(update: Update, context):
 
     other_mode      = "hardcore20" if mode == "random20" else "random20"
     other_mode_name = "💀 Hardcore" if mode == "random20" else "🎲 Normal"
-    await query.edit_message_text(
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(f"→ {other_mode_name}", callback_data=f"weekly_lb_{other_mode}")],
             [InlineKeyboardButton("🎲 Сыграть",  callback_data=f"challenge_rules_{mode}")],
             [InlineKeyboardButton("⬅️ Назад",    callback_data="challenge_menu")],
         ]),
-        parse_mode="Markdown",
+        source_message=query.message,
     )
 
 
@@ -2605,33 +2706,62 @@ async def cancel_quiz_handler(update: Update, context):
     if timer_task and not timer_task.done():
         timer_task.cancel()
 
+    # Удаляем quiz bubble
+    qmid = data.get("quiz_message_id")
+    qcid = data.get("quiz_chat_id")
+    if qmid and qcid:
+        await _try_delete(context.bot, qcid, qmid)
+
     # Отменяем сессию в БД и чистим память
     cancel_active_quiz_session(user_id)
     user_data.pop(user_id, None)
 
-    # Редактируем тот же «пузырь» с вопросом
-    await query.edit_message_text(
-        "❌ *Тест отменён.* Выбери действие:",
-        reply_markup=_main_keyboard(),
-        parse_mode="Markdown",
-    )
+    # Показываем главное меню как новый экран внизу
+    await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context):
     user_id = update.effective_user.id
+    data = user_data.get(user_id, {})
+    timer_task = data.get("timer_task")
+    if timer_task and not timer_task.done():
+        timer_task.cancel()
+    # Delete quiz bubble
+    qmid = data.get("quiz_message_id")
+    qcid = data.get("quiz_chat_id")
+    if qmid and qcid:
+        await _try_delete(context.bot, qcid, qmid)
     cancel_active_quiz_session(user_id)
     user_data.pop(user_id, None)
-    await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
+    # Delete the /cancel command message
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    await send_main_menu(context.bot, user_id, update.effective_chat.id)
     return ConversationHandler.END
 
 
 async def reset_command(update: Update, context):
     user_id = update.effective_user.id
+    data = user_data.get(user_id, {})
+    timer_task = data.get("timer_task")
+    if timer_task and not timer_task.done():
+        timer_task.cancel()
+    # Delete quiz bubble
+    qmid = data.get("quiz_message_id")
+    qcid = data.get("quiz_chat_id")
+    if qmid and qcid:
+        await _try_delete(context.bot, qcid, qmid)
     cancel_active_quiz_session(user_id)
     user_data.pop(user_id, None)
-    await update.message.reply_text("🆘 Тест сброшен.", reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("📖 *Главное меню*", reply_markup=_main_keyboard(), parse_mode="Markdown")
+    # Delete /reset command message
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    await send_main_menu(context.bot, user_id, update.effective_chat.id)
     return ConversationHandler.END
 
 
@@ -2639,8 +2769,13 @@ async def status_command(update: Update, context):
     user_id = update.effective_user.id
     session = get_active_quiz_session(user_id)
     mem = user_data.get(user_id)
+    # Delete /status command message
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
     if not session and not mem:
-        await update.message.reply_text("📌 Нет активного теста.", reply_markup=_main_keyboard())
+        await send_main_menu(context.bot, user_id, update.effective_chat.id)
         return
     if session:
         total_q = len(session.get("questions_data", []))
@@ -2653,13 +2788,13 @@ async def status_command(update: Update, context):
         level = mem.get("level_name", "?")
         sid = mem.get("session_id", "")
     text = f"📌 *Активный тест*\nРежим: _{level}_\nВопрос: *{current + 1}/{total_q}*"
-    await update.message.reply_text(
+    await send_screen(
+        context.bot, user_id, update.effective_chat.id,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{sid}")],
             [InlineKeyboardButton("🆘 Сбросить",   callback_data="reset_session")],
         ]) if sid else None,
-        parse_mode="Markdown",
     )
 
 
@@ -2669,11 +2804,7 @@ async def reset_session_inline(update: Update, context):
     user_id = query.from_user.id
     cancel_active_quiz_session(user_id)
     user_data.pop(user_id, None)
-    try:
-        await query.message.reply_text("✅", reply_markup=ReplyKeyboardRemove())
-    except Exception:
-        pass
-    await safe_edit(query, "🆘 Тест сброшен.", reply_markup=_main_keyboard())
+    await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
 
 
 async def show_status_inline(update: Update, context):
@@ -2683,7 +2814,7 @@ async def show_status_inline(update: Update, context):
     session = get_active_quiz_session(user_id)
     mem = user_data.get(user_id)
     if not session and not mem:
-        await safe_edit(query, "📌 *Статус:* нет активного теста", reply_markup=_main_keyboard())
+        await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
         return
     if session:
         total_q = len(session.get("questions_data", []))
@@ -2695,14 +2826,15 @@ async def show_status_inline(update: Update, context):
         current = mem.get("current_question", 0)
         level = mem.get("level_name", "?")
         sid = mem.get("session_id", "")
-    await safe_edit(
-        query,
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
         f"📌 *Активный тест*\nРежим: _{level}_\nВопрос: *{current + 1}/{total_q}*",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{sid}")],
             [InlineKeyboardButton("🆘 Сбросить",   callback_data="reset_session")],
             [InlineKeyboardButton("⬅️ Меню",        callback_data="back_to_main")],
         ]),
+        source_message=query.message,
     )
 
 
@@ -2723,7 +2855,8 @@ async def button_handler(update: Update, context):
         return
 
     dispatch = {
-        "about":         lambda: query.edit_message_text(
+        "about":         lambda: send_screen(
+            context.bot, query.from_user.id, query.message.chat_id,
             "📚 *БИБЛЕЙСКИЙ ТЕСТ-БОТ: 1 ПЕТРА*\n"
             "_Интерактивный инструмент для глубокого изучения Писания._\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
@@ -2757,7 +2890,7 @@ async def button_handler(update: Update, context):
             "• 🔁 Повторение ошибок — перепройди только то, что не знал\n\n"
             "_v2.6 • Soli Deo Gloria_",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]),
-            parse_mode="Markdown",
+            source_message=query.message,
         ),
         "start_test":    lambda: choose_level(update, context, is_callback=True),
         "battle_menu":   lambda: show_battle_menu(query),
@@ -2783,8 +2916,8 @@ async def button_handler(update: Update, context):
 async def report_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
-    await safe_edit(
-        query,
+    await send_screen(
+        context.bot, query.from_user.id, query.message.chat_id,
         "✉️ *Написать автору*\n\nВыбери тип сообщения:",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🐞 Сообщить о баге",     callback_data="report_start_bug")],
@@ -2792,6 +2925,7 @@ async def report_menu(update: Update, context):
             [InlineKeyboardButton("❓ Вопрос по материалу",  callback_data="report_start_question")],
             [InlineKeyboardButton("⬅️ Назад",                callback_data="back_to_main")],
         ]),
+        source_message=query.message,
     )
 
 
@@ -2923,23 +3057,32 @@ async def report_confirm(update: Update, context):
         logger.error("[REPORT] Could not deliver to admin: %s", e)
 
     msg = "✅ *Спасибо! Сообщение отправлено автору.*" if admin_delivered else "⚠️ Не удалось доставить прямо сейчас."
-    await safe_edit(query, msg, reply_markup=_main_keyboard())
+    await send_screen(
+        context.bot, user_id, query.message.chat_id,
+        msg,
+        reply_markup=_main_keyboard(),
+        source_message=query.message,
+    )
     return ConversationHandler.END
 
 
 async def report_cancel(update: Update, context):
     query = update.callback_query
     await query.answer()
-    report_drafts.pop(query.from_user.id, None)
-    await safe_edit(query, "❌ Репорт отменён.", reply_markup=_main_keyboard())
+    user_id = query.from_user.id
+    report_drafts.pop(user_id, None)
+    await send_main_menu(context.bot, user_id, query.message.chat_id, source_message=query.message)
     return ConversationHandler.END
 
 
 async def cancel_report_command(update: Update, context):
     user_id = update.effective_user.id
     report_drafts.pop(user_id, None)
-    await update.message.reply_text("❌ Репорт отменён.", reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("Главное меню:", reply_markup=_main_keyboard())
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    await send_main_menu(context.bot, user_id, update.effective_chat.id)
     return ConversationHandler.END
 
 
