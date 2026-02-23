@@ -239,12 +239,129 @@ async def historical_menu(update: Update, context):
         [InlineKeyboardButton("📜 Введение: Структура и цель (2 балла)", callback_data="level_intro3")],
         [InlineKeyboardButton("👑 Правление Нерона (2 балла)",           callback_data="level_nero")],
         [InlineKeyboardButton("🌍 География земли (2 балла)",            callback_data="level_geography")],
+        [InlineKeyboardButton("🎲 Случайный факт",                        callback_data="random_fact_intro")],
         [InlineKeyboardButton("⬅️ Назад",                                 callback_data="back_to_main")],
     ])
     await query.edit_message_text(
         "🏛 *ИСТОРИЧЕСКИЙ КОНТЕКСТ*\n\n"
-        "_Баллы за эти тесты не влияют на общий рейтинг._",
+        "📜 Введение — баллы засчитываются в общий рейтинг!\n"
+        "💡 Перед тестами Введения можно нажать кнопку и получить *справку*.",
         reply_markup=keyboard, parse_mode="Markdown",
+    )
+
+
+# ─────────────────────────────────────────────
+# СПРАВКА ДЛЯ ТЕСТОВ ВВЕДЕНИЯ
+# ─────────────────────────────────────────────
+
+_INTRO_POOL_MAP = {
+    "level_intro1": "intro_part1_questions",
+    "level_intro2": "intro_part2_questions",
+    "level_intro3": "intro_part3_questions",
+}
+
+def _get_intro_pool(level_callback: str):
+    """Возвращает пул вопросов по callback-имени уровня."""
+    from questions import intro_part1_questions, intro_part2_questions, intro_part3_questions
+    return {
+        "level_intro1": intro_part1_questions,
+        "level_intro2": intro_part2_questions,
+        "level_intro3": intro_part3_questions,
+    }.get(level_callback, [])
+
+
+async def intro_hint_handler(update: Update, context):
+    """Показывает 3 случайных факта из пула вопросов выбранного теста Введения."""
+    query = update.callback_query
+    await query.answer()
+    level_cb = query.data.replace("intro_hint_", "")  # e.g. "level_intro1"
+    pool = _get_intro_pool(level_cb)
+    cfg = LEVEL_CONFIG.get(level_cb, {})
+    level_name = cfg.get("name", "Введение")
+
+    facts = []
+    sample = random.sample(pool, min(3, len(pool))) if pool else []
+    for q in sample:
+        facts.append(f"💡 _{q['explanation']}_")
+
+    hint_text = f"📖 *Справка: {level_name}*\n\n" + "\n\n".join(facts) if facts else "Нет данных."
+
+    await query.edit_message_text(
+        hint_text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ Начать тест", callback_data=f"intro_start_{level_cb}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="historical_menu")],
+        ]),
+    )
+
+
+async def intro_start_handler(update: Update, context):
+    """Запускает тест Введения напрямую (минуя экран справки)."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    _touch(user_id)
+
+    level_cb = query.data.replace("intro_start_", "")  # e.g. "level_intro1"
+    cfg = LEVEL_CONFIG.get(level_cb)
+    if not cfg:
+        await query.edit_message_text("⚠️ Уровень не найден.")
+        return
+
+    questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
+    cancel_active_quiz_session(user_id)
+
+    question_ids = [str(hash(q["question"])) for q in questions]
+    session_id = create_quiz_session(
+        user_id=user_id, mode="level", question_ids=question_ids,
+        questions_data=questions, level_key=cfg["key"],
+        level_name=cfg["name"], time_limit=None,
+    )
+
+    user_data[user_id] = {
+        "session_id":         session_id,
+        "questions":          questions,
+        "level_name":         cfg["name"],
+        "level_key":          cfg["key"],
+        "current_question":   0,
+        "correct_answers":    0,
+        "answered_questions": [],
+        "start_time":         time.time(),
+        "last_activity":      time.time(),
+        "is_battle":          False,
+        "battle_points":      0,
+        "processing_answer":  False,
+        "username":           update.effective_user.username,
+        "first_name":         update.effective_user.first_name,
+        "quiz_chat_id":       query.message.chat_id,
+        "quiz_message_id":    None,
+    }
+
+    await query.edit_message_text(
+        f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} • 💎 2 балла за ответ\nНачинаем! ⏱",
+        parse_mode="Markdown",
+    )
+    await send_question(context.bot, user_id)
+
+
+async def random_fact_handler(update: Update, context):
+    """Отправляет один случайный факт из всех вопросов категории Введение."""
+    query = update.callback_query
+    await query.answer()
+
+    from questions import intro_part1_questions, intro_part2_questions, intro_part3_questions
+    all_intro = intro_part1_questions + intro_part2_questions + intro_part3_questions
+    q = random.choice(all_intro)
+    fact = q["explanation"]
+
+    await query.edit_message_text(
+        f"🎲 *А вы знали?*\n\n_{fact}_",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎲 Ещё факт",  callback_data="random_fact_intro")],
+            [InlineKeyboardButton("⬅️ Назад",      callback_data="historical_menu")],
+        ]),
     )
 
 
@@ -266,6 +383,22 @@ async def level_selected(update: Update, context):
 
     user_id = update.effective_user.id
     _touch(user_id)
+
+    # Для тестов «Введение» предлагаем справку перед стартом
+    if cfg["key"] in ("intro1", "intro2", "intro3"):
+        await query.edit_message_text(
+            f"📜 *{cfg['name']}*\n\n"
+            "Это вопросы по введению к 1 Петра: авторство, датировка, структура.\n\n"
+            "Хочешь получить краткую *💡 справку* перед тестом?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💡 Справка (3 факта)", callback_data=f"intro_hint_{query.data}")],
+                [InlineKeyboardButton("▶️ Начать без справки", callback_data=f"intro_start_{query.data}")],
+                [InlineKeyboardButton("⬅️ Назад", callback_data="historical_menu")],
+            ]),
+        )
+        return ConversationHandler.END
+
     questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
     cancel_active_quiz_session(user_id)
 
@@ -2257,6 +2390,7 @@ async def report_confirm(update: Update, context):
 
     label = REPORT_TYPE_LABELS.get(draft["type"], draft["type"])
     uname_plain = user.username if user.username else f"id={user_id}"
+    uname_link = f"@{user.username}" if user.username else f"id={user_id}"
     ctx_str = ", ".join(f"{k}={v}" for k, v in ctx.items() if v is not None) or "нет"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     admin_card = f"{label}\nОт: {uname_plain} (id={user_id})\nВремя: {ts}\nКонтекст: {ctx_str}\n\n{draft['text'][:1500]}"
@@ -2265,8 +2399,12 @@ async def report_confirm(update: Update, context):
     admin_delivered = False
     try:
         if draft.get("photo_file_id"):
-            await context.bot.send_photo(chat_id=ADMIN_USER_ID, photo=draft["photo_file_id"],
-                                          caption=f"{label} от {uname_plain} • {ts}")
+            await context.bot.send_photo(
+                chat_id=ADMIN_USER_ID,
+                photo=draft["photo_file_id"],
+                caption=f"{label} от {uname_link} • {ts}",
+                parse_mode="Markdown",
+            )
         await context.bot.send_message(chat_id=ADMIN_USER_ID, text=safe_truncate(admin_card))
         admin_delivered = True
     except Exception as e:
@@ -2490,6 +2628,9 @@ def main():
     # Общие кнопки
     app.add_handler(CallbackQueryHandler(chapter_1_menu,   pattern="^chapter_1_menu$"))
     app.add_handler(CallbackQueryHandler(historical_menu,  pattern="^historical_menu$"))
+    app.add_handler(CallbackQueryHandler(intro_hint_handler,  pattern=r"^intro_hint_"))
+    app.add_handler(CallbackQueryHandler(intro_start_handler, pattern=r"^intro_start_"))
+    app.add_handler(CallbackQueryHandler(random_fact_handler, pattern="^random_fact_intro$"))
     app.add_handler(CallbackQueryHandler(report_menu,      pattern="^report_menu$"))
     app.add_handler(CallbackQueryHandler(challenge_rules,  pattern="^challenge_rules_"))
     app.add_handler(CallbackQueryHandler(show_weekly_leaderboard, pattern="^weekly_lb_"))
