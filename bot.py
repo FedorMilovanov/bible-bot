@@ -9,8 +9,25 @@ import os
 import io
 import time
 import random
+import hashlib
 import asyncio
+import logging
 from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+from config import (
+    QUIZ_TIMEOUT, CHALLENGE_TIMEOUT,
+    FEEDBACK_DELAY_CORRECT, FEEDBACK_DELAY_WRONG,
+    BATTLE_QUESTIONS, CHALLENGE_QUESTIONS, QUIZ_QUESTIONS,
+    MAX_BTN_LEN, CALLBACK_DEBOUNCE,
+    BAD_INPUT_LIMIT, GC_INTERVAL, GC_STALE_THRESHOLD,
+    BATTLE_EXPIRY, BATTLE_CLEANUP_INTERVAL, BROADCAST_SLEEP,
+)
 
 from telegram import (
     Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,
@@ -63,18 +80,75 @@ from questions import (
 # ─────────────────────────────────────────────
 # КОНФИГУРАЦИЯ
 # ─────────────────────────────────────────────
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "413740069"))
+_admin_raw = os.getenv("ADMIN_USER_ID")
+if not _admin_raw:
+    raise ValueError("❌ ADMIN_USER_ID не задан в переменных окружения")
+ADMIN_USER_ID = int(_admin_raw)
 
 # Состояния диалога
 CHOOSING_LEVEL, ANSWERING, BATTLE_ANSWERING = range(3)
 REPORT_TYPE, REPORT_TEXT, REPORT_PHOTO, REPORT_CONFIRM = range(10, 14)
+
+# ─────────────────────────────────────────────
+# ТИПИЗАЦИЯ СЕССИИ
+# ─────────────────────────────────────────────
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class QuizSession:
+    """
+    Типизированный контейнер для активной викторины пользователя.
+    Заменяет разрозненный dict user_data[uid] (5.3).
+    Используется как NEW код; существующий dict-код продолжает работать параллельно
+    до полного перехода на dataclass в следующей итерации рефакторинга.
+    """
+    session_id:           Optional[str]       = None
+    questions:            list                = field(default_factory=list)
+    level_name:           str                 = ""
+    level_key:            str                 = ""
+    current_question:     int                 = 0
+    correct_answers:      int                 = 0
+    answered_questions:   list                = field(default_factory=list)
+    start_time:           float               = field(default_factory=time.time)
+    last_activity:        float               = field(default_factory=time.time)
+    is_battle:            bool                = False
+    is_challenge:         bool                = False
+    challenge_mode:       Optional[str]       = None
+    challenge_eligible:   bool                = False
+    challenge_time_limit: Optional[int]       = None
+    processing_answer:    bool                = False
+    quiz_chat_id:         Optional[int]       = None
+    quiz_message_id:      Optional[int]       = None
+    username:             Optional[str]       = None
+    first_name:           str                 = "Игрок"
+    timer_task:           Optional[asyncio.Task] = field(default=None, repr=False)
+    current_options:      list                = field(default_factory=list)
+    current_correct_text: str                 = ""
+    question_sent_at:     float               = 0.0
+    wrong_answers:        list                = field(default_factory=list)
+    battle_id:            Optional[str]       = None
+    battle_points:        int                 = 0
+    battle_message_id:    Optional[int]       = None
+    role:                 Optional[str]       = None
+
+    def to_dict(self) -> dict:
+        """Совместимость с legacy dict-кодом."""
+        import dataclasses
+        return dataclasses.asdict(self)
+
 
 # Хранилище активных сессий (в памяти)
 user_data: dict = {}
 
 # Счётчик неверных вводов подряд
 _bad_input_count: dict = {}
-_BAD_INPUT_LIMIT = 3
+_BAD_INPUT_LIMIT = BAD_INPUT_LIMIT
+
+def stable_question_id(q: dict) -> str:
+    """Стабильный детерминированный ID вопроса (не зависит от перезапуска)."""
+    text = q.get("question", "")
+    return hashlib.md5(text.encode()).hexdigest()[:12]
 
 REPORT_TYPE_LABELS = {
     "bug":      "🐞 Баг",
@@ -84,39 +158,75 @@ REPORT_TYPE_LABELS = {
 report_drafts: dict = {}
 # _report_last_sent и REPORT_COOLDOWN_SECONDS управляются в database.py
 
+import re
+
+def sanitize_report_text(text: str) -> str:
+    """Убираем Markdown-инъекции и ограничиваем длину."""
+    text = text[:2000]
+    # Экранируем спецсимволы Markdown
+    text = re.sub(r'([*_`\[\]])', r'\\\1', text)
+    return text.strip()
+
+# ─────────────────────────────────────────────
+# DEBOUNCE ДЛЯ CALLBACK-КНОПОК
+# ─────────────────────────────────────────────
+_last_callback: dict[int, float] = {}
+_CALLBACK_DEBOUNCE = CALLBACK_DEBOUNCE  # секунд
+
+async def _debounce_callback(update: Update) -> bool:
+    """
+    Возвращает True, если запрос нужно игнорировать (слишком быстрое повторное нажатие).
+    Вызывай в начале каждого callback-обработчика.
+    """
+    user_id = update.callback_query.from_user.id
+    now = time.time()
+    if now - _last_callback.get(user_id, 0) < _CALLBACK_DEBOUNCE:
+        await update.callback_query.answer()
+        return True
+    _last_callback[user_id] = now
+    return False
+
 _STUCK_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("🆘 Сброс",    callback_data="reset_session"),
      InlineKeyboardButton("🐞 Сообщить", callback_data="report_start_bug_direct")],
     [InlineKeyboardButton("⬅️ Меню",     callback_data="back_to_main")],
 ])
 
+# ─────────────────────────────────────────────
+# ПУЛЫ ВОПРОСОВ (конкатенация один раз при старте)
+# ─────────────────────────────────────────────
+_pool_easy_all        = easy_questions + easy_questions_v17_25
+_pool_medium_all      = medium_questions + medium_questions_v17_25
+_pool_hard_all        = hard_questions + hard_questions_v17_25
+_pool_practical_all   = practical_ch1_questions + practical_v17_25_questions
+
 LEVEL_CONFIG = {
     # ── Легкий ──────────────────────────────────────────────────────────────
-    "level_easy":            {"pool": easy_questions + easy_questions_v17_25,               "name": "🟢 Легкий уровень (ст. 1–25)",         "key": "easy",              "points_per_q": 1},
-    "level_easy_p1":         {"pool": easy_questions,            "name": "🟢 Легкий (ст. 1–16)",         "key": "easy_p1",         "points_per_q": 1},
-    "level_easy_p2":         {"pool": easy_questions_v17_25,    "name": "🟢 Легкий (ст. 17–25)",        "key": "easy_p2",         "points_per_q": 1},
+    "level_easy":            {"pool": _pool_easy_all,                "name": "🟢 Легкий уровень (ст. 1–25)",         "key": "easy",              "points_per_q": 1},
+    "level_easy_p1":         {"pool": easy_questions,                "name": "🟢 Легкий (ст. 1–16)",                "key": "easy_p1",           "points_per_q": 1},
+    "level_easy_p2":         {"pool": easy_questions_v17_25,         "name": "🟢 Легкий (ст. 17–25)",               "key": "easy_p2",           "points_per_q": 1},
     # ── Средний ─────────────────────────────────────────────────────────────
-    "level_medium":          {"pool": medium_questions + medium_questions_v17_25, "name": "🟡 Средний (ст. 1–25)",  "key": "medium",          "points_per_q": 2},
-    "level_medium_p1":       {"pool": medium_questions,         "name": "🟡 Средний (ст. 1–16)",        "key": "medium_p1",       "points_per_q": 2},
-    "level_medium_p2":       {"pool": medium_questions_v17_25, "name": "🟡 Средний (ст. 17–25)",       "key": "medium_p2",       "points_per_q": 2},
+    "level_medium":          {"pool": _pool_medium_all,              "name": "🟡 Средний (ст. 1–25)",               "key": "medium",            "points_per_q": 2},
+    "level_medium_p1":       {"pool": medium_questions,              "name": "🟡 Средний (ст. 1–16)",               "key": "medium_p1",         "points_per_q": 2},
+    "level_medium_p2":       {"pool": medium_questions_v17_25,       "name": "🟡 Средний (ст. 17–25)",              "key": "medium_p2",         "points_per_q": 2},
     # ── Сложный ─────────────────────────────────────────────────────────────
-    "level_hard":            {"pool": hard_questions + hard_questions_v17_25,     "name": "🔴 Сложный (ст. 1–25)", "key": "hard",            "points_per_q": 3},
-    "level_hard_p1":         {"pool": hard_questions,           "name": "🔴 Сложный (ст. 1–16)",        "key": "hard_p1",         "points_per_q": 3},
-    "level_hard_p2":         {"pool": hard_questions_v17_25,   "name": "🔴 Сложный (ст. 17–25)",       "key": "hard_p2",         "points_per_q": 3},
+    "level_hard":            {"pool": _pool_hard_all,                "name": "🔴 Сложный (ст. 1–25)",               "key": "hard",              "points_per_q": 3},
+    "level_hard_p1":         {"pool": hard_questions,                "name": "🔴 Сложный (ст. 1–16)",               "key": "hard_p1",           "points_per_q": 3},
+    "level_hard_p2":         {"pool": hard_questions_v17_25,         "name": "🔴 Сложный (ст. 17–25)",              "key": "hard_p2",           "points_per_q": 3},
     # ── Применение ──────────────────────────────────────────────────────────
-    "level_practical_ch1":   {"pool": practical_ch1_questions + practical_v17_25_questions, "name": "🙏 Применение (ст. 1–25)", "key": "practical_ch1",  "points_per_q": 2},
-    "level_practical_p1":    {"pool": practical_ch1_questions,  "name": "🙏 Применение (ст. 1–16)",     "key": "practical_p1",    "points_per_q": 2},
-    "level_practical_p2":    {"pool": practical_v17_25_questions,"name": "🙏 Применение (ст. 17–25)",   "key": "practical_p2",    "points_per_q": 2},
+    "level_practical_ch1":   {"pool": _pool_practical_all,           "name": "🙏 Применение (ст. 1–25)",            "key": "practical_ch1",     "points_per_q": 2},
+    "level_practical_p1":    {"pool": practical_ch1_questions,       "name": "🙏 Применение (ст. 1–16)",            "key": "practical_p1",      "points_per_q": 2},
+    "level_practical_p2":    {"pool": practical_v17_25_questions,    "name": "🙏 Применение (ст. 17–25)",           "key": "practical_p2",      "points_per_q": 2},
     # ── Лингвистика ─────────────────────────────────────────────────────────
     "level_linguistics_ch1":   {"pool": linguistics_ch1_questions,   "name": "🔬 Лингвистика: Избранные и странники (ч.1)",   "key": "linguistics_ch1",   "points_per_q": 3},
     "level_linguistics_ch1_2": {"pool": linguistics_ch1_questions_2, "name": "🔬 Лингвистика: Живая надежда (ч.2)",           "key": "linguistics_ch1_2", "points_per_q": 3},
     "level_linguistics_ch1_3": {"pool": linguistics_v17_25_questions,"name": "🔬 Лингвистика: Искупление и истина (ч.3)",     "key": "linguistics_ch1_3", "points_per_q": 3},
     # ── Исторический контекст ───────────────────────────────────────────────
-    "level_nero":            {"pool": nero_questions,            "name": "👑 Правление Нерона",          "key": "nero",     "points_per_q": 2},
-    "level_geography":       {"pool": geography_questions,       "name": "🌍 География земли",           "key": "geography","points_per_q": 2},
-    "level_intro1":          {"pool": intro_part1_questions,     "name": "📜 Введение: Авторство ч.1",   "key": "intro1",   "points_per_q": 2},
-    "level_intro2":          {"pool": intro_part2_questions,     "name": "📜 Введение: Авторство ч.2",   "key": "intro2",   "points_per_q": 2},
-    "level_intro3":          {"pool": intro_part3_questions,     "name": "📜 Введение: Структура и цель","key": "intro3",   "points_per_q": 2},
+    "level_nero":            {"pool": nero_questions,                 "name": "👑 Правление Нерона",                 "key": "nero",              "points_per_q": 2},
+    "level_geography":       {"pool": geography_questions,            "name": "🌍 География земли",                  "key": "geography",         "points_per_q": 2},
+    "level_intro1":          {"pool": intro_part1_questions,          "name": "📜 Введение: Авторство ч.1",          "key": "intro1",            "points_per_q": 2},
+    "level_intro2":          {"pool": intro_part2_questions,          "name": "📜 Введение: Авторство ч.2",          "key": "intro2",            "points_per_q": 2},
+    "level_intro3":          {"pool": intro_part3_questions,          "name": "📜 Введение: Структура и цель",       "key": "intro3",            "points_per_q": 2},
 }
 
 
@@ -204,6 +314,9 @@ async def start(update: Update, context):
             return
 
     name = user.first_name or "друг"
+    _, entry = get_user_position(user.id)
+    streak = entry.get("daily_streak", 0) if entry else 0
+
     welcome = (
         f"👋 *Добро пожаловать, {name}!*\n\n"
         "Здесь мы изучаем *1-е послание Петра*.\n\n"
@@ -213,6 +326,10 @@ async def start(update: Update, context):
         "⚔️ *Битвы* — соревнование с другими\n\n"
         "Нажми на кнопку ниже! 👇"
     )
+    if streak > 0:
+        welcome += f"\n\n🔥 *Серия: {streak} дней подряд!*"
+    else:
+        welcome += "\n\n💡 _Заходи каждый день для серии!_"
     # Всегда новое сообщение — меню "прыгает" вниз
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -369,11 +486,12 @@ async def intro_start_handler(update: Update, context):
     questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
     cancel_active_quiz_session(user_id)
 
-    question_ids = [str(hash(q["question"])) for q in questions]
+    question_ids = [stable_question_id(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
         questions_data=questions, level_key=cfg["key"],
         level_name=cfg["name"], time_limit=None,
+        chat_id=query.message.chat_id,
     )
 
     user_data[user_id] = {
@@ -456,14 +574,46 @@ async def level_selected(update: Update, context):
         )
         return ConversationHandler.END
 
+    # Экран подтверждения перед стартом
+    pool_size = len(cfg["pool"])
+    num_q = min(10, pool_size)
+    await query.edit_message_text(
+        f"📝 *{cfg['name']}*\n\n"
+        f"• Вопросов: {num_q}\n"
+        f"• Баллов за ответ: {cfg['points_per_q']}\n"
+        f"• Таймер: 60 сек\n\n"
+        f"Начинаем?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ Начать", callback_data=f"confirm_level_{query.data}")],
+            [InlineKeyboardButton("⬅️ Назад",  callback_data="start_test")],
+        ]),
+    )
+    return ConversationHandler.END
+
+
+async def confirm_level_handler(update: Update, context):
+    """Запускает тест после подтверждения на экране предпросмотра."""
+    query = update.callback_query
+    await query.answer()
+
+    level_key = query.data.replace("confirm_level_", "")
+    cfg = LEVEL_CONFIG.get(level_key)
+    if not cfg:
+        return
+
+    user_id = update.effective_user.id
+    _touch(user_id)
+
     questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
     cancel_active_quiz_session(user_id)
 
-    question_ids = [str(hash(q["question"])) for q in questions]
+    question_ids = [stable_question_id(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
         questions_data=questions, level_key=cfg["key"],
         level_name=cfg["name"], time_limit=None,
+        chat_id=query.message.chat_id,
     )
 
     user_data[user_id] = {
@@ -478,11 +628,11 @@ async def level_selected(update: Update, context):
         "last_activity":      time.time(),
         "is_battle":          False,
         "battle_points":      0,
-        "processing_answer":  False,  # Race condition guard
+        "processing_answer":  False,
         "username":           update.effective_user.username,
         "first_name":         update.effective_user.first_name,
         "quiz_chat_id":       query.message.chat_id,
-        "quiz_message_id":    None,  # будет заполнено в send_question
+        "quiz_message_id":    None,
     }
 
     await query.edit_message_text(
@@ -490,7 +640,6 @@ async def level_selected(update: Update, context):
         parse_mode="Markdown",
     )
     await send_question(context.bot, user_id)
-    return ANSWERING
 
 
 # ═══════════════════════════════════════════════
@@ -531,9 +680,9 @@ async def send_question(bot, user_id):
         set_question_sent_at(session_id, sent_at)
 
     # Inline-кнопки: если вариант слишком длинный — номера в тексте, цифры-кнопки
-    MAX_BTN_LEN = 35
+    max_btn_len = MAX_BTN_LEN
     options_text = ""
-    if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
+    if any(len(opt) > max_btn_len for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
         buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"qa_{i}") for i in range(len(shuffled))]]
     else:
@@ -541,7 +690,8 @@ async def send_question(bot, user_id):
 
     buttons.append([InlineKeyboardButton("❌ Выйти в меню", callback_data="cancel_quiz")])
     keyboard = InlineKeyboardMarkup(buttons)
-    text = f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}{options_text}"
+    progress = build_progress_bar(q_num, total)
+    text = f"*Вопрос {q_num + 1}/{total}* {progress}\n\n{q['question']}{options_text}"
 
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
@@ -586,51 +736,67 @@ async def _finalize_quiz_bubble(bot, user_id, text="✅ *Тест завершё
             pass
 
 
-async def auto_timeout(bot, user_id, q_num_at_send):
-    """Страховочный таймер 60 сек для обычного теста."""
-    await asyncio.sleep(60)
+async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeout_seconds: int):
+    """
+    Универсальный таймаут — одна реализация для обычного теста и challenge.
+    Вызывается из auto_timeout / challenge_timeout.
+    """
+    await asyncio.sleep(timeout_seconds)
 
     if user_id not in user_data:
         return
     data = user_data[user_id]
 
-    if data.get("processing_answer") or data.get("current_question") != q_num_at_send:
+    if (data.get("processing_answer")
+            or data.get("current_question") != q_num_at_send
+            or data.get("session_id") is None):
         return
 
     data["processing_answer"] = True
     try:
-        q = data["questions"][q_num_at_send]
+        q            = data["questions"][q_num_at_send]
         correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
+        q_id         = str(q.get("id", stable_question_id(q)))
 
-        data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
-        q_id = str(q.get("id", hash(q["question"])))
         session_id = data.get("session_id")
         if session_id:
             advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
+
+        data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
         data["current_question"] += 1
 
-        # Редактируем «пузырь» — показываем правильный ответ
-        qmid = data.get("quiz_message_id")
-        qcid = data.get("quiz_chat_id")
+        qmid, qcid = data.get("quiz_message_id"), data.get("quiz_chat_id")
         if qmid and qcid:
             try:
                 await bot.edit_message_text(
                     chat_id=qcid, message_id=qmid,
-                    text=f"⏱ *60 секунд истекло*\n✅ Правильный ответ: *{correct_text}*",
+                    text=f"⏱ *Время вышло ({timeout_seconds} сек)*\n✅ Правильный ответ: *{correct_text}*",
                     parse_mode="Markdown",
                 )
             except Exception:
                 pass
-            await asyncio.sleep(2.5)  # даём время увидеть правильный ответ
+            await asyncio.sleep(FEEDBACK_DELAY_WRONG)
 
+        is_challenge = data.get("is_challenge", False)
         if data["current_question"] < len(data["questions"]):
-            await send_question(bot, user_id)
+            if is_challenge:
+                await send_challenge_question(bot, user_id)
+            else:
+                await send_question(bot, user_id)
         else:
             await _finalize_quiz_bubble(bot, user_id)
-            await show_results(bot, user_id)
+            if is_challenge:
+                await show_challenge_results(bot, user_id)
+            else:
+                await show_results(bot, user_id)
     finally:
         if user_id in user_data:
             user_data[user_id]["processing_answer"] = False
+
+
+async def auto_timeout(bot, user_id, q_num_at_send):
+    """Страховочный таймер для обычного теста."""
+    await _handle_question_timeout(bot, user_id, q_num_at_send, QUIZ_TIMEOUT)
 
 
 async def answer(update: Update, context):
@@ -669,6 +835,27 @@ def _correct_text(q: dict) -> str:
 def _is_wrong(item: dict) -> bool:
     """True если ответ пользователя не совпадает с правильным текстом."""
     return item["user_answer"] != _correct_text(item["question_obj"])
+
+
+def _suggest_next_level(current_key: str) -> dict | None:
+    """Возвращает следующий уровень сложности для текущего ключа, или None."""
+    progression = {
+        "easy_p1":        {"name": "🟡 Средний (1–16)",         "callback": "confirm_level_level_medium_p1"},
+        "easy_p2":        {"name": "🟡 Средний (17–25)",        "callback": "confirm_level_level_medium_p2"},
+        "easy":           {"name": "🟡 Средний (1–25)",         "callback": "confirm_level_level_medium"},
+        "medium_p1":      {"name": "🔴 Сложный (1–16)",         "callback": "confirm_level_level_hard_p1"},
+        "medium_p2":      {"name": "🔴 Сложный (17–25)",        "callback": "confirm_level_level_hard_p2"},
+        "medium":         {"name": "🔴 Сложный (1–25)",         "callback": "confirm_level_level_hard"},
+        "hard_p1":        {"name": "🙏 Применение (1–16)",      "callback": "confirm_level_level_practical_p1"},
+        "hard_p2":        {"name": "🙏 Применение (17–25)",     "callback": "confirm_level_level_practical_p2"},
+        "hard":           {"name": "🙏 Применение (1–25)",      "callback": "confirm_level_level_practical_ch1"},
+        "practical_p1":   {"name": "🔬 Лингвистика ч.1",       "callback": "confirm_level_level_linguistics_ch1"},
+        "practical_p2":   {"name": "🔬 Лингвистика ч.2",       "callback": "confirm_level_level_linguistics_ch1_2"},
+        "practical_ch1":  {"name": "🔬 Лингвистика ч.1",       "callback": "confirm_level_level_linguistics_ch1"},
+        "linguistics_ch1":   {"name": "🔬 Лингвистика ч.2",    "callback": "confirm_level_level_linguistics_ch1_2"},
+        "linguistics_ch1_2": {"name": "🔬 Лингвистика ч.3",    "callback": "confirm_level_level_linguistics_ch1_3"},
+    }
+    return progression.get(current_key)
 
 
 async def show_results(bot, user_id):
@@ -731,6 +918,19 @@ async def show_results(bot, user_id):
             callback_data=f"retry_errors_{user_id}"
         )])
 
+    # Рекомендация следующего уровня при хорошем результате (4.6)
+    if percentage >= 80:
+        next_lvl = _suggest_next_level(data["level_key"])
+        if next_lvl:
+            keyboard_rows.insert(0, [InlineKeyboardButton(
+                f"⬆️ Попробовать: {next_lvl['name']}",
+                callback_data=next_lvl["callback"],
+            )])
+
+    # Кнопка «Поделиться»
+    share_text = f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)! Попробуй сам 👉 @peter1_quiz_bot"
+    keyboard_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
+
     # Шаг 1: редактируем пузырь вопроса — показываем заглушку "Генерирую..."
     stub_deleted = False
     if quiz_mid and chat_id:
@@ -773,7 +973,7 @@ async def show_results(bot, user_id):
             )
             photo_sent = True
     except Exception as e:
-        print(f"Result image error: {e}")
+        logger.error("Result image error", exc_info=True)
 
     # Шаг 3: удаляем заглушку "Генерирую..." если картинка ушла
     if photo_sent and quiz_mid and chat_id:
@@ -824,12 +1024,13 @@ async def show_results(bot, user_id):
 # INLINE-ОТВЕТ НА ВОПРОС (основной тест)
 # ═══════════════════════════════════════════════
 
-async def quiz_inline_answer(update: Update, context):
+async def _handle_inline_answer(update: Update, context, prefix: str):
     """
-    Обрабатывает нажатие кнопки ответа в обычном тесте.
-    Редактирует «пузырь» → показывает фидбек → показывает следующий вопрос.
+    Общая логика обработки inline-ответа.
+    prefix = 'qa'  → обычный тест   (send_question / show_results)
+    prefix = 'cha' → challenge-режим (send_challenge_question / show_challenge_results)
     """
-    query = update.callback_query
+    query   = update.callback_query
     user_id = query.from_user.id
     _touch(user_id)
 
@@ -848,9 +1049,8 @@ async def quiz_inline_answer(update: Update, context):
         await query.answer()
         return
 
-    # Индекс нажатой кнопки
     try:
-        btn_index = int(query.data.replace("qa_", ""))
+        btn_index = int(query.data.replace(f"{prefix}_", ""))
     except ValueError:
         await query.answer()
         return
@@ -860,9 +1060,11 @@ async def quiz_inline_answer(update: Update, context):
         await query.answer()
         return
 
-    user_answer  = shuffled[btn_index]
-    correct_text = data.get("current_correct_text") or data["questions"][q_num]["options"][data["questions"][q_num]["correct"]]
+    user_answer         = shuffled[btn_index]
+    q                   = data["questions"][q_num]
+    correct_text        = data.get("current_correct_text") or q["options"][q["correct"]]
     session_id_at_start = data.get("session_id")
+    is_challenge        = data.get("is_challenge", False)
 
     data["processing_answer"] = True
     await query.answer()
@@ -880,9 +1082,8 @@ async def quiz_inline_answer(update: Update, context):
         else:
             feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
 
-        q = data["questions"][q_num]
         elapsed = time.time() - data.get("question_sent_at", time.time())
-        q_id = str(q.get("id", hash(q["question"])))
+        q_id    = str(q.get("id", stable_question_id(q)))
         record_question_stat(q_id, data["level_key"], is_correct, elapsed)
 
         data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
@@ -891,8 +1092,7 @@ async def quiz_inline_answer(update: Update, context):
         if session_id_at_start:
             advance_quiz_session(session_id_at_start, q_id, user_answer, is_correct, q)
 
-        qmid = data.get("quiz_message_id")
-        qcid = data.get("quiz_chat_id")
+        qmid, qcid = data.get("quiz_message_id"), data.get("quiz_chat_id")
         if qmid and qcid:
             try:
                 await context.bot.edit_message_text(
@@ -901,13 +1101,11 @@ async def quiz_inline_answer(update: Update, context):
                 )
             except Exception as e:
                 if "not modified" not in str(e).lower():
-                    print(f"quiz_inline_answer edit error: {e}")
+                    logger.warning("%s_inline_answer edit error: %s", prefix, e)
 
-        # Умная задержка: верный ответ — быстро, ошибка — время прочитать
-        delay = 0.6 if is_correct else 2.5
+        delay = FEEDBACK_DELAY_CORRECT if is_correct else FEEDBACK_DELAY_WRONG
         await asyncio.sleep(delay)
 
-        # Проверяем, что сессия не сменилась
         if user_id not in user_data:
             return
         current_data = user_data[user_id]
@@ -915,15 +1113,27 @@ async def quiz_inline_answer(update: Update, context):
             return
 
         if current_data["current_question"] < len(current_data["questions"]):
-            await send_question(context.bot, user_id)
+            if is_challenge:
+                await send_challenge_question(context.bot, user_id)
+            else:
+                await send_question(context.bot, user_id)
         else:
-            await _finalize_quiz_bubble(context.bot, user_id)
-            await show_results(context.bot, user_id)
-    except Exception as e:
-        print(f"quiz_inline_answer unexpected error: {e}")
+            if is_challenge:
+                await show_challenge_results(context.bot, user_id)
+            else:
+                await _finalize_quiz_bubble(context.bot, user_id)
+                await show_results(context.bot, user_id)
+
+    except Exception:
+        logger.error("%s_inline_answer unexpected error", prefix, exc_info=True)
     finally:
         if user_id in user_data and user_data[user_id].get("session_id") == session_id_at_start:
             user_data[user_id]["processing_answer"] = False
+
+
+async def quiz_inline_answer(update: Update, context):
+    """Обрабатывает нажатие кнопки ответа в обычном тесте."""
+    await _handle_inline_answer(update, context, "qa")
 
 
 # ═══════════════════════════════════════════════
@@ -935,6 +1145,11 @@ async def retry_errors(update: Update, context):
     await query.answer()
     user_id = query.from_user.id
     target_id = int(query.data.replace("retry_errors_", ""))
+
+    # Защита: нельзя повторять чужие ошибки
+    if target_id != user_id:
+        await query.answer("⚠️ Это не ваша сессия.", show_alert=True)
+        return ConversationHandler.END
 
     if target_id not in user_data:
         await query.edit_message_text("⚠️ Данные сессии устарели. Начни новый тест.")
@@ -1094,7 +1309,7 @@ async def _restore_session_to_memory(user_id: int, db_session: dict):
         "processing_answer":    False,
         "username":             None,   # будет обновлено при первом ответе
         "first_name":           "Игрок",
-        "quiz_chat_id":         None,   # будет установлено при возобновлении
+        "quiz_chat_id":         db_session.get("chat_id"),  # восстанавливаем из БД
         "quiz_message_id":      None,
     }
 
@@ -1106,7 +1321,7 @@ async def _handle_timeout_after_restart(message, user_id: int, db_session: dict)
     q_num = data["current_question"]
     q = data["questions"][q_num]
     correct_text = q["options"][q["correct"]]
-    q_id = str(q.get("id", hash(q["question"])))
+    q_id = str(q.get("id", stable_question_id(q)))
     session_id = data["session_id"]
     advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
     data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
@@ -1159,7 +1374,7 @@ async def resume_session_handler(update: Update, context):
         parse_mode="Markdown",
     )
     if mode in ("random20", "hardcore20"):
-        await send_challenge_question(query.message, user_id)
+        await send_challenge_question(context.bot, user_id)
     else:
         await send_question(context.bot, user_id)
     return ANSWERING
@@ -1185,7 +1400,7 @@ async def restart_session_handler(update: Update, context):
         questions = pick_challenge_questions(mode)
         time_limit = 10 if mode == "hardcore20" else None
         mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
-        question_ids = [str(hash(q["question"])) for q in questions]
+        question_ids = [stable_question_id(q) for q in questions]
         new_session_id = create_quiz_session(
             user_id=user_id, mode=mode, question_ids=question_ids,
             questions_data=questions, level_key=mode, level_name=mode_name,
@@ -1207,7 +1422,7 @@ async def restart_session_handler(update: Update, context):
             "quiz_message_id": None,
         }
         await query.edit_message_text(f"{mode_name}\n\n📋 20 вопросов\nПоехали! 💪", parse_mode="Markdown")
-        await send_challenge_question(query.message, user_id)
+        await send_challenge_question(context.bot, user_id)
     else:
         level_key = db_session.get("level_key")
         cfg = next((v for v in LEVEL_CONFIG.values() if v["key"] == level_key), None)
@@ -1215,7 +1430,7 @@ async def restart_session_handler(update: Update, context):
             await query.edit_message_text("⚠️ Уровень не найден.")
             return
         questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
-        question_ids = [str(hash(q["question"])) for q in questions]
+        question_ids = [stable_question_id(q) for q in questions]
         new_session_id = create_quiz_session(
             user_id=user_id, mode="level", question_ids=question_ids,
             questions_data=questions, level_key=cfg["key"],
@@ -1384,51 +1599,87 @@ async def send_battle_question(message, user_id):
     data["current_options"]      = shuffled
     data["current_correct_text"] = correct_text
     data["question_sent_at"]     = time.time()
-    await message.reply_text(
-        f"⚔️ *Вопрос {q_num + 1}/10* ⚡ Быстрее = больше очков!\n\n{q['question']}",
-        reply_markup=ReplyKeyboardMarkup([[opt] for opt in shuffled], one_time_keyboard=True, resize_keyboard=True),
-        parse_mode="Markdown",
-    )
+
+    progress = build_progress_bar(q_num, len(data["questions"]))
+    max_btn_len = MAX_BTN_LEN
+    options_text = ""
+    if any(len(opt) > max_btn_len for opt in shuffled):
+        options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
+        buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"ba_{i}") for i in range(len(shuffled))]]
+    else:
+        buttons = [[InlineKeyboardButton(opt, callback_data=f"ba_{i}")] for i, opt in enumerate(shuffled)]
+
+    buttons.append([InlineKeyboardButton("❌ Выйти", callback_data=f"cancel_battle_{data['battle_id']}")])
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    battle_msg_id = data.get("battle_message_id")
+    battle_chat_id = message.chat_id
+    text = f"⚔️ *Вопрос {q_num + 1}/{len(data['questions'])}* {progress}\n⚡ Быстрее = больше очков!\n\n{q['question']}{options_text}"
+
+    if battle_msg_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=battle_chat_id, message_id=battle_msg_id,
+                text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
+            return
+        except Exception as e:
+            if "not modified" in str(e).lower():
+                return
+    # Первый вопрос или редактирование не удалось — шлём новым сообщением
+    sent = await message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    data["battle_message_id"] = sent.message_id
 
 
 async def battle_answer(update: Update, context):
-    user_id = update.effective_user.id
+    """Обрабатывает нажатие inline-кнопки ответа в битве (callback_data=ba_<index>)."""
+    query   = update.callback_query
+    user_id = query.from_user.id
+
     if user_id not in user_data or not user_data[user_id].get("is_battle"):
-        return await answer(update, context)
+        await query.answer()
+        return
 
-    data        = user_data[user_id]
-    q_num       = data["current_question"]
-    q           = data["questions"][q_num]
-    user_answer = update.message.text
-    correct_text    = data.get("current_correct_text") or q["options"][q["correct"]]
-    current_options = data.get("current_options") or q["options"]
+    data = user_data[user_id]
 
-    if user_answer not in current_options:
-        await update.message.reply_text("Выбери вариант из списка")
-        return BATTLE_ANSWERING
+    # Защита от двойного нажатия
+    if data.get("processing_answer"):
+        await query.answer()
+        return
+    data["processing_answer"] = True
 
-    sent_at  = data.get("question_sent_at", time.time())
-    elapsed  = min(time.time() - sent_at, 7.0)
+    try:
+        idx = int(query.data.replace("ba_", ""))
+        current_options = data.get("current_options", [])
+        if idx >= len(current_options):
+            await query.answer()
+            return
 
-    if user_answer == correct_text:
-        data["correct_answers"] += 1
-        speed_bonus = round((7.0 - elapsed) / 7.0 * 7)
-        points = 10 + speed_bonus
-        data["battle_points"] = data.get("battle_points", 0) + points
-        await update.message.reply_text(
-            f"✅ +{points} очков (⚡{speed_bonus} бонус за скорость)",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-    else:
-        await update.message.reply_text(f"❌ {correct_text}", reply_markup=ReplyKeyboardRemove())
+        q_num        = data["current_question"]
+        q            = data["questions"][q_num]
+        user_answer  = current_options[idx]
+        correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
 
-    data["current_question"] += 1
+        sent_at     = data.get("question_sent_at", time.time())
+        elapsed     = min(time.time() - sent_at, 7.0)
+
+        if user_answer == correct_text:
+            data["correct_answers"] += 1
+            speed_bonus = round((7.0 - elapsed) / 7.0 * 7)
+            points = 10 + speed_bonus
+            data["battle_points"] = data.get("battle_points", 0) + points
+            await query.answer(f"✅ +{points} очков (⚡{speed_bonus} бонус)", show_alert=False)
+        else:
+            await query.answer(f"❌ Верно: {correct_text}", show_alert=True)
+
+        data["current_question"] += 1
+    finally:
+        data["processing_answer"] = False
+
     if data["current_question"] < len(data["questions"]):
-        await send_battle_question(update.message, user_id)
-        return BATTLE_ANSWERING
+        await send_battle_question(query.message, user_id)
     else:
-        await finish_battle_for_user(update.message, user_id)
-        return ConversationHandler.END
+        await finish_battle_for_user(query.message, user_id)
 
 
 async def finish_battle_for_user(message, user_id):
@@ -1506,14 +1757,25 @@ async def show_battle_results(message, battle_id):
              f"   ✅ {battle['opponent_score']}/10 • ⚡ {opponent_points} очков • ⏱ {format_time(battle['opponent_time'])}\n\n")
     text += "💎 *+5 баллов* победителю!\n" if winner != "draw" else "💎 *+2 балла* каждому!\n"
 
-    await message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Новая битва", callback_data="battle_menu")],
-            [InlineKeyboardButton("⬅️ В меню",       callback_data="back_to_main")],
-        ]),
-        parse_mode="Markdown",
-    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Новая битва", callback_data="battle_menu")],
+        [InlineKeyboardButton("⬅️ В меню",       callback_data="back_to_main")],
+    ])
+
+    # Отправляем результат ОБОИМ участникам — первый игрок иначе навсегда
+    # остаётся на «⏳ Ожидание соперника...»
+    bot = message.get_bot()
+    for uid in (battle["creator_id"], battle["opponent_id"]):
+        try:
+            await bot.send_message(
+                chat_id=uid,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.warning("Battle result delivery to %s failed: %s", uid, e)
+
     delete_battle(battle_id)
 
 
@@ -1563,6 +1825,26 @@ async def inline_query_handler(update: Update, context):
 # ADMIN ПАНЕЛЬ (задание 4.3)
 # ═══════════════════════════════════════════════
 
+async def help_command(update: Update, context):
+    """Команда /help — справка по боту."""
+    text = (
+        "📖 *ПОМОЩЬ*\n\n"
+        "*Команды:*\n"
+        "/start — главное меню\n"
+        "/test — начать тест\n"
+        "/status — статус активного теста\n"
+        "/reset — сбросить текущий тест\n"
+        "/cancel — отменить действие\n"
+        "/help — эта справка\n\n"
+        "*Как играть:*\n"
+        "1. Выбери категорию и уровень\n"
+        "2. Отвечай на вопросы, нажимая кнопки\n"
+        "3. Набирай баллы и поднимайся в рейтинге!\n\n"
+        "По вопросам → кнопка «✉️ Обратная связь»"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=_main_keyboard())
+
+
 async def admin_command(update: Update, context):
     """Команда /admin — только для администратора."""
     user_id = update.effective_user.id
@@ -1575,11 +1857,98 @@ async def admin_command(update: Update, context):
         "🛡 *ПАНЕЛЬ АДМИНИСТРАТОРА*\n\n"
         f"👥 Всего пользователей: *{stats.get('total_users', 0)}*\n"
         f"🟢 Онлайн за 24ч: *{stats.get('online_24h', 0)}*\n"
-        f"🆕 Новых сегодня: *{stats.get('new_today', 0)}*\n\n"
-        "📢 Рассылка: `/broadcast Ваш текст`\n"
-        "⚙️ Команды: /admin"
+        f"🆕 Новых сегодня: *{stats.get('new_today', 0)}*\n"
+        f"💬 Активных сессий в памяти: *{len(user_data)}*\n"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔍 Сложные вопросы",  callback_data="admin_hard_questions")],
+        [InlineKeyboardButton("👥 Активные сессии",   callback_data="admin_active_sessions")],
+        [InlineKeyboardButton("🧹 Очистка данных",    callback_data="admin_cleanup")],
+        [InlineKeyboardButton("📢 Рассылка",          callback_data="admin_broadcast_prompt")],
+    ])
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def admin_callback_handler(update: Update, context):
+    """Обрабатывает inline-кнопки admin-панели."""
+    query   = update.callback_query
+    user_id = query.from_user.id
+
+    if user_id != ADMIN_USER_ID:
+        await query.answer("❌ Нет доступа.", show_alert=True)
+        return
+
+    await query.answer()
+    action = query.data
+
+    if action == "admin_hard_questions":
+        stats = get_question_stats()
+        hard  = sorted(stats, key=lambda s: s.get("correct", 0) / max(s.get("total", 1), 1))
+        text  = "🔍 *Самые сложные вопросы (топ-10):*\n\n"
+        for s in hard[:10]:
+            pct   = round(s.get("correct", 0) / max(s.get("total", 1), 1) * 100)
+            qtext = s.get("question_text", s.get("_id", "?"))[:60]
+            text += f"• *{pct}%* — _{qtext}_\n"
+        await query.edit_message_text(
+            text or "Статистика пока пуста.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]),
+        )
+
+    elif action == "admin_active_sessions":
+        lines = []
+        for uid, data in list(user_data.items())[:20]:
+            name   = data.get("first_name", "?")
+            q_num  = data.get("current_question", 0)
+            total  = len(data.get("questions", []))
+            mode   = "⚔️" if data.get("is_battle") else ("🎲" if data.get("is_challenge") else "📖")
+            lines.append(f"{mode} {name} ({uid}) — {q_num}/{total}")
+        text = "👥 *Активные сессии в памяти:*\n\n" + ("\n".join(lines) if lines else "Пусто")
+        await query.edit_message_text(
+            text, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]),
+        )
+
+    elif action == "admin_cleanup":
+        deleted_battles = db_cleanup_stale_battles()
+        now   = time.time()
+        stale = [uid for uid, d in list(user_data.items())
+                 if now - d.get("last_activity", now) > GC_STALE_THRESHOLD]
+        for uid in stale:
+            user_data.pop(uid, None)
+        text = (
+            f"🧹 *Очистка выполнена*\n\n"
+            f"⚔️ Удалено устаревших битв: *{deleted_battles}*\n"
+            f"🧠 Удалено записей user_data: *{len(stale)}*"
+        )
+        await query.edit_message_text(
+            text, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]),
+        )
+
+    elif action == "admin_broadcast_prompt":
+        await query.edit_message_text(
+            "📢 *Рассылка*\n\nОтправь команду:\n`/broadcast Текст сообщения`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]),
+        )
+
+    elif action == "admin_back":
+        stats = get_admin_stats()
+        text = (
+            "🛡 *ПАНЕЛЬ АДМИНИСТРАТОРА*\n\n"
+            f"👥 Всего пользователей: *{stats.get('total_users', 0)}*\n"
+            f"🟢 Онлайн за 24ч: *{stats.get('online_24h', 0)}*\n"
+            f"🆕 Новых сегодня: *{stats.get('new_today', 0)}*\n"
+            f"💬 Активных сессий в памяти: *{len(user_data)}*\n"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔍 Сложные вопросы",  callback_data="admin_hard_questions")],
+            [InlineKeyboardButton("👥 Активные сессии",   callback_data="admin_active_sessions")],
+            [InlineKeyboardButton("🧹 Очистка данных",    callback_data="admin_cleanup")],
+            [InlineKeyboardButton("📢 Рассылка",          callback_data="admin_broadcast_prompt")],
+        ])
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def broadcast_command(update: Update, context):
@@ -1607,6 +1976,17 @@ async def broadcast_command(update: Update, context):
                 parse_mode="Markdown",
             )
             sent += 1
+        except RetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await context.bot.send_message(
+                    chat_id=uid,
+                    text=f"📢 *Сообщение от автора бота:*\n\n{text}",
+                    parse_mode="Markdown",
+                )
+                sent += 1
+            except Exception:
+                failed += 1
         except Exception:
             failed += 1
         # Обновляем статус каждые 20 пользователей
@@ -1615,7 +1995,7 @@ async def broadcast_command(update: Update, context):
                 await status_msg.edit_text(f"📢 Рассылка... {i + 1}/{len(all_ids)}")
             except Exception:
                 pass
-        await asyncio.sleep(0.05)  # Avoid flood limits
+        await asyncio.sleep(BROADCAST_SLEEP)  # ~28 msg/sec — в пределах лимита Telegram
 
     await status_msg.edit_text(
         f"✅ Рассылка завершена!\n"
@@ -1662,15 +2042,60 @@ async def show_my_stats(query):
     if battles_played > 0:
         text += f"📈 Винрейт: *{round(battles_won / battles_played * 100)}%*\n"
 
+    # Статистика по категориям (6.2)
+    categories_done = entry.get("categories_completed", {})
+    if categories_done:
+        text += "\n📋 *По категориям:*\n"
+        for cat_key, cat_data in categories_done.items():
+            cfg   = next((v for v in LEVEL_CONFIG.values() if v["key"] == cat_key), None)
+            name  = cfg["name"] if cfg else cat_key
+            best  = cat_data.get("best_score", 0)
+            total_q = cat_data.get("total_questions", QUIZ_QUESTIONS)
+            text += f"  • {name}: лучший *{best}/{total_q}*\n"
+
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎯 Начать тест",  callback_data="start_test")],
             [InlineKeyboardButton("🏅 Достижения",   callback_data="achievements")],
+            [InlineKeyboardButton("📜 История",       callback_data="my_history")],
             [InlineKeyboardButton("⬅️ Назад",         callback_data="back_to_main")],
         ]),
         parse_mode="Markdown",
     )
+
+
+async def show_history(update: Update, context):
+    """Показывает историю последних 10 прохождений пользователя (6.3)."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    try:
+        sessions = list(
+            collection.database["quiz_sessions"]
+            .find({"user_id": user_id, "status": "finished"})
+            .sort("end_time", -1)
+            .limit(10)
+        )
+    except Exception:
+        sessions = []
+
+    if sessions:
+        text = "📜 *ИСТОРИЯ ПРОХОЖДЕНИЙ*\n\n"
+        for s in sessions:
+            end_time = s.get("end_time")
+            dt = end_time.strftime("%d.%m %H:%M") if hasattr(end_time, "strftime") else "—"
+            score = s.get("correct_count", 0)
+            total = len(s.get("questions_data", []))
+            name  = s.get("level_name", "?")
+            text += f"• {dt} — _{name}_: *{score}/{total}*\n"
+    else:
+        text = "📜 *ИСТОРИЯ*\n\nПока пусто — пройди первый тест!"
+
+    await safe_edit(query, text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Назад", callback_data="my_stats")],
+    ]))
 
 
 async def show_general_leaderboard(query, page=0):
@@ -1758,22 +2183,18 @@ def build_progress_bar(current, total=20, length=10):
 
 
 def pick_challenge_questions(mode):
-    pool_easy   = easy_questions + easy_questions_v17_25
-    pool_medium = medium_questions + medium_questions_v17_25
-    pool_hard   = hard_questions + hard_questions_v17_25
-    pool_prac   = practical_ch1_questions + practical_v17_25_questions
-    pool_ling   = linguistics_ch1_questions + linguistics_ch1_questions_2 + linguistics_v17_25_questions
+    pool_ling = linguistics_ch1_questions + linguistics_ch1_questions_2 + linguistics_v17_25_questions
 
     def safe_sample(pool, n):
         pool = list(pool)
         return random.sample(pool, n) if len(pool) >= n else random.choices(pool, k=n)
 
     if mode == "random20":
-        questions = (safe_sample(pool_easy, 6) + safe_sample(pool_medium, 6) +
-                     safe_sample(pool_hard, 6) + safe_sample(pool_prac, 1) + safe_sample(pool_ling, 1))
+        questions = (safe_sample(_pool_easy_all, 6) + safe_sample(_pool_medium_all, 6) +
+                     safe_sample(_pool_hard_all, 6) + safe_sample(_pool_practical_all, 1) + safe_sample(pool_ling, 1))
     else:
-        questions = (safe_sample(pool_easy, 4) + safe_sample(pool_medium, 5) +
-                     safe_sample(pool_hard, 7) + safe_sample(pool_ling, 4))
+        questions = (safe_sample(_pool_easy_all, 4) + safe_sample(_pool_medium_all, 5) +
+                     safe_sample(_pool_hard_all, 7) + safe_sample(pool_ling, 4))
     random.shuffle(questions)
     return questions
 
@@ -1836,11 +2257,12 @@ async def challenge_start(update: Update, context):
     mode_name  = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
 
     cancel_active_quiz_session(user_id)
-    question_ids = [str(hash(q["question"])) for q in questions]
+    question_ids = [stable_question_id(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode=mode, question_ids=question_ids,
         questions_data=questions, level_key=mode, level_name=mode_name,
         time_limit=time_limit,
+        chat_id=query.message.chat_id,
     )
 
     user_data[user_id] = {
@@ -1870,21 +2292,26 @@ async def challenge_start(update: Update, context):
         f"{mode_name}\n\n📋 20 вопросов • {'✅ бонус доступен' if eligible else '❌ бонус уже получен'}\n\nПоехали! 💪",
         parse_mode="Markdown",
     )
-    await send_challenge_question(query.message, user_id)
+    await send_challenge_question(context.bot, user_id)
     return ANSWERING
 
 
-async def send_challenge_question(message_or_bot, user_id):
+async def send_challenge_question(bot, user_id):
     """
-    message_or_bot: Message (для первого вопроса) или bot (для редактирования).
-    Использует InlineKeyboard и edit-in-place.
+    Отправляет или редактирует вопрос в challenge-режиме.
+    bot — всегда telegram.Bot; chat_id берётся из user_data.
     """
     data  = user_data[user_id]
     q_num = data["current_question"]
     total = len(data["questions"])
 
     if q_num >= total:
-        await show_challenge_results(message_or_bot, user_id)
+        await show_challenge_results(bot, user_id)
+        return
+
+    chat_id = data.get("quiz_chat_id")
+    if not chat_id:
+        logger.warning("send_challenge_question: no chat_id for user %s", user_id)
         return
 
     q = data["questions"][q_num]
@@ -1910,9 +2337,9 @@ async def send_challenge_question(message_or_bot, user_id):
     time_limit = data.get("challenge_time_limit")
     timer_str  = f" • ⏱ {time_limit} сек" if time_limit else ""
 
-    MAX_BTN_LEN = 35
+    max_btn_len = MAX_BTN_LEN
     options_text = ""
-    if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
+    if any(len(opt) > max_btn_len for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
         buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"cha_{i}") for i in range(len(shuffled))]]
     else:
@@ -1929,14 +2356,6 @@ async def send_challenge_question(message_or_bot, user_id):
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
 
-    # Получаем bot object
-    if hasattr(message_or_bot, 'send_message'):
-        bot = message_or_bot
-        chat_id = quiz_chat_id
-    else:
-        bot = message_or_bot.get_bot()
-        chat_id = message_or_bot.chat_id
-
     if quiz_message_id and quiz_chat_id:
         try:
             await bot.edit_message_text(
@@ -1947,7 +2366,7 @@ async def send_challenge_question(message_or_bot, user_id):
             err_str = str(e).lower()
             if "not modified" not in err_str:
                 msg = await bot.send_message(
-                    chat_id=chat_id or quiz_chat_id, text=text,
+                    chat_id=chat_id, text=text,
                     reply_markup=keyboard, parse_mode="Markdown",
                 )
                 data["quiz_message_id"] = msg.message_id
@@ -1966,52 +2385,10 @@ async def send_challenge_question(message_or_bot, user_id):
 
 
 async def challenge_timeout(bot, user_id, q_num_at_send):
+    """Таймер для challenge-режима. Лимит читается из данных сессии."""
     data = user_data.get(user_id)
-    if not data:
-        return
-    time_limit = data.get("challenge_time_limit", 7)
-    await asyncio.sleep(time_limit)
-
-    if user_id not in user_data:
-        return
-    data = user_data[user_id]
-
-    if data.get("processing_answer") or data.get("current_question") != q_num_at_send:
-        return
-
-    data["processing_answer"] = True
-    try:
-        q = data["questions"][q_num_at_send]
-        correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
-
-        q_id = str(q.get("id", hash(q["question"])))
-        session_id = data.get("session_id")
-        if session_id:
-            advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
-
-        data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
-        data["current_question"] += 1
-
-        qmid = data.get("quiz_message_id")
-        qcid = data.get("quiz_chat_id")
-        if qmid and qcid:
-            try:
-                await bot.edit_message_text(
-                    chat_id=qcid, message_id=qmid,
-                    text=f"⏱ *Время вышло!*\n✅ {correct_text}",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
-            await asyncio.sleep(2.5)  # даём время увидеть правильный ответ
-
-        if data["current_question"] < len(data["questions"]):
-            await send_challenge_question(bot, user_id)
-        else:
-            await show_challenge_results(bot, user_id)
-    finally:
-        if user_id in user_data:
-            user_data[user_id]["processing_answer"] = False
+    timeout = data.get("challenge_time_limit", CHALLENGE_TIMEOUT) if data else CHALLENGE_TIMEOUT
+    await _handle_question_timeout(bot, user_id, q_num_at_send, timeout)
 
 
 async def challenge_answer(update: Update, context):
@@ -2042,107 +2419,11 @@ async def challenge_answer(update: Update, context):
 
 
 async def challenge_inline_answer(update: Update, context):
-    """
-    Обрабатывает нажатие кнопки ответа в режиме Challenge.
-    """
-    query = update.callback_query
-    user_id = query.from_user.id
-    _touch(user_id)
-
-    if user_id not in user_data:
-        await query.answer("⚠️ Сессия не найдена.", show_alert=True)
-        return
-
-    data = user_data[user_id]
-
-    if data.get("processing_answer"):
-        await query.answer()
-        return
-
-    q_num = data["current_question"]
-    if q_num >= len(data["questions"]):
-        await query.answer()
-        return
-
-    try:
-        btn_index = int(query.data.replace("cha_", ""))
-    except ValueError:
-        await query.answer()
-        return
-
-    shuffled = data.get("current_options", [])
-    if btn_index >= len(shuffled):
-        await query.answer()
-        return
-
-    user_answer  = shuffled[btn_index]
-    correct_text = data.get("current_correct_text") or data["questions"][q_num]["options"][data["questions"][q_num]["correct"]]
-    session_id_at_start = data.get("session_id")  # guard against race with new session
-
-    data["processing_answer"] = True
-    await query.answer()
-
-    try:
-        timer_task = data.get("timer_task")
-        if timer_task and not timer_task.done():
-            timer_task.cancel()
-
-        is_correct = (user_answer == correct_text)
-        _reset_bad_input(user_id)
-        if is_correct:
-            data["correct_answers"] += 1
-            feedback = f"✅ *Верно!*\n\n_{correct_text}_"
-        else:
-            feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
-
-        q = data["questions"][q_num]
-        elapsed = time.time() - data.get("question_sent_at", time.time())
-        q_id = str(q.get("id", hash(q["question"])))
-        record_question_stat(q_id, data["level_key"], is_correct, elapsed)
-
-        data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
-        data["current_question"] += 1
-
-        if session_id_at_start:
-            advance_quiz_session(session_id_at_start, q_id, user_answer, is_correct, q)
-
-        qmid = data.get("quiz_message_id")
-        qcid = data.get("quiz_chat_id")
-        if qmid and qcid:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=qcid, message_id=qmid,
-                    text=feedback, parse_mode="Markdown",
-                )
-            except Exception as e:
-                err = str(e).lower()
-                if "not modified" not in err:
-                    print(f"challenge_inline_answer edit error: {e}")
-
-        # Умная задержка: верный ответ — быстро, ошибка — время прочитать
-        delay = 0.6 if is_correct else 2.5
-        await asyncio.sleep(delay)
-
-        # После sleep — проверяем, что сессия не сменилась (пользователь не начал новый тест)
-        if user_id not in user_data:
-            return
-        current_data = user_data[user_id]
-        if current_data.get("session_id") != session_id_at_start:
-            return  # новая сессия — не трогаем
-
-        if current_data["current_question"] < len(current_data["questions"]):
-            await send_challenge_question(context.bot, user_id)
-        else:
-            await show_challenge_results(context.bot, user_id)
-    except Exception as e:
-        print(f"challenge_inline_answer unexpected error: {e}")
-    finally:
-        # Всегда сбрасываем блокировку
-        if user_id in user_data and user_data[user_id].get("session_id") == session_id_at_start:
-            user_data[user_id]["processing_answer"] = False
+    """Обрабатывает нажатие кнопки ответа в режиме Challenge."""
+    await _handle_inline_answer(update, context, "cha")
 
 
-async def show_challenge_results(bot_or_message, user_id):
+async def show_challenge_results(bot, user_id):
     data       = user_data[user_id]
     score      = data["correct_answers"]
     total      = len(data["questions"])
@@ -2152,14 +2433,6 @@ async def show_challenge_results(bot_or_message, user_id):
     chat_id    = data.get("quiz_chat_id")
     username   = data.get("username")
     first_name = data.get("first_name", "Игрок")
-
-    # Resolve bot and chat_id
-    if hasattr(bot_or_message, 'send_message'):
-        bot = bot_or_message
-    else:
-        bot = bot_or_message.get_bot()
-        if not chat_id:
-            chat_id = bot_or_message.chat_id
 
     session_id = data.get("session_id")
     if session_id:
@@ -2219,7 +2492,16 @@ async def show_challenge_results(bot_or_message, user_id):
         [InlineKeyboardButton("⬅️ Меню",               callback_data="back_to_main")],
     ]
     if wrong:
-        kb_rows.insert(1, [InlineKeyboardButton(f"📌 Повторить ошибки ({len(wrong)})", callback_data=f"retry_errors_{user_id}")])
+        # Сохраняем ошибки в user_data для пагинированного разбора
+        user_data[user_id]["wrong_answers"] = wrong
+        kb_rows.insert(1, [InlineKeyboardButton(
+            f"🔍 Разобрать ошибки ({len(wrong)})",
+            callback_data=f"review_errors_{user_id}_0",
+        )])
+
+    # Кнопка «Поделиться»
+    share_text = f"Я прошёл {mode_name} — {score}/{total} ({pct}%)! Попробуй сам 👉 @peter1_quiz_bot"
+    kb_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
 
     await bot.send_message(
         chat_id=chat_id, text=result,
@@ -2245,19 +2527,9 @@ async def show_challenge_results(bot_or_message, user_id):
                 caption=f"🏆 {score}/{total} • {rank_name}",
             )
     except Exception as e:
-        print(f"Challenge result image error: {e}")
+        logger.error("Challenge result image error", exc_info=True)
 
-    if wrong:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"📖 *РАЗБОР ОШИБОК ({len(wrong)} из {total})*\n\n⬇️ _Изучи ошибки, затем выбери действие ниже_",
-            parse_mode="Markdown",
-        )
-        for i, item in enumerate(wrong, 1):
-            q         = item["question_obj"]
-            breakdown = f"❌ *Ошибка {i}*\n_{q['question']}_\n\nВаш: *{item['user_answer']}*\nВерно: *{q['options'][q['correct']]}*\n\n💡 {q.get('explanation', '')}"
-            await bot.send_message(chat_id=chat_id, text=safe_truncate(breakdown, 4000), parse_mode="Markdown")
-    else:
+    if not wrong:
         await bot.send_message(chat_id=chat_id, text="🎯 *Все ответы верны!*", parse_mode="Markdown")
 
 
@@ -2453,6 +2725,8 @@ async def show_status_inline(update: Update, context):
 
 async def button_handler(update: Update, context):
     query = update.callback_query
+    if await _debounce_callback(update):
+        return
     await query.answer()
     _touch(query.from_user.id)
 
@@ -2557,7 +2831,7 @@ async def report_receive_text(update: Update, context):
     user_id = update.effective_user.id
     if user_id not in report_drafts:
         return ConversationHandler.END
-    text = update.message.text.strip()
+    text = sanitize_report_text(update.message.text.strip())
     if not text:
         await safe_send(update.message, "Пожалуйста, напиши текст.")
         return REPORT_TEXT
@@ -2659,7 +2933,7 @@ async def report_confirm(update: Update, context):
         if report_id:
             mark_report_delivered(report_id)
     except Exception as e:
-        print(f"[REPORT] Could not deliver to admin: {e}")
+        logger.error("[REPORT] Could not deliver to admin: %s", e)
 
     msg = "✅ *Спасибо! Сообщение отправлено автору.*" if admin_delivered else "⚠️ Не удалось доставить прямо сейчас."
     await safe_edit(query, msg, reply_markup=_main_keyboard())
@@ -2692,12 +2966,14 @@ async def _general_message_fallback(update: Update, context):
     Удаляет случайный текст пользователя, переотправляет вопрос/меню вниз.
     """
     user_id = update.effective_user.id
+    is_private = update.effective_chat.type == "private"
 
-    # Удаляем сообщение пользователя — убираем мусор из чата
-    try:
-        await update.message.delete()
-    except Exception:
-        pass
+    # Удаляем сообщение пользователя — только в приватных чатах
+    if is_private:
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
 
     # Если идёт обычный тест или challenge (inline-кнопки)
     if user_id in user_data:
@@ -2756,7 +3032,7 @@ async def cleanup_old_battles_job(context):
     """JobQueue: удаляет устаревшие битвы из MongoDB."""
     deleted = db_cleanup_stale_battles()
     if deleted:
-        print(f"🧹 Удалено устаревших битв: {deleted}")
+        logger.info("🧹 Удалено устаревших битв: %d", deleted)
 
 
 async def cleanup_stale_userdata_job(context):
@@ -2767,12 +3043,73 @@ async def cleanup_stale_userdata_job(context):
     now = time.time()
     stale = [
         uid for uid, data in list(user_data.items())
-        if now - data.get("last_activity", now) > 86400
+        if now - data.get("last_activity", now) > GC_STALE_THRESHOLD
     ]
     for uid in stale:
         user_data.pop(uid, None)
     if stale:
-        print(f"🧹 GC: удалено {len(stale)} устаревших записей user_data")
+        logger.info("🧹 GC: удалено %d устаревших записей user_data", len(stale))
+
+
+async def remind_unfinished_tests_job(context):
+    """JobQueue (каждые 2 часа): напоминает о брошенных сессиях (6.4)."""
+    from database import get_stale_sessions
+    try:
+        stale = get_stale_sessions(max_age_hours=2)
+    except Exception:
+        return  # функция может быть не реализована — молча пропускаем
+    for session in stale:
+        uid = session.get("user_id")
+        if not uid:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text="📝 *У тебя есть незавершённый тест!*\n\nПродолжить с того места, где остановился?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("▶️ Продолжить",
+                        callback_data=f"resume_session_{session['_id']}")],
+                    [InlineKeyboardButton("❌ Отменить",
+                        callback_data=f"cancel_session_{session['_id']}")],
+                ]),
+            )
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────
+# GRACEFUL SHUTDOWN (6.6)
+# ─────────────────────────────────────────────
+import signal
+
+async def _save_all_sessions():
+    """Сохраняет все in-memory сессии в MongoDB при корректной остановке."""
+    saved = 0
+    for uid, data in list(user_data.items()):
+        sid = data.get("session_id")
+        if sid:
+            try:
+                update_quiz_session(sid, {
+                    "current_index": data.get("current_question", 0),
+                    "correct_count": data.get("correct_answers", 0),
+                })
+                saved += 1
+            except Exception:
+                pass
+    logger.info("💾 Graceful shutdown: сохранено %d сессий", saved)
+
+
+def _handle_shutdown(signum, frame):
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        loop.create_task(_save_all_sessions())
+    else:
+        loop.run_until_complete(_save_all_sessions())
+
+
+signal.signal(signal.SIGTERM, _handle_shutdown)
+signal.signal(signal.SIGINT,  _handle_shutdown)
 
 
 async def on_error(update: object, context):
@@ -2783,12 +3120,12 @@ async def on_error(update: object, context):
 
     # 1. Фильтруем сетевые ошибки (Render часто рвет соединение, это норма)
     if isinstance(err, (NetworkError, TimedOut)):
-        print(f"⚠️ Network noise ignored: {err}")
+        logger.debug("Network noise ignored: %s", err)
         return
 
     # 2. Фильтруем RetryAfter — Telegram просит подождать, не спамим
     if isinstance(err, RetryAfter):
-        print(f"⚠️ RetryAfter ignored: retry in {err.retry_after}s")
+        logger.warning("RetryAfter: retry in %ss", err.retry_after)
         return
 
     # 3. Фильтруем "Message is not modified" (юзер жмет кнопку дважды)
@@ -2797,11 +3134,11 @@ async def on_error(update: object, context):
 
     # 4. Фильтруем ChatMigrated (группа перешла в супергруппу)
     if isinstance(err, ChatMigrated):
-        print(f"⚠️ ChatMigrated ignored: new_chat_id={err.new_chat_id}")
+        logger.info("ChatMigrated: new_chat_id=%s", err.new_chat_id)
         return
 
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
-    print(f"[ERROR] {tb}")
+    logger.error("Unhandled exception:\n%s", tb)
 
     # 5. Фоновые ошибки (polling/getUpdates) — нет реального пользователя.
     #    Только логируем, не беспокоим ни пользователя, ни админа.
@@ -2859,7 +3196,6 @@ def main():
             ],
             BATTLE_ANSWERING: [
                 CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, battle_answer),
             ],
         },
         fallbacks=[
@@ -2872,10 +3208,13 @@ def main():
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("start", start))
 
-    # Inline-ответы на вопросы (основной тест и challenge)
+    # Inline-ответы на вопросы (основной тест, challenge и битвы)
     app.add_handler(CallbackQueryHandler(quiz_inline_answer,       pattern=r"^qa_\d+$"))
     app.add_handler(CallbackQueryHandler(challenge_inline_answer,  pattern=r"^cha_\d+$"))
+    app.add_handler(CallbackQueryHandler(battle_answer,            pattern=r"^ba_\d+$"))
     app.add_handler(CallbackQueryHandler(cancel_quiz_handler,      pattern="^cancel_quiz$"))
+    # Подтверждение уровня перед стартом (4.5)
+    app.add_handler(CallbackQueryHandler(confirm_level_handler,    pattern=r"^confirm_level_"))
 
     # Session recovery
     app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
@@ -2888,6 +3227,13 @@ def main():
     app.add_handler(CommandHandler("cancelreport", cancel_report_command))
     app.add_handler(CommandHandler("admin",        admin_command))
     app.add_handler(CommandHandler("broadcast",    broadcast_command))
+    app.add_handler(CommandHandler("help",         help_command))  # 6.1
+
+    # Admin inline-панель (6.5)
+    app.add_handler(CallbackQueryHandler(
+        admin_callback_handler,
+        pattern=r"^admin_(hard_questions|active_sessions|cleanup|broadcast_prompt|back)$",
+    ))
 
     # Репорты
     report_conv = ConversationHandler(
@@ -2937,6 +3283,9 @@ def main():
                 r"historical_menu|coming_soon|challenge_menu|achievements|my_status|reset_session)$",
     ))
 
+    # История прохождений (6.3)
+    app.add_handler(CallbackQueryHandler(show_history, pattern="^my_history$"))
+
     # Разбор ошибок (пагинация)
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_errors_"))
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_nav_"))
@@ -2946,16 +3295,17 @@ def main():
 
     # JobQueue
     if app.job_queue is not None:
-        app.job_queue.run_repeating(cleanup_old_battles_job,    interval=300,  first=300)
-        app.job_queue.run_repeating(cleanup_stale_userdata_job, interval=3600, first=3600)
-        print("🧹 Автоочистка активна (битвы + user_data GC)")
+        app.job_queue.run_repeating(cleanup_old_battles_job,    interval=BATTLE_CLEANUP_INTERVAL, first=BATTLE_CLEANUP_INTERVAL)
+        app.job_queue.run_repeating(cleanup_stale_userdata_job, interval=GC_INTERVAL,             first=GC_INTERVAL)
+        app.job_queue.run_repeating(remind_unfinished_tests_job, interval=7200, first=7200)  # 6.4
+        logger.info("🧹 Автоочистка активна (битвы + user_data GC + напоминания)")
     else:
-        print("⚠️  JobQueue недоступен")
+        logger.warning("JobQueue недоступен — автоочистка отключена")
 
     app.add_error_handler(on_error)
 
-    print("🤖 Бот запущен! (Рефакторинг v2)")
-    print(f"🛡 Admin ID: {ADMIN_USER_ID}")
+    logger.info("🤖 Бот запущен! (Рефакторинг v2)")
+    logger.info("🛡 Admin ID: %s", ADMIN_USER_ID)
     app.run_polling()
 
 
