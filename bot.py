@@ -621,7 +621,7 @@ async def auto_timeout(bot, user_id, q_num_at_send):
                 )
             except Exception:
                 pass
-            await asyncio.sleep(2)
+            await asyncio.sleep(2.5)  # даём время увидеть правильный ответ
 
         if data["current_question"] < len(data["questions"]):
             await send_question(bot, user_id)
@@ -903,7 +903,9 @@ async def quiz_inline_answer(update: Update, context):
                 if "not modified" not in str(e).lower():
                     print(f"quiz_inline_answer edit error: {e}")
 
-        await asyncio.sleep(1.5)
+        # Умная задержка: верный ответ — быстро, ошибка — время прочитать
+        delay = 0.6 if is_correct else 2.5
+        await asyncio.sleep(delay)
 
         # Проверяем, что сессия не сменилась
         if user_id not in user_data:
@@ -2001,7 +2003,7 @@ async def challenge_timeout(bot, user_id, q_num_at_send):
                 )
             except Exception:
                 pass
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.5)  # даём время увидеть правильный ответ
 
         if data["current_question"] < len(data["questions"]):
             await send_challenge_question(bot, user_id)
@@ -2117,7 +2119,9 @@ async def challenge_inline_answer(update: Update, context):
                 if "not modified" not in err:
                     print(f"challenge_inline_answer edit error: {e}")
 
-        await asyncio.sleep(1.5)
+        # Умная задержка: верный ответ — быстро, ошибка — время прочитать
+        delay = 0.6 if is_correct else 2.5
+        await asyncio.sleep(delay)
 
         # После sleep — проверяем, что сессия не сменилась (пользователь не начал новый тест)
         if user_id not in user_data:
