@@ -315,7 +315,7 @@ def cleanup_stale_battles():
 # ОСНОВНЫЕ ФУНКЦИИ БД — ПОЛЬЗОВАТЕЛИ
 # ═══════════════════════════════════════════════
 
-HISTORICAL_CATEGORIES = {"nero", "geography", "intro1", "intro2", "intro3"}
+HISTORICAL_CATEGORIES = {"nero", "geography"}
 
 
 def get_user_stats(user_id):
@@ -448,12 +448,13 @@ def add_to_leaderboard(user_id, username, first_name, level_key, score, total, t
     }
 
     if level_key not in HISTORICAL_CATEGORIES:
-        points_map = {
+        POINTS_MAP = {
             "easy": 1, "medium": 2, "hard": 3,
             "practical_ch1": 2, "linguistics_ch1": 3,
             "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
+            "intro1": 2, "intro2": 2, "intro3": 2,
         }
-        pts = score * points_map.get(level_key, 1)
+        pts = score * POINTS_MAP.get(level_key, 1)
         update_fields["total_points"] = pts  # will use $inc below
 
     try:
@@ -467,12 +468,13 @@ def add_to_leaderboard(user_id, username, first_name, level_key, score, total, t
             f"{level_key}_total": total,
         }
         if level_key not in HISTORICAL_CATEGORIES:
-            pts_map = {
+            POINTS_MAP = {
                 "easy": 1, "medium": 2, "hard": 3,
                 "practical_ch1": 2, "linguistics_ch1": 3,
                 "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
+                "intro1": 2, "intro2": 2, "intro3": 2,
             }
-            inc_fields["total_points"] = score * pts_map.get(level_key, 1)
+            inc_fields["total_points"] = score * POINTS_MAP.get(level_key, 1)
 
         collection.update_one(
             {"_id": user_id_str},
