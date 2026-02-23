@@ -165,7 +165,6 @@ def _ensure_indexes():
             )
             battles_collection.create_index(
                 [("status", ASCENDING), ("created_at_dt", DESCENDING)],
-                name="idx_status_created",
                 background=True,
             )
         except Exception as e:
@@ -175,7 +174,6 @@ def _ensure_indexes():
         try:
             collection.create_index(
                 [("last_activity", DESCENDING)],
-                name="idx_last_activity",
                 background=True,
             )
             collection.create_index(
