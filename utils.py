@@ -140,7 +140,6 @@ async def generate_result_image(
     """
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageOps
-        import requests
     except ImportError:
         print("Pillow not installed — skipping image generation")
         return None
