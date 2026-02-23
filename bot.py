@@ -66,16 +66,7 @@ from database import (
     touch_user_activity,
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name
-from questions import (
-    easy_questions, easy_questions_v17_25,
-    medium_questions, medium_questions_v17_25,
-    hard_questions, hard_questions_v17_25,
-    nero_questions, geography_questions,
-    practical_ch1_questions, practical_v17_25_questions,
-    linguistics_ch1_questions, linguistics_ch1_questions_2,
-    linguistics_v17_25_questions, all_chapter1_questions,
-    intro_part1_questions, intro_part2_questions, intro_part3_questions,
-)
+from questions import get_pool_by_key
 
 # ─────────────────────────────────────────────
 # КОНФИГУРАЦИЯ
@@ -193,40 +184,36 @@ _STUCK_KB = InlineKeyboardMarkup([
 ])
 
 # ─────────────────────────────────────────────
-# ПУЛЫ ВОПРОСОВ (конкатенация один раз при старте)
+# КОНФИГУРАЦИЯ УРОВНЕЙ
+# pool_key → get_pool_by_key(pool_key) возвращает список вопросов
 # ─────────────────────────────────────────────
-_pool_easy_all        = easy_questions + easy_questions_v17_25
-_pool_medium_all      = medium_questions + medium_questions_v17_25
-_pool_hard_all        = hard_questions + hard_questions_v17_25
-_pool_practical_all   = practical_ch1_questions + practical_v17_25_questions
-
 LEVEL_CONFIG = {
     # ── Легкий ──────────────────────────────────────────────────────────────
-    "level_easy":            {"pool": _pool_easy_all,                "name": "🟢 Легкий уровень (ст. 1–25)",         "key": "easy",              "points_per_q": 1},
-    "level_easy_p1":         {"pool": easy_questions,                "name": "🟢 Легкий (ст. 1–16)",                "key": "easy_p1",           "points_per_q": 1},
-    "level_easy_p2":         {"pool": easy_questions_v17_25,         "name": "🟢 Легкий (ст. 17–25)",               "key": "easy_p2",           "points_per_q": 1},
+    "level_easy":              {"pool_key": "easy",             "name": "🟢 Легкий уровень (ст. 1–25)",                      "points_per_q": 1},
+    "level_easy_p1":           {"pool_key": "easy_p1",          "name": "🟢 Легкий (ст. 1–16)",                              "points_per_q": 1},
+    "level_easy_p2":           {"pool_key": "easy_p2",          "name": "🟢 Легкий (ст. 17–25)",                             "points_per_q": 1},
     # ── Средний ─────────────────────────────────────────────────────────────
-    "level_medium":          {"pool": _pool_medium_all,              "name": "🟡 Средний (ст. 1–25)",               "key": "medium",            "points_per_q": 2},
-    "level_medium_p1":       {"pool": medium_questions,              "name": "🟡 Средний (ст. 1–16)",               "key": "medium_p1",         "points_per_q": 2},
-    "level_medium_p2":       {"pool": medium_questions_v17_25,       "name": "🟡 Средний (ст. 17–25)",              "key": "medium_p2",         "points_per_q": 2},
+    "level_medium":            {"pool_key": "medium",           "name": "🟡 Средний (ст. 1–25)",                             "points_per_q": 2},
+    "level_medium_p1":         {"pool_key": "medium_p1",        "name": "🟡 Средний (ст. 1–16)",                             "points_per_q": 2},
+    "level_medium_p2":         {"pool_key": "medium_p2",        "name": "🟡 Средний (ст. 17–25)",                            "points_per_q": 2},
     # ── Сложный ─────────────────────────────────────────────────────────────
-    "level_hard":            {"pool": _pool_hard_all,                "name": "🔴 Сложный (ст. 1–25)",               "key": "hard",              "points_per_q": 3},
-    "level_hard_p1":         {"pool": hard_questions,                "name": "🔴 Сложный (ст. 1–16)",               "key": "hard_p1",           "points_per_q": 3},
-    "level_hard_p2":         {"pool": hard_questions_v17_25,         "name": "🔴 Сложный (ст. 17–25)",              "key": "hard_p2",           "points_per_q": 3},
+    "level_hard":              {"pool_key": "hard",             "name": "🔴 Сложный (ст. 1–25)",                             "points_per_q": 3},
+    "level_hard_p1":           {"pool_key": "hard_p1",          "name": "🔴 Сложный (ст. 1–16)",                             "points_per_q": 3},
+    "level_hard_p2":           {"pool_key": "hard_p2",          "name": "🔴 Сложный (ст. 17–25)",                            "points_per_q": 3},
     # ── Применение ──────────────────────────────────────────────────────────
-    "level_practical_ch1":   {"pool": _pool_practical_all,           "name": "🙏 Применение (ст. 1–25)",            "key": "practical_ch1",     "points_per_q": 2},
-    "level_practical_p1":    {"pool": practical_ch1_questions,       "name": "🙏 Применение (ст. 1–16)",            "key": "practical_p1",      "points_per_q": 2},
-    "level_practical_p2":    {"pool": practical_v17_25_questions,    "name": "🙏 Применение (ст. 17–25)",           "key": "practical_p2",      "points_per_q": 2},
+    "level_practical_ch1":     {"pool_key": "practical_ch1",    "name": "🙏 Применение (ст. 1–25)",                          "points_per_q": 2},
+    "level_practical_p1":      {"pool_key": "practical_p1",     "name": "🙏 Применение (ст. 1–16)",                          "points_per_q": 2},
+    "level_practical_p2":      {"pool_key": "practical_p2",     "name": "🙏 Применение (ст. 17–25)",                         "points_per_q": 2},
     # ── Лингвистика ─────────────────────────────────────────────────────────
-    "level_linguistics_ch1":   {"pool": linguistics_ch1_questions,   "name": "🔬 Лингвистика: Избранные и странники (ч.1)",   "key": "linguistics_ch1",   "points_per_q": 3},
-    "level_linguistics_ch1_2": {"pool": linguistics_ch1_questions_2, "name": "🔬 Лингвистика: Живая надежда (ч.2)",           "key": "linguistics_ch1_2", "points_per_q": 3},
-    "level_linguistics_ch1_3": {"pool": linguistics_v17_25_questions,"name": "🔬 Лингвистика: Искупление и истина (ч.3)",     "key": "linguistics_ch1_3", "points_per_q": 3},
+    "level_linguistics_ch1":   {"pool_key": "linguistics_ch1",  "name": "🔬 Лингвистика: Избранные и странники (ч.1)",       "points_per_q": 3},
+    "level_linguistics_ch1_2": {"pool_key": "linguistics_ch1_2","name": "🔬 Лингвистика: Живая надежда (ч.2)",               "points_per_q": 3},
+    "level_linguistics_ch1_3": {"pool_key": "linguistics_ch1_3","name": "🔬 Лингвистика: Искупление и истина (ч.3)",         "points_per_q": 3},
     # ── Исторический контекст ───────────────────────────────────────────────
-    "level_nero":            {"pool": nero_questions,                 "name": "👑 Правление Нерона",                 "key": "nero",              "points_per_q": 2},
-    "level_geography":       {"pool": geography_questions,            "name": "🌍 География земли",                  "key": "geography",         "points_per_q": 2},
-    "level_intro1":          {"pool": intro_part1_questions,          "name": "📜 Введение: Авторство ч.1",          "key": "intro1",            "points_per_q": 2},
-    "level_intro2":          {"pool": intro_part2_questions,          "name": "📜 Введение: Авторство ч.2",          "key": "intro2",            "points_per_q": 2},
-    "level_intro3":          {"pool": intro_part3_questions,          "name": "📜 Введение: Структура и цель",       "key": "intro3",            "points_per_q": 2},
+    "level_nero":              {"pool_key": "nero",             "name": "👑 Правление Нерона",                               "points_per_q": 2},
+    "level_geography":         {"pool_key": "geography",        "name": "🌍 География земли",                                "points_per_q": 2},
+    "level_intro1":            {"pool_key": "intro1",           "name": "📜 Введение: Авторство ч.1",                        "points_per_q": 2},
+    "level_intro2":            {"pool_key": "intro2",           "name": "📜 Введение: Авторство ч.2",                        "points_per_q": 2},
+    "level_intro3":            {"pool_key": "intro3",           "name": "📜 Введение: Структура и цель",                     "points_per_q": 2},
 }
 
 
@@ -428,20 +415,10 @@ async def historical_menu(update: Update, context):
 # СПРАВКА ДЛЯ ТЕСТОВ ВВЕДЕНИЯ
 # ─────────────────────────────────────────────
 
-_INTRO_POOL_MAP = {
-    "level_intro1": "intro_part1_questions",
-    "level_intro2": "intro_part2_questions",
-    "level_intro3": "intro_part3_questions",
-}
-
 def _get_intro_pool(level_callback: str):
-    """Возвращает пул вопросов по callback-имени уровня."""
-    from questions import intro_part1_questions, intro_part2_questions, intro_part3_questions
-    return {
-        "level_intro1": intro_part1_questions,
-        "level_intro2": intro_part2_questions,
-        "level_intro3": intro_part3_questions,
-    }.get(level_callback, [])
+    """Возвращает пул вопросов по callback-имени уровня Введение."""
+    cfg = LEVEL_CONFIG.get(level_callback)
+    return get_pool_by_key(cfg["pool_key"]) if cfg else []
 
 
 async def intro_hint_handler(update: Update, context):
@@ -483,13 +460,13 @@ async def intro_start_handler(update: Update, context):
         await query.edit_message_text("⚠️ Уровень не найден.")
         return
 
-    questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
+    questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
     cancel_active_quiz_session(user_id)
 
     question_ids = [stable_question_id(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key=cfg["key"],
+        questions_data=questions, level_key=cfg["pool_key"],
         level_name=cfg["name"], time_limit=None,
         chat_id=query.message.chat_id,
     )
@@ -498,7 +475,7 @@ async def intro_start_handler(update: Update, context):
         "session_id":         session_id,
         "questions":          questions,
         "level_name":         cfg["name"],
-        "level_key":          cfg["key"],
+        "level_key":          cfg["pool_key"],
         "current_question":   0,
         "correct_answers":    0,
         "answered_questions": [],
@@ -525,8 +502,7 @@ async def random_fact_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
 
-    from questions import intro_part1_questions, intro_part2_questions, intro_part3_questions
-    all_intro = intro_part1_questions + intro_part2_questions + intro_part3_questions
+    all_intro = (get_pool_by_key("intro1") + get_pool_by_key("intro2") + get_pool_by_key("intro3"))
     q = random.choice(all_intro)
     fact = q["explanation"]
 
@@ -560,7 +536,7 @@ async def level_selected(update: Update, context):
     _touch(user_id)
 
     # Для тестов «Введение» предлагаем справку перед стартом
-    if cfg["key"] in ("intro1", "intro2", "intro3"):
+    if cfg["pool_key"] in ("intro1", "intro2", "intro3"):
         await query.edit_message_text(
             f"📜 *{cfg['name']}*\n\n"
             "Это вопросы по введению к 1 Петра: авторство, датировка, структура.\n\n"
@@ -575,7 +551,7 @@ async def level_selected(update: Update, context):
         return ConversationHandler.END
 
     # Экран подтверждения перед стартом
-    pool_size = len(cfg["pool"])
+    pool_size = len(get_pool_by_key(cfg["pool_key"]))
     num_q = min(10, pool_size)
     await query.edit_message_text(
         f"📝 *{cfg['name']}*\n\n"
@@ -605,13 +581,13 @@ async def confirm_level_handler(update: Update, context):
     user_id = update.effective_user.id
     _touch(user_id)
 
-    questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
+    questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
     cancel_active_quiz_session(user_id)
 
     question_ids = [stable_question_id(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key=cfg["key"],
+        questions_data=questions, level_key=cfg["pool_key"],
         level_name=cfg["name"], time_limit=None,
         chat_id=query.message.chat_id,
     )
@@ -620,7 +596,7 @@ async def confirm_level_handler(update: Update, context):
         "session_id":         session_id,
         "questions":          questions,
         "level_name":         cfg["name"],
-        "level_key":          cfg["key"],
+        "level_key":          cfg["pool_key"],
         "current_question":   0,
         "correct_answers":    0,
         "answered_questions": [],
@@ -1429,16 +1405,16 @@ async def restart_session_handler(update: Update, context):
         if not cfg:
             await query.edit_message_text("⚠️ Уровень не найден.")
             return
-        questions = random.sample(cfg["pool"], min(10, len(cfg["pool"])))
+        questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
         question_ids = [stable_question_id(q) for q in questions]
         new_session_id = create_quiz_session(
             user_id=user_id, mode="level", question_ids=question_ids,
-            questions_data=questions, level_key=cfg["key"],
+            questions_data=questions, level_key=cfg["pool_key"],
             level_name=cfg["name"], time_limit=None,
         )
         user_data[user_id] = {
             "session_id": new_session_id, "questions": questions,
-            "level_name": cfg["name"], "level_key": cfg["key"],
+            "level_name": cfg["name"], "level_key": cfg["pool_key"],
             "current_question": 0, "correct_answers": 0,
             "answered_questions": [], "start_time": time.time(),
             "last_activity": time.time(),
@@ -2183,18 +2159,25 @@ def build_progress_bar(current, total=20, length=10):
 
 
 def pick_challenge_questions(mode):
-    pool_ling = linguistics_ch1_questions + linguistics_ch1_questions_2 + linguistics_v17_25_questions
+    pool_ling = (get_pool_by_key("linguistics_ch1") +
+                 get_pool_by_key("linguistics_ch1_2") +
+                 get_pool_by_key("linguistics_ch1_3"))
 
     def safe_sample(pool, n):
         pool = list(pool)
         return random.sample(pool, n) if len(pool) >= n else random.choices(pool, k=n)
 
     if mode == "random20":
-        questions = (safe_sample(_pool_easy_all, 6) + safe_sample(_pool_medium_all, 6) +
-                     safe_sample(_pool_hard_all, 6) + safe_sample(_pool_practical_all, 1) + safe_sample(pool_ling, 1))
+        questions = (safe_sample(get_pool_by_key("easy"),          6) +
+                     safe_sample(get_pool_by_key("medium"),         6) +
+                     safe_sample(get_pool_by_key("hard"),           6) +
+                     safe_sample(get_pool_by_key("practical_ch1"),  1) +
+                     safe_sample(pool_ling,                         1))
     else:
-        questions = (safe_sample(_pool_easy_all, 4) + safe_sample(_pool_medium_all, 5) +
-                     safe_sample(_pool_hard_all, 7) + safe_sample(pool_ling, 4))
+        questions = (safe_sample(get_pool_by_key("easy"),          4) +
+                     safe_sample(get_pool_by_key("medium"),         5) +
+                     safe_sample(get_pool_by_key("hard"),           7) +
+                     safe_sample(pool_ling,                         4))
     random.shuffle(questions)
     return questions
 
