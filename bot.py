@@ -2573,21 +2573,25 @@ async def on_error(update: object, context):
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
     print(f"[ERROR] {tb}")
 
-    if isinstance(update, Update) and update.effective_user:
-        user_id = update.effective_user.id
-        try:
-            msg_target = (update.message or
-                          (update.callback_query.message if update.callback_query else None))
-            if msg_target:
-                await msg_target.reply_text(
-                    "⚠️ Произошла ошибка. Нажми /reset или сообщи автору.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🆘 Сброс",     callback_data="reset_session"),
-                         InlineKeyboardButton("🐞 Сообщить",  callback_data="report_start_bug_direct")],
-                    ]),
-                )
-        except Exception:
-            pass
+    # 5. Фоновые ошибки (polling/getUpdates) — нет реального пользователя.
+    #    Только логируем, не беспокоим ни пользователя, ни админа.
+    if not (isinstance(update, Update) and update.effective_user):
+        return
+
+    # Реальная ошибка с пользователем — уведомляем его и админа
+    try:
+        msg_target = (update.message or
+                      (update.callback_query.message if update.callback_query else None))
+        if msg_target:
+            await msg_target.reply_text(
+                "⚠️ Произошла ошибка. Нажми /reset или сообщи автору.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🆘 Сброс",     callback_data="reset_session"),
+                     InlineKeyboardButton("🐞 Сообщить",  callback_data="report_start_bug_direct")],
+                ]),
+            )
+    except Exception:
+        pass
 
     try:
         await context.bot.send_message(
