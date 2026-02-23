@@ -43,10 +43,10 @@ from telegram.ext import (
 
 from database import (
     collection,
-    init_user_stats, add_to_leaderboard, update_battle_stats,
+    init_user_stats, add_to_leaderboard, update_battle_stats, update_daily_streak,
     get_user_position, get_leaderboard_page, get_total_users,
     format_time, calculate_days_playing, calculate_accuracy,
-    record_question_stat, get_question_stats,
+    record_question_stat,
     get_points_to_next_place, get_category_leaderboard, get_context_leaderboard,
     is_bonus_eligible, compute_bonus,
     update_challenge_stats, update_weekly_leaderboard,
@@ -60,13 +60,15 @@ from database import (
     create_battle_doc, get_battle, update_battle, get_waiting_battles,
     delete_battle, cleanup_stale_battles as db_cleanup_stale_battles,
     # Admin
-    get_admin_stats, get_all_user_ids,
+    get_admin_stats, get_all_user_ids, get_hardest_questions,
     # Reports
     can_submit_report, seconds_until_next_report, insert_report, mark_report_delivered,
     touch_user_activity,
+    # History
+    get_user_history,
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name
-from questions import get_pool_by_key
+from questions import get_pool_by_key, BATTLE_POOL
 
 # ─────────────────────────────────────────────
 # КОНФИГУРАЦИЯ
@@ -83,50 +85,9 @@ REPORT_TYPE, REPORT_TEXT, REPORT_PHOTO, REPORT_CONFIRM = range(10, 14)
 # ─────────────────────────────────────────────
 # ТИПИЗАЦИЯ СЕССИИ
 # ─────────────────────────────────────────────
-from dataclasses import dataclass, field
 from typing import Optional
 
-@dataclass
-class QuizSession:
-    """
-    Типизированный контейнер для активной викторины пользователя.
-    Заменяет разрозненный dict user_data[uid] (5.3).
-    Используется как NEW код; существующий dict-код продолжает работать параллельно
-    до полного перехода на dataclass в следующей итерации рефакторинга.
-    """
-    session_id:           Optional[str]       = None
-    questions:            list                = field(default_factory=list)
-    level_name:           str                 = ""
-    level_key:            str                 = ""
-    current_question:     int                 = 0
-    correct_answers:      int                 = 0
-    answered_questions:   list                = field(default_factory=list)
-    start_time:           float               = field(default_factory=time.time)
-    last_activity:        float               = field(default_factory=time.time)
-    is_battle:            bool                = False
-    is_challenge:         bool                = False
-    challenge_mode:       Optional[str]       = None
-    challenge_eligible:   bool                = False
-    challenge_time_limit: Optional[int]       = None
-    processing_answer:    bool                = False
-    quiz_chat_id:         Optional[int]       = None
-    quiz_message_id:      Optional[int]       = None
-    username:             Optional[str]       = None
-    first_name:           str                 = "Игрок"
-    timer_task:           Optional[asyncio.Task] = field(default=None, repr=False)
-    current_options:      list                = field(default_factory=list)
-    current_correct_text: str                 = ""
-    question_sent_at:     float               = 0.0
-    wrong_answers:        list                = field(default_factory=list)
-    battle_id:            Optional[str]       = None
-    battle_points:        int                 = 0
-    battle_message_id:    Optional[int]       = None
-    role:                 Optional[str]       = None
-
-    def to_dict(self) -> dict:
-        """Совместимость с legacy dict-кодом."""
-        import dataclasses
-        return dataclasses.asdict(self)
+# QuizSession dataclass удалён — сессии хранятся в user_data: dict[int, dict]
 
 
 # Хранилище активных сессий (в памяти)
@@ -140,6 +101,10 @@ def stable_question_id(q: dict) -> str:
     """Стабильный детерминированный ID вопроса (не зависит от перезапуска)."""
     text = q.get("question", "")
     return hashlib.md5(text.encode()).hexdigest()[:12]
+
+def get_qid(q: dict) -> str:
+    """Возвращает стабильный ID вопроса: q['id'] если есть, иначе md5-хэш текста."""
+    return str(q.get("id") or stable_question_id(q))
 
 REPORT_TYPE_LABELS = {
     "bug":      "🐞 Баг",
@@ -301,8 +266,8 @@ async def start(update: Update, context):
             return
 
     name = user.first_name or "друг"
+    streak = update_daily_streak(user.id)
     _, entry = get_user_position(user.id)
-    streak = entry.get("daily_streak", 0) if entry else 0
 
     welcome = (
         f"👋 *Добро пожаловать, {name}!*\n\n"
@@ -349,7 +314,7 @@ async def choose_level(update, context, is_callback=False):
         [InlineKeyboardButton("📖 Глава 2 — скоро...",    callback_data="coming_soon")],
         [InlineKeyboardButton("⬅️ Назад",                  callback_data="back_to_main")],
     ])
-    text = "🎯 *ВЫБЕРИ КАТЕГОРИЮ*\n\n📖 *1 Петра по главам:*\nГлава 1 — 5 видов вопросов\n\n⏱ На каждый вопрос — 7 секунд!"
+    text = f"🎯 *ВЫБЕРИ КАТЕГОРИЮ*\n\n📖 *1 Петра по главам:*\nГлава 1 — 5 видов вопросов\n\n⏱ На каждый вопрос — {QUIZ_TIMEOUT} сек!"
     if is_callback and hasattr(update, "callback_query"):
         await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     else:
@@ -463,7 +428,7 @@ async def intro_start_handler(update: Update, context):
     questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
     cancel_active_quiz_session(user_id)
 
-    question_ids = [stable_question_id(q) for q in questions]
+    question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
         questions_data=questions, level_key=cfg["pool_key"],
@@ -584,7 +549,7 @@ async def confirm_level_handler(update: Update, context):
     questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
     cancel_active_quiz_session(user_id)
 
-    question_ids = [stable_question_id(q) for q in questions]
+    question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
         questions_data=questions, level_key=cfg["pool_key"],
@@ -732,7 +697,7 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
     try:
         q            = data["questions"][q_num_at_send]
         correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
-        q_id         = str(q.get("id", stable_question_id(q)))
+        q_id         = get_qid(q)
 
         session_id = data.get("session_id")
         if session_id:
@@ -853,7 +818,7 @@ async def show_results(bot, user_id):
     add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken)
     position, entry = get_user_position(user_id)
 
-    cfg = next((v for v in LEVEL_CONFIG.values() if v["key"] == data["level_key"]), None)
+    cfg = next((v for v in LEVEL_CONFIG.values() if v["pool_key"] == data["level_key"]), None)
     earned_points = score * (cfg["points_per_q"] if cfg else 1)
 
     if percentage >= 90:   grade = "Отлично! 🌟"
@@ -1059,7 +1024,7 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
             feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
 
         elapsed = time.time() - data.get("question_sent_at", time.time())
-        q_id    = str(q.get("id", stable_question_id(q)))
+        q_id    = get_qid(q)
         record_question_stat(q_id, data["level_key"], is_correct, elapsed)
 
         data["answered_questions"].append({"question_obj": q, "user_answer": user_answer})
@@ -1297,7 +1262,7 @@ async def _handle_timeout_after_restart(message, user_id: int, db_session: dict)
     q_num = data["current_question"]
     q = data["questions"][q_num]
     correct_text = q["options"][q["correct"]]
-    q_id = str(q.get("id", stable_question_id(q)))
+    q_id = get_qid(q)
     session_id = data["session_id"]
     advance_quiz_session(session_id, q_id, "⏱ Время вышло", False, q)
     data["answered_questions"].append({"question_obj": q, "user_answer": "⏱ Время вышло"})
@@ -1376,11 +1341,12 @@ async def restart_session_handler(update: Update, context):
         questions = pick_challenge_questions(mode)
         time_limit = 10 if mode == "hardcore20" else None
         mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
-        question_ids = [stable_question_id(q) for q in questions]
+        question_ids = [get_qid(q) for q in questions]
         new_session_id = create_quiz_session(
             user_id=user_id, mode=mode, question_ids=question_ids,
             questions_data=questions, level_key=mode, level_name=mode_name,
             time_limit=time_limit,
+            chat_id=query.message.chat_id,
         )
         user_data[user_id] = {
             "session_id": new_session_id, "questions": questions,
@@ -1401,16 +1367,17 @@ async def restart_session_handler(update: Update, context):
         await send_challenge_question(context.bot, user_id)
     else:
         level_key = db_session.get("level_key")
-        cfg = next((v for v in LEVEL_CONFIG.values() if v["key"] == level_key), None)
+        cfg = next((v for v in LEVEL_CONFIG.values() if v["pool_key"] == level_key), None)
         if not cfg:
             await query.edit_message_text("⚠️ Уровень не найден.")
             return
         questions = random.sample(get_pool_by_key(cfg["pool_key"]), min(10, len(get_pool_by_key(cfg["pool_key"]))))
-        question_ids = [stable_question_id(q) for q in questions]
+        question_ids = [get_qid(q) for q in questions]
         new_session_id = create_quiz_session(
             user_id=user_id, mode="level", question_ids=question_ids,
             questions_data=questions, level_key=cfg["pool_key"],
             level_name=cfg["name"], time_limit=None,
+            chat_id=query.message.chat_id,
         )
         user_data[user_id] = {
             "session_id": new_session_id, "questions": questions,
@@ -1472,7 +1439,7 @@ async def create_battle(update: Update, context):
         battle_id=battle_id,
         creator_id=user_id,
         creator_name=user_name,
-        questions=random.sample(all_chapter1_questions, 10),
+        questions=random.sample(BATTLE_POOL, min(10, len(BATTLE_POOL))),
     )
     if not battle_doc:
         await query.edit_message_text("❌ Ошибка создания битвы. Попробуй позже.")
@@ -1546,65 +1513,73 @@ async def start_battle_questions(update: Update, context):
         return
 
     user_data[user_id] = {
-        "battle_id":       battle_id,
-        "role":            role,
-        "questions":       battle["questions"],
+        "battle_id":        battle_id,
+        "role":             role,
+        "questions":        battle["questions"],
         "current_question": 0,
-        "correct_answers": 0,
-        "start_time":      time.time(),
-        "last_activity":   time.time(),
-        "is_battle":       True,
-        "battle_points":   0,
+        "correct_answers":  0,
+        "start_time":       time.time(),
+        "last_activity":    time.time(),
+        "is_battle":        True,
+        "battle_points":    0,
+        "battle_chat_id":   query.message.chat_id,  # фиксируем chat_id один раз
     }
 
     await query.edit_message_text("⚔️ *БИТВА: Вопрос 1/10*\n\nНачинаем! 🍀", parse_mode="Markdown")
-    await send_battle_question(query.message, user_id)
+    await send_battle_question(context.bot, query.message.chat_id, user_id)
     return BATTLE_ANSWERING
 
 
-async def send_battle_question(message, user_id):
+async def send_battle_question(bot, chat_id: int, user_id: int):
+    """Отправляет или редактирует вопрос битвы. bot передаётся явно — всегда context.bot."""
     data  = user_data[user_id]
     q_num = data["current_question"]
+
     if q_num >= len(data["questions"]):
-        await finish_battle_for_user(message, user_id)
+        await finish_battle_for_user(bot, chat_id, user_id)
         return
-    q = data["questions"][q_num]
+
+    q            = data["questions"][q_num]
     correct_text = q["options"][q["correct"]]
-    shuffled = q["options"][:]
+    shuffled     = q["options"][:]
     random.shuffle(shuffled)
     data["current_options"]      = shuffled
     data["current_correct_text"] = correct_text
     data["question_sent_at"]     = time.time()
 
     progress = build_progress_bar(q_num, len(data["questions"]))
-    max_btn_len = MAX_BTN_LEN
     options_text = ""
-    if any(len(opt) > max_btn_len for opt in shuffled):
+    if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
         buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"ba_{i}") for i in range(len(shuffled))]]
     else:
         buttons = [[InlineKeyboardButton(opt, callback_data=f"ba_{i}")] for i, opt in enumerate(shuffled)]
-
     buttons.append([InlineKeyboardButton("❌ Выйти", callback_data=f"cancel_battle_{data['battle_id']}")])
     keyboard = InlineKeyboardMarkup(buttons)
 
-    battle_msg_id = data.get("battle_message_id")
-    battle_chat_id = message.chat_id
-    text = f"⚔️ *Вопрос {q_num + 1}/{len(data['questions'])}* {progress}\n⚡ Быстрее = больше очков!\n\n{q['question']}{options_text}"
+    text = (
+        f"⚔️ *Вопрос {q_num + 1}/{len(data['questions'])}* {progress}\n"
+        f"⚡ Быстрее = больше очков!\n\n{q['question']}{options_text}"
+    )
 
+    battle_msg_id = data.get("battle_message_id")
     if battle_msg_id:
         try:
-            await message.bot.edit_message_text(
-                chat_id=battle_chat_id, message_id=battle_msg_id,
+            await bot.edit_message_text(
+                chat_id=chat_id, message_id=battle_msg_id,
                 text=text, reply_markup=keyboard, parse_mode="Markdown",
             )
             return
         except Exception as e:
             if "not modified" in str(e).lower():
                 return
-    # Первый вопрос или редактирование не удалось — шлём новым сообщением
-    sent = await message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            # редактирование не удалось — шлём новым сообщением ниже
+
+    sent = await bot.send_message(
+        chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+    )
     data["battle_message_id"] = sent.message_id
+    data["battle_chat_id"]    = chat_id
 
 
 async def battle_answer(update: Update, context):
@@ -1623,6 +1598,9 @@ async def battle_answer(update: Update, context):
         await query.answer()
         return
     data["processing_answer"] = True
+
+    # chat_id: предпочитаем зафиксированный при старте, fallback — текущий апдейт
+    chat_id = data.get("battle_chat_id") or query.message.chat_id
 
     try:
         idx = int(query.data.replace("ba_", ""))
@@ -1653,21 +1631,22 @@ async def battle_answer(update: Update, context):
         data["processing_answer"] = False
 
     if data["current_question"] < len(data["questions"]):
-        await send_battle_question(query.message, user_id)
+        await send_battle_question(context.bot, chat_id, user_id)
     else:
-        await finish_battle_for_user(query.message, user_id)
+        await finish_battle_for_user(context.bot, chat_id, user_id)
 
 
-async def finish_battle_for_user(message, user_id):
-    data      = user_data[user_id]
-    battle_id = data["battle_id"]
-    role      = data["role"]
-    time_taken = time.time() - data["start_time"]
+async def finish_battle_for_user(bot, chat_id: int, user_id: int):
+    """Записывает результат игрока в Mongo. Если оба закончили — рассылает итоги."""
+    data          = user_data[user_id]
+    battle_id     = data["battle_id"]
+    role          = data["role"]
+    time_taken    = time.time() - data["start_time"]
     battle_points = data.get("battle_points", 0)
 
     battle = get_battle(battle_id)
     if not battle:
-        await message.reply_text("❌ Битва не найдена.")
+        await bot.send_message(chat_id=chat_id, text="❌ Битва не найдена.")
         return
 
     if role == "creator":
@@ -1685,22 +1664,29 @@ async def finish_battle_for_user(message, user_id):
             "opponent_finished": True,
         })
 
-    # Перечитываем актуальное состояние
+    # Перечитываем актуальное состояние из БД
     battle = get_battle(battle_id)
     if battle.get("creator_finished") and battle.get("opponent_finished"):
-        await show_battle_results(message, battle_id)
+        await show_battle_results(bot, battle_id)
     else:
-        await message.reply_text(
-            f"✅ *Ты закончил!*\n\n"
-            f"📊 Твой результат: {data['correct_answers']}/10\n"
-            f"⏱ Время: {format_time(time_taken)}\n\n"
-            "⏳ Ожидание соперника...",
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"✅ *Ты закончил!*\n\n"
+                f"📊 Твой результат: {data['correct_answers']}/10\n"
+                f"⏱ Время: {format_time(time_taken)}\n\n"
+                "⏳ Ожидание соперника..."
+            ),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")]]),
         )
 
 
-async def show_battle_results(message, battle_id):
+async def show_battle_results(bot, battle_id: str):
+    """
+    Формирует итоговый текст и отправляет его ОБОИМ участникам через context.bot.
+    Вызывается только когда creator_finished и opponent_finished == True.
+    """
     battle = get_battle(battle_id)
     if not battle:
         return
@@ -1727,10 +1713,16 @@ async def show_battle_results(message, battle_id):
 
     text  = "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
     text += f"🏆 *Победитель: {winner_name}!*\n\n" if winner != "draw" else "🤝 *НИЧЬЯ!*\n\n"
-    text += (f"👤 *{battle['creator_name']}*\n"
-             f"   ✅ {battle['creator_score']}/10 • ⚡ {creator_points} очков • ⏱ {format_time(battle['creator_time'])}\n\n")
-    text += (f"👤 *{battle.get('opponent_name', 'Соперник')}*\n"
-             f"   ✅ {battle['opponent_score']}/10 • ⚡ {opponent_points} очков • ⏱ {format_time(battle['opponent_time'])}\n\n")
+    text += (
+        f"👤 *{battle['creator_name']}*\n"
+        f"   ✅ {battle['creator_score']}/10 • ⚡ {creator_points} очков"
+        f" • ⏱ {format_time(battle['creator_time'])}\n\n"
+    )
+    text += (
+        f"👤 *{battle.get('opponent_name', 'Соперник')}*\n"
+        f"   ✅ {battle['opponent_score']}/10 • ⚡ {opponent_points} очков"
+        f" • ⏱ {format_time(battle['opponent_time'])}\n\n"
+    )
     text += "💎 *+5 баллов* победителю!\n" if winner != "draw" else "💎 *+2 балла* каждому!\n"
 
     keyboard = InlineKeyboardMarkup([
@@ -1738,9 +1730,7 @@ async def show_battle_results(message, battle_id):
         [InlineKeyboardButton("⬅️ В меню",       callback_data="back_to_main")],
     ])
 
-    # Отправляем результат ОБОИМ участникам — первый игрок иначе навсегда
-    # остаётся на «⏳ Ожидание соперника...»
-    bot = message.get_bot()
+    # Гарантированно отправляем обоим — каждый получит в свой личный чат
     for uid in (battle["creator_id"], battle["opponent_id"]):
         try:
             await bot.send_message(
@@ -1858,13 +1848,14 @@ async def admin_callback_handler(update: Update, context):
     action = query.data
 
     if action == "admin_hard_questions":
-        stats = get_question_stats()
-        hard  = sorted(stats, key=lambda s: s.get("correct", 0) / max(s.get("total", 1), 1))
+        hard  = get_hardest_questions(limit=10)
         text  = "🔍 *Самые сложные вопросы (топ-10):*\n\n"
-        for s in hard[:10]:
-            pct   = round(s.get("correct", 0) / max(s.get("total", 1), 1) * 100)
-            qtext = s.get("question_text", s.get("_id", "?"))[:60]
-            text += f"• *{pct}%* — _{qtext}_\n"
+        for s in hard:
+            attempts = s.get("total_attempts", 0)
+            correct  = s.get("correct_attempts", 0)
+            pct      = round(correct / max(attempts, 1) * 100)
+            qid      = s.get("_id", "?")
+            text     += f"• *{pct}%* верных ({correct}/{attempts}) — `{qid}`\n"
         await query.edit_message_text(
             text or "Статистика пока пуста.",
             parse_mode="Markdown",
@@ -2018,16 +2009,7 @@ async def show_my_stats(query):
     if battles_played > 0:
         text += f"📈 Винрейт: *{round(battles_won / battles_played * 100)}%*\n"
 
-    # Статистика по категориям (6.2)
-    categories_done = entry.get("categories_completed", {})
-    if categories_done:
-        text += "\n📋 *По категориям:*\n"
-        for cat_key, cat_data in categories_done.items():
-            cfg   = next((v for v in LEVEL_CONFIG.values() if v["key"] == cat_key), None)
-            name  = cfg["name"] if cfg else cat_key
-            best  = cat_data.get("best_score", 0)
-            total_q = cat_data.get("total_questions", QUIZ_QUESTIONS)
-            text += f"  • {name}: лучший *{best}/{total_q}*\n"
+
 
     await query.edit_message_text(
         text,
@@ -2048,12 +2030,7 @@ async def show_history(update: Update, context):
     user_id = query.from_user.id
 
     try:
-        sessions = list(
-            collection.database["quiz_sessions"]
-            .find({"user_id": user_id, "status": "finished"})
-            .sort("end_time", -1)
-            .limit(10)
-        )
+        sessions = get_user_history(user_id, limit=10)
     except Exception:
         sessions = []
 
@@ -2063,9 +2040,10 @@ async def show_history(update: Update, context):
             end_time = s.get("end_time")
             dt = end_time.strftime("%d.%m %H:%M") if hasattr(end_time, "strftime") else "—"
             score = s.get("correct_count", 0)
-            total = len(s.get("questions_data", []))
+            total = s.get("total_questions", len(s.get("questions_data", [])))
             name  = s.get("level_name", "?")
-            text += f"• {dt} — _{name}_: *{score}/{total}*\n"
+            pct   = round(score / max(total, 1) * 100)
+            text += f"• {dt} — _{name}_: *{score}/{total}* ({pct}%)\n"
     else:
         text = "📜 *ИСТОРИЯ*\n\nПока пусто — пройди первый тест!"
 
@@ -2240,7 +2218,7 @@ async def challenge_start(update: Update, context):
     mode_name  = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
 
     cancel_active_quiz_session(user_id)
-    question_ids = [stable_question_id(q) for q in questions]
+    question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
         user_id=user_id, mode=mode, question_ids=question_ids,
         questions_data=questions, level_key=mode, level_name=mode_name,
@@ -3047,7 +3025,7 @@ async def remind_unfinished_tests_job(context):
             continue
         try:
             await context.bot.send_message(
-                chat_id=uid,
+                chat_id=int(uid),
                 text="📝 *У тебя есть незавершённый тест!*\n\nПродолжить с того места, где остановился?",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
