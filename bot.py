@@ -6,6 +6,7 @@ from keep_alive import keep_alive
 keep_alive()
 
 import os
+import io
 import time
 import random
 import asyncio
@@ -15,6 +16,7 @@ from telegram import (
     Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,
     InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQueryResultArticle, InputTextMessageContent,
+    InputFile,
 )
 from telegram.error import NetworkError, TimedOut, RetryAfter, BadRequest, ChatMigrated
 from telegram.ext import (
@@ -474,7 +476,7 @@ async def send_question(bot, user_id):
         set_question_sent_at(session_id, sent_at)
 
     # Inline-кнопки: если вариант слишком длинный — номера в тексте, цифры-кнопки
-    MAX_BTN_LEN = 60
+    MAX_BTN_LEN = 35
     options_text = ""
     if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
@@ -677,9 +679,12 @@ async def show_results(bot, user_id):
             rank_name=rank_name,
         )
         if img_bytes:
+            bio = io.BytesIO(img_bytes)
+            bio.name = "result.png"
+            bio.seek(0)
             await bot.send_photo(
                 chat_id=chat_id,
-                photo=img_bytes,
+                photo=InputFile(bio, filename="result.png"),
                 caption=f"🏆 {score}/{total} • {rank_name}",
             )
     except Exception as e:
@@ -692,12 +697,13 @@ async def show_results(bot, user_id):
             if verse:
                 verse_errors[verse] = verse_errors.get(verse, 0) + 1
 
-        header = f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {len(answered)}):*"
+        header = f"📖 *РАЗБОР ОШИБОК ({len(wrong)} из {len(answered)})*"
         if verse_errors:
             sorted_verses = sorted(verse_errors.items(), key=lambda x: -x[1])
             verse_list = ", ".join(f"ст. {v} ({c})" for v, c in sorted_verses)
             header += f"\n\n📌 *Сложные места:* {verse_list}"
             header += "\n💡 _Рекомендуем перечитать эти стихи_"
+        header += "\n\n⬇️ _Изучи ошибки, затем выбери действие ниже_"
         await bot.send_message(chat_id=chat_id, text=header, parse_mode="Markdown")
 
         for i, item in enumerate(wrong, 1):
@@ -718,7 +724,7 @@ async def show_results(bot, user_id):
             await bot.send_message(chat_id=chat_id, text=safe_truncate(breakdown, 4000), parse_mode="Markdown")
 
         await bot.send_message(
-            chat_id=chat_id, text="⬆️ Выбери действие:",
+            chat_id=chat_id, text="⬇️ Выбери действие:",
             reply_markup=InlineKeyboardMarkup(keyboard_rows),
         )
     else:
@@ -1734,7 +1740,7 @@ async def send_challenge_question(message_or_bot, user_id):
     time_limit = data.get("challenge_time_limit")
     timer_str  = f" • ⏱ {time_limit} сек" if time_limit else ""
 
-    MAX_BTN_LEN = 60
+    MAX_BTN_LEN = 35
     options_text = ""
     if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
@@ -2057,14 +2063,21 @@ async def show_challenge_results(bot_or_message, user_id):
             score=score, total=total, rank_name=rank_name,
         )
         if img_bytes:
-            await bot.send_photo(chat_id=chat_id, photo=img_bytes, caption=f"🏆 {score}/{total} • {rank_name}")
+            bio = io.BytesIO(img_bytes)
+            bio.name = "result.png"
+            bio.seek(0)
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=InputFile(bio, filename="result.png"),
+                caption=f"🏆 {score}/{total} • {rank_name}",
+            )
     except Exception as e:
         print(f"Challenge result image error: {e}")
 
     if wrong:
         await bot.send_message(
             chat_id=chat_id,
-            text=f"❌ *РАЗБОР ОШИБОК ({len(wrong)} из {total}):*",
+            text=f"📖 *РАЗБОР ОШИБОК ({len(wrong)} из {total})*\n\n⬇️ _Изучи ошибки, затем выбери действие ниже_",
             parse_mode="Markdown",
         )
         for i, item in enumerate(wrong, 1):
@@ -2252,9 +2265,29 @@ async def button_handler(update: Update, context):
 
     dispatch = {
         "about":         lambda: query.edit_message_text(
-            "📚 *О БОТЕ*\n\nПроверяй знания по Первому посланию Петра.\n"
-            "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")]]),
+            "📚 *БИБЛЕЙСКИЙ ТЕСТ-БОТ: 1 ПЕТРА*\n"
+            "_Интерактивный инструмент для глубокого изучения Писания._\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "🎯 *ЦЕЛЬ ПРОЕКТА*\n"
+            "Этот бот создан не просто для проверки памяти, а для погружения в контекст, язык и богословие Первого послания Петра. Мы превращаем обучение в увлекательный процесс.\n\n"
+            "🧩 *РЕЖИМЫ ИЗУЧЕНИЯ*\n\n"
+            "📖 *По Главам*\n"
+            "Последовательный разбор текста (ст. 1–25).\n"
+            "• _Основы_ — факты и события\n"
+            "• _Богословие_ — доктрины и смысл\n\n"
+            "🔬 *Лингвистика*\n"
+            "Глубокий анализ греческих терминов, ключевых слов и их значений в оригинале.\n\n"
+            "🏛 *Исторический Контекст*\n"
+            "Исагогика, авторство, география провинций и правление Нерона.\n\n"
+            "⚔️ *PvP Битвы & Рейтинг*\n"
+            "Соревнуйся с друзьями в реальном времени или поднимайся в глобальной таблице лидеров.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📊 *СИСТЕМА*\n"
+            "• 💎 *Баллы:* Начисляются за сложность и скорость.\n"
+            "• 🏆 *Лиги:* Стань лучшим знатоком Писания.\n"
+            "• 🧠 *Работа над ошибками:* Умная система повторения.\n\n"
+            "_v2.5 • Soli Deo Gloria_",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]),
             parse_mode="Markdown",
         ),
         "start_test":    lambda: choose_level(update, context, is_callback=True),
