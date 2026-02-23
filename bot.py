@@ -91,18 +91,32 @@ _STUCK_KB = InlineKeyboardMarkup([
 ])
 
 LEVEL_CONFIG = {
-    "level_easy":            {"pool": easy_questions + easy_questions_v17_25,               "name": "🟢 Основы (1 Петра 1:1–25)",                        "key": "easy",             "points_per_q": 1},
-    "level_medium":          {"pool": medium_questions + medium_questions_v17_25,           "name": "🟡 Контекст (1 Петра 1:1–25)",                      "key": "medium",           "points_per_q": 2},
-    "level_hard":            {"pool": hard_questions + hard_questions_v17_25,               "name": "🔴 Богословие (1 Петра 1:1–25)",                    "key": "hard",             "points_per_q": 3},
-    "level_nero":            {"pool": nero_questions,                                        "name": "👑 Правление Нерона",                               "key": "nero",             "points_per_q": 2},
-    "level_geography":       {"pool": geography_questions,                                   "name": "🌍 География земли",                                "key": "geography",        "points_per_q": 2},
-    "level_practical_ch1":   {"pool": practical_ch1_questions + practical_v17_25_questions, "name": "🙏 Применение (1 Петра 1:1–25)",                    "key": "practical_ch1",    "points_per_q": 2},
-    "level_linguistics_ch1": {"pool": linguistics_ch1_questions,                            "name": "🔬 Лингвистика: Избранные и странники (ч.1)",       "key": "linguistics_ch1",  "points_per_q": 3},
-    "level_linguistics_ch1_2": {"pool": linguistics_ch1_questions_2,                        "name": "🔬 Лингвистика: Живая надежда (ч.2)",               "key": "linguistics_ch1_2","points_per_q": 3},
-    "level_linguistics_ch1_3": {"pool": linguistics_v17_25_questions,                       "name": "🔬 Лингвистика: Искупление и истина (ч.3)",         "key": "linguistics_ch1_3","points_per_q": 3},
-    "level_intro1":          {"pool": intro_part1_questions,                                 "name": "📜 Введение: Авторство ч.1",                        "key": "intro1",           "points_per_q": 2},
-    "level_intro2":          {"pool": intro_part2_questions,                                 "name": "📜 Введение: Авторство ч.2",                        "key": "intro2",           "points_per_q": 2},
-    "level_intro3":          {"pool": intro_part3_questions,                                 "name": "📜 Введение: Структура и цель",                     "key": "intro3",           "points_per_q": 2},
+    # ── Легкий ──────────────────────────────────────────────────────────────
+    "level_easy":            {"pool": easy_questions + easy_questions_v17_25,               "name": "🟢 Легкий уровень (ст. 1–25)",         "key": "easy",              "points_per_q": 1},
+    "level_easy_p1":         {"pool": easy_questions,            "name": "🟢 Легкий (ст. 1–16)",         "key": "easy_p1",         "points_per_q": 1},
+    "level_easy_p2":         {"pool": easy_questions_v17_25,    "name": "🟢 Легкий (ст. 17–25)",        "key": "easy_p2",         "points_per_q": 1},
+    # ── Средний ─────────────────────────────────────────────────────────────
+    "level_medium":          {"pool": medium_questions + medium_questions_v17_25, "name": "🟡 Средний (ст. 1–25)",  "key": "medium",          "points_per_q": 2},
+    "level_medium_p1":       {"pool": medium_questions,         "name": "🟡 Средний (ст. 1–16)",        "key": "medium_p1",       "points_per_q": 2},
+    "level_medium_p2":       {"pool": medium_questions_v17_25, "name": "🟡 Средний (ст. 17–25)",       "key": "medium_p2",       "points_per_q": 2},
+    # ── Сложный ─────────────────────────────────────────────────────────────
+    "level_hard":            {"pool": hard_questions + hard_questions_v17_25,     "name": "🔴 Сложный (ст. 1–25)", "key": "hard",            "points_per_q": 3},
+    "level_hard_p1":         {"pool": hard_questions,           "name": "🔴 Сложный (ст. 1–16)",        "key": "hard_p1",         "points_per_q": 3},
+    "level_hard_p2":         {"pool": hard_questions_v17_25,   "name": "🔴 Сложный (ст. 17–25)",       "key": "hard_p2",         "points_per_q": 3},
+    # ── Применение ──────────────────────────────────────────────────────────
+    "level_practical_ch1":   {"pool": practical_ch1_questions + practical_v17_25_questions, "name": "🙏 Применение (ст. 1–25)", "key": "practical_ch1",  "points_per_q": 2},
+    "level_practical_p1":    {"pool": practical_ch1_questions,  "name": "🙏 Применение (ст. 1–16)",     "key": "practical_p1",    "points_per_q": 2},
+    "level_practical_p2":    {"pool": practical_v17_25_questions,"name": "🙏 Применение (ст. 17–25)",   "key": "practical_p2",    "points_per_q": 2},
+    # ── Лингвистика ─────────────────────────────────────────────────────────
+    "level_linguistics_ch1":   {"pool": linguistics_ch1_questions,   "name": "🔬 Лингвистика: Избранные и странники (ч.1)",   "key": "linguistics_ch1",   "points_per_q": 3},
+    "level_linguistics_ch1_2": {"pool": linguistics_ch1_questions_2, "name": "🔬 Лингвистика: Живая надежда (ч.2)",           "key": "linguistics_ch1_2", "points_per_q": 3},
+    "level_linguistics_ch1_3": {"pool": linguistics_v17_25_questions,"name": "🔬 Лингвистика: Искупление и истина (ч.3)",     "key": "linguistics_ch1_3", "points_per_q": 3},
+    # ── Исторический контекст ───────────────────────────────────────────────
+    "level_nero":            {"pool": nero_questions,            "name": "👑 Правление Нерона",          "key": "nero",     "points_per_q": 2},
+    "level_geography":       {"pool": geography_questions,       "name": "🌍 География земли",           "key": "geography","points_per_q": 2},
+    "level_intro1":          {"pool": intro_part1_questions,     "name": "📜 Введение: Авторство ч.1",   "key": "intro1",   "points_per_q": 2},
+    "level_intro2":          {"pool": intro_part2_questions,     "name": "📜 Введение: Авторство ч.2",   "key": "intro2",   "points_per_q": 2},
+    "level_intro3":          {"pool": intro_part3_questions,     "name": "📜 Введение: Структура и цель","key": "intro3",   "points_per_q": 2},
 }
 
 
@@ -216,18 +230,33 @@ async def chapter_1_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟢 Основы (1 балл)",                         callback_data="level_easy")],
-        [InlineKeyboardButton("🟡 Контекст (2 балла)",                      callback_data="level_medium")],
-        [InlineKeyboardButton("🔴 Богословие (3 балла)",                    callback_data="level_hard")],
-        [InlineKeyboardButton("🙏 Применение (2 балла)",                    callback_data="level_practical_ch1")],
-        [InlineKeyboardButton("🔬 Лингвистика ч.1 (3 балла)",               callback_data="level_linguistics_ch1")],
-        [InlineKeyboardButton("🔬 Лингвистика ч.2 (3 балла)",               callback_data="level_linguistics_ch1_2")],
-        [InlineKeyboardButton("🔬 Лингвистика ч.3 (3 балла)",               callback_data="level_linguistics_ch1_3")],
-        [InlineKeyboardButton("⬅️ Назад",                                    callback_data="start_test")],
+        [
+            InlineKeyboardButton("🟢 Легкий (1–16)",   callback_data="level_easy_p1"),
+            InlineKeyboardButton("🟢 Легкий (17–25)",  callback_data="level_easy_p2"),
+        ],
+        [
+            InlineKeyboardButton("🟡 Средний (1–16)",  callback_data="level_medium_p1"),
+            InlineKeyboardButton("🟡 Средний (17–25)", callback_data="level_medium_p2"),
+        ],
+        [
+            InlineKeyboardButton("🔴 Сложный (1–16)",  callback_data="level_hard_p1"),
+            InlineKeyboardButton("🔴 Сложный (17–25)", callback_data="level_hard_p2"),
+        ],
+        [
+            InlineKeyboardButton("🙏 Применение (1–16)",  callback_data="level_practical_p1"),
+            InlineKeyboardButton("🙏 Применение (17–25)", callback_data="level_practical_p2"),
+        ],
+        [
+            InlineKeyboardButton("🔬 Лингвистика ч.1", callback_data="level_linguistics_ch1"),
+            InlineKeyboardButton("🔬 Лингвистика ч.2", callback_data="level_linguistics_ch1_2"),
+        ],
+        [InlineKeyboardButton("🔬 Лингвистика ч.3",    callback_data="level_linguistics_ch1_3")],
+        [InlineKeyboardButton("⬅️ Назад",               callback_data="start_test")],
     ])
     await query.edit_message_text(
         "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
-        "🟢 Основы • 🟡 Контекст • 🔴 Богословие\n🙏 Применение • 🔬 Лингвистика",
+        "🟢 Легкий (1 балл) • 🟡 Средний (2 балла) • 🔴 Сложный (3 балла)\n"
+        "🙏 Применение (2 балла) • 🔬 Лингвистика (3 балла)",
         reply_markup=keyboard, parse_mode="Markdown",
     )
 
@@ -484,6 +513,7 @@ async def send_question(bot, user_id):
     else:
         buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
 
+    buttons.append([InlineKeyboardButton("❌ Выйти в меню", callback_data="cancel_quiz")])
     keyboard = InlineKeyboardMarkup(buttons)
     text = f"*Вопрос {q_num + 1}/{total}*\n\n{q['question']}{options_text}"
 
@@ -606,6 +636,15 @@ async def answer(update: Update, context):
     return ANSWERING
 
 
+def _correct_text(q: dict) -> str:
+    """Возвращает текст правильного ответа по индексу из оригинального вопроса."""
+    return q["options"][q["correct"]]
+
+def _is_wrong(item: dict) -> bool:
+    """True если ответ пользователя не совпадает с правильным текстом."""
+    return item["user_answer"] != _correct_text(item["question_obj"])
+
+
 async def show_results(bot, user_id):
     """Отправляет результаты теста новым сообщением."""
     data       = user_data[user_id]
@@ -643,10 +682,11 @@ async def show_results(bot, user_id):
     )
 
     answered = data.get("answered_questions", [])
-    wrong = [
-        item for item in answered
-        if item["user_answer"] != item["question_obj"]["options"][item["question_obj"]["correct"]]
-    ]
+    wrong = [item for item in answered if _is_wrong(item)]
+
+    # Сохраняем ошибки в user_data для пагинации
+    if user_id in user_data:
+        user_data[user_id]["wrong_answers"] = wrong
 
     keyboard_rows = [
         [InlineKeyboardButton("🔄 Ещё раз",   callback_data="start_test")],
@@ -655,6 +695,10 @@ async def show_results(bot, user_id):
         [InlineKeyboardButton("⬅️ Меню",       callback_data="back_to_main")],
     ]
     if wrong:
+        keyboard_rows.insert(0, [InlineKeyboardButton(
+            f"🔍 Разобрать ошибки ({len(wrong)})",
+            callback_data=f"review_errors_{user_id}_0"
+        )])
         keyboard_rows.insert(1, [InlineKeyboardButton(
             f"🔁 Повторить ошибки ({len(wrong)})",
             callback_data=f"retry_errors_{user_id}"
@@ -690,44 +734,7 @@ async def show_results(bot, user_id):
     except Exception as e:
         print(f"Result image error: {e}")
 
-    if wrong:
-        verse_errors = {}
-        for item in wrong:
-            verse = item["question_obj"].get("verse", "")
-            if verse:
-                verse_errors[verse] = verse_errors.get(verse, 0) + 1
-
-        header = f"📖 *РАЗБОР ОШИБОК ({len(wrong)} из {len(answered)})*"
-        if verse_errors:
-            sorted_verses = sorted(verse_errors.items(), key=lambda x: -x[1])
-            verse_list = ", ".join(f"ст. {v} ({c})" for v, c in sorted_verses)
-            header += f"\n\n📌 *Сложные места:* {verse_list}"
-            header += "\n💡 _Рекомендуем перечитать эти стихи_"
-        header += "\n\n⬇️ _Изучи ошибки, затем выбери действие ниже_"
-        await bot.send_message(chat_id=chat_id, text=header, parse_mode="Markdown")
-
-        for i, item in enumerate(wrong, 1):
-            q            = item["question_obj"]
-            user_ans     = item["user_answer"]
-            correct_text = q["options"][q["correct"]]
-            verse_tag    = f"📖 ст. {q['verse']} | " if q.get("verse") else ""
-            topic_tag    = f"🏷 {q['topic']}" if q.get("topic") else ""
-            breakdown    = f"❌ *Ошибка {i}* {verse_tag}{topic_tag}\n_{q['question']}_\n\n"
-            breakdown   += f"Ваш ответ: *{user_ans}*\nПравильно: *{correct_text}*\n\n"
-            if "options_explanations" in q:
-                breakdown += "*Разбор вариантов:*\n"
-                for j, opt in enumerate(q["options"]):
-                    breakdown += f"• _{opt}_\n{q['options_explanations'][j]}\n\n"
-            breakdown += f"💡 *Пояснение:*\n{q['explanation']}"
-            if q.get("pdf_ref"):
-                breakdown += f"\n\n📄 _Источник: {q['pdf_ref']}_"
-            await bot.send_message(chat_id=chat_id, text=safe_truncate(breakdown, 4000), parse_mode="Markdown")
-
-        await bot.send_message(
-            chat_id=chat_id, text="⬇️ Выбери действие:",
-            reply_markup=InlineKeyboardMarkup(keyboard_rows),
-        )
-    else:
+    if not wrong:
         await bot.send_message(
             chat_id=chat_id,
             text="🎯 *Все ответы верны — отличная работа!*",
@@ -857,7 +864,7 @@ async def retry_errors(update: Update, context):
     answered  = prev_data.get("answered_questions", [])
     wrong_questions = [
         item["question_obj"] for item in answered
-        if item["user_answer"] != item["question_obj"]["options"][item["question_obj"]["correct"]]
+        if _is_wrong(item)
     ]
 
     if not wrong_questions:
@@ -889,6 +896,89 @@ async def retry_errors(update: Update, context):
     )
     await send_question(context.bot, user_id)
     return ANSWERING
+
+
+# ═══════════════════════════════════════════════
+# ПАГИНАЦИЯ РАЗБОРА ОШИБОК
+# ═══════════════════════════════════════════════
+
+def _build_error_page(wrong: list, index: int) -> tuple:
+    """Формирует текст и клавиатуру для одной страницы разбора ошибок."""
+    total = len(wrong)
+    item  = wrong[index]
+    q     = item["question_obj"]
+    user_ans     = item["user_answer"]
+    correct_text = _correct_text(q)
+
+    verse_tag = f"📖 ст. {q['verse']} | " if q.get("verse") else ""
+    topic_tag = f"🏷 {q['topic']}" if q.get("topic") else ""
+
+    text  = f"🔴 *Ошибка {index + 1} из {total}* {verse_tag}{topic_tag}\n\n"
+    text += f"*Вопрос:* _{q['question']}_\n\n"
+    text += f"*Ваш ответ:* {user_ans}\n"
+    text += f"*Правильно:* {correct_text}\n\n"
+    if "options_explanations" in q:
+        text += "*Разбор вариантов:*\n"
+        for j, opt in enumerate(q["options"]):
+            text += f"• _{opt}_\n{q['options_explanations'][j]}\n\n"
+    text += f"💡 *Пояснение:* {q['explanation']}"
+    if q.get("pdf_ref"):
+        text += f"\n\n📄 _Источник: {q['pdf_ref']}_"
+
+    left_cb  = f"review_nav_{index - 1}" if index > 0 else "review_nav_noop"
+    right_cb = f"review_nav_{index + 1}" if index < total - 1 else "review_nav_noop"
+
+    nav_buttons = [
+        InlineKeyboardButton("⬅️" if index > 0 else "·", callback_data=left_cb),
+        InlineKeyboardButton(f"{index + 1}/{total}", callback_data="review_nav_noop"),
+        InlineKeyboardButton("➡️" if index < total - 1 else "·", callback_data=right_cb),
+    ]
+
+    keyboard = InlineKeyboardMarkup([
+        nav_buttons,
+        [InlineKeyboardButton("🔙 Вернуться в Меню", callback_data="back_to_main")],
+    ])
+    return safe_truncate(text, 4000), keyboard
+
+
+async def review_errors_handler(update: Update, context):
+    """Показывает/листает ошибки внутри одного сообщения."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data_cb = query.data
+
+    if data_cb.startswith("review_errors_"):
+        # Первый вход: review_errors_{uid}_{idx}
+        parts     = data_cb.split("_")
+        target_id = int(parts[2])
+        index     = int(parts[3])
+    elif data_cb.startswith("review_nav_"):
+        suffix = data_cb.replace("review_nav_", "")
+        if suffix == "noop":
+            return
+        index     = int(suffix)
+        target_id = user_id
+    else:
+        return
+
+    if target_id not in user_data:
+        await query.edit_message_text("⚠️ Данные устарели. Начни новый тест.")
+        return
+
+    wrong = user_data[target_id].get("wrong_answers", [])
+    if not wrong:
+        await query.edit_message_text("✅ Ошибок нет!")
+        return
+
+    index = max(0, min(index, len(wrong) - 1))
+    text, keyboard = _build_error_page(wrong, index)
+
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except Exception as e:
+        if "not modified" not in str(e).lower():
+            raise
 
 
 # ═══════════════════════════════════════════════
@@ -1748,6 +1838,7 @@ async def send_challenge_question(message_or_bot, user_id):
     else:
         buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
 
+    buttons.append([InlineKeyboardButton("❌ Выйти в меню", callback_data="cancel_quiz")])
     keyboard = InlineKeyboardMarkup(buttons)
     text = (
         f"{data['level_name']}\n"
@@ -2159,6 +2250,31 @@ async def show_weekly_leaderboard(update: Update, context):
 async def test_command(update: Update, context):
     await choose_level(update, context, is_callback=False)
     return CHOOSING_LEVEL
+
+
+async def cancel_quiz_handler(update: Update, context):
+    """Обработчик кнопки ❌ Выйти в меню — отменяет тест и показывает главное меню."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    # Отменяем таймер, если есть
+    data = user_data.get(user_id, {})
+    timer_task = data.get("timer_task")
+    if timer_task and not timer_task.done():
+        timer_task.cancel()
+
+    # Отменяем сессию в БД и чистим память
+    cancel_active_quiz_session(user_id)
+    user_data.pop(user_id, None)
+
+    # Редактируем тот же «пузырь» с вопросом
+    await query.edit_message_text(
+        "❌ *Тест отменён.* Выбери действие:",
+        reply_markup=_main_keyboard(),
+        parse_mode="Markdown",
+    )
+    return ConversationHandler.END
 
 
 async def cancel(update: Update, context):
@@ -2623,11 +2739,18 @@ def main():
         ],
         states={
             CHOOSING_LEVEL:   [CallbackQueryHandler(level_selected)],
-            ANSWERING:        [MessageHandler(filters.TEXT & ~filters.COMMAND, challenge_answer)],
-            BATTLE_ANSWERING: [MessageHandler(filters.TEXT & ~filters.COMMAND, battle_answer)],
+            ANSWERING:        [
+                CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, challenge_answer),
+            ],
+            BATTLE_ANSWERING: [
+                CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, battle_answer),
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
+            CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
             CallbackQueryHandler(back_to_main, pattern="^back_to_main$"),
         ],
         allow_reentry=True,
@@ -2638,6 +2761,7 @@ def main():
     # Inline-ответы на вопросы (основной тест и challenge)
     app.add_handler(CallbackQueryHandler(quiz_inline_answer,       pattern=r"^qa_\d+$"))
     app.add_handler(CallbackQueryHandler(challenge_inline_answer,  pattern=r"^cha_\d+$"))
+    app.add_handler(CallbackQueryHandler(cancel_quiz_handler,      pattern="^cancel_quiz$"))
 
     # Session recovery
     app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
@@ -2698,6 +2822,10 @@ def main():
         pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|"
                 r"historical_menu|coming_soon|challenge_menu|achievements|my_status|reset_session)$",
     ))
+
+    # Разбор ошибок (пагинация)
+    app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_errors_"))
+    app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_nav_"))
 
     # Fallback для сообщений (восстановление после рестарта)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _general_message_fallback))
