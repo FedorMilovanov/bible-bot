@@ -11,7 +11,7 @@ MONGO_URL = os.getenv('MONGO_URL')
 
 if MONGO_URL:
     try:
-        cluster = MongoClient(MONGO_URL)
+        cluster = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
         db = cluster["bible_bot_db"]
         collection = db["leaderboard"]
         battles_collection = db["battles"]
@@ -73,6 +73,30 @@ def _ensure_indexes():
             )
         except Exception as e:
             print(f"leaderboard index warning: {e}")
+
+    # TTL для reports — 90 дней
+    if reports_collection is not None:
+        try:
+            reports_collection.create_index(
+                [("created_at_dt", ASCENDING)],
+                expireAfterSeconds=7776000,  # 90 дней
+                name="ttl_reports_created_at",
+                background=True,
+            )
+        except Exception as e:
+            print(f"reports TTL index warning: {e}")
+
+    # TTL для weekly_leaderboard — 60 дней
+    if weekly_lb_collection is not None:
+        try:
+            weekly_lb_collection.create_index(
+                [("updated_at_dt", ASCENDING)],
+                expireAfterSeconds=5184000,  # 60 дней
+                name="ttl_weekly_lb_updated_at",
+                background=True,
+            )
+        except Exception as e:
+            print(f"weekly_lb TTL index warning: {e}")
 
 _ensure_indexes()
 
@@ -738,6 +762,7 @@ def update_weekly_leaderboard(user_id, username, first_name, mode, score, time_s
                 "best_score": score,
                 "best_time": time_seconds,
                 "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "updated_at_dt": datetime.utcnow(),
             }},
             upsert=True
         )
