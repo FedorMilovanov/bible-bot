@@ -159,7 +159,24 @@ async def start(update: Update, context):
     user = update.effective_user
     init_user_stats(user.id, user.username, user.first_name)
     _touch(user.id)
-    await update.message.reply_text("↩️", reply_markup=ReplyKeyboardRemove())
+
+    # Удаляем сообщение /start пользователя, чтобы не засорять чат
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Убираем ReplyKeyboard, если была — отправляем невидимый пузырь и сразу удаляем
+    try:
+        stub = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="↩️",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await asyncio.sleep(0.3)
+        await stub.delete()
+    except Exception:
+        pass
 
     active_session = get_active_quiz_session(user.id)
     if active_session:
@@ -171,9 +188,12 @@ async def start(update: Update, context):
             active_session = None
         else:
             level_name = active_session.get("level_name", "тест")
-            await update.message.reply_text(
-                f"⏸ *Тест прерван на вопросе {current + 1}/{total_q}*\n"
-                f"_{level_name}_\n\nЧто хочешь сделать?",
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=(
+                    f"⏸ *Тест прерван на вопросе {current + 1}/{total_q}*\n"
+                    f"_{level_name}_\n\nЧто хочешь сделать?"
+                ),
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("▶️ Продолжить", callback_data=f"resume_session_{active_session['_id']}")],
@@ -193,7 +213,13 @@ async def start(update: Update, context):
         "⚔️ *Битвы* — соревнование с другими\n\n"
         "Нажми на кнопку ниже! 👇"
     )
-    await update.message.reply_text(welcome, reply_markup=_main_keyboard(), parse_mode="Markdown")
+    # Всегда новое сообщение — меню "прыгает" вниз
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=welcome,
+        reply_markup=_main_keyboard(),
+        parse_mode="Markdown",
+    )
 
 
 async def back_to_main(update: Update, context):
@@ -646,13 +672,14 @@ def _is_wrong(item: dict) -> bool:
 
 
 async def show_results(bot, user_id):
-    """Отправляет результаты теста новым сообщением."""
+    """Показывает результаты: редактирует пузырь вопроса, затем фото с кнопками."""
     data       = user_data[user_id]
     score      = data["correct_answers"]
     total      = len(data["questions"])
     percentage = (score / total) * 100
     time_taken = time.time() - data["start_time"]
     chat_id    = data.get("quiz_chat_id")
+    quiz_mid   = data.get("quiz_message_id")
     username   = data.get("username")
     first_name = data.get("first_name", "Игрок")
 
@@ -704,14 +731,21 @@ async def show_results(bot, user_id):
             callback_data=f"retry_errors_{user_id}"
         )])
 
-    await bot.send_message(
-        chat_id=chat_id,
-        text=result_text,
-        reply_markup=InlineKeyboardMarkup(keyboard_rows),
-        parse_mode="Markdown",
-    )
+    # Шаг 1: редактируем пузырь вопроса — показываем заглушку "Генерирую..."
+    stub_deleted = False
+    if quiz_mid and chat_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=quiz_mid,
+                text="⏳ *Тест завершён! Генерирую результат...*",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            quiz_mid = None  # редактирование не удалось — забудем об этом пузыре
 
-    # Генерация картинки результатов (задание 4.2)
+    # Шаг 2: пробуем генерировать картинку и отправить её с кнопками
+    photo_sent = False
     try:
         rank_name = get_rank_name(percentage)
         img_bytes = await generate_result_image(
@@ -726,20 +760,64 @@ async def show_results(bot, user_id):
             bio = io.BytesIO(img_bytes)
             bio.name = "result.png"
             bio.seek(0)
+            caption = (
+                f"🏆 *{score}/{total}* ({percentage:.0f}%) • {rank_name}\n"
+                f"⏱ {format_time(time_taken)} • 💎 +{earned_points} • #{position}"
+            )
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=InputFile(bio, filename="result.png"),
-                caption=f"🏆 {score}/{total} • {rank_name}",
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                parse_mode="Markdown",
             )
+            photo_sent = True
     except Exception as e:
         print(f"Result image error: {e}")
 
-    if not wrong:
-        await bot.send_message(
-            chat_id=chat_id,
-            text="🎯 *Все ответы верны — отличная работа!*",
-            parse_mode="Markdown",
-        )
+    # Шаг 3: удаляем заглушку "Генерирую..." если картинка ушла
+    if photo_sent and quiz_mid and chat_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=quiz_mid)
+        except Exception:
+            pass
+    elif not photo_sent:
+        # Картинки нет — редактируем заглушку в финальный текст с кнопками
+        if quiz_mid and chat_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=quiz_mid,
+                    text=result_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                # Совсем не вышло — шлём новым сообщением
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=result_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                    parse_mode="Markdown",
+                )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=result_text,
+                reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                parse_mode="Markdown",
+            )
+
+    if not wrong and not photo_sent:
+        # Дополнительно отмечаем идеальный результат только если нет картинки
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="🎯 *Все ответы верны — отличная работа!*",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════
@@ -2607,45 +2685,67 @@ async def cancel_report_command(update: Update, context):
 async def _general_message_fallback(update: Update, context):
     """
     Резервный обработчик текстовых сообщений.
-    Если идёт тест — подсказывает нажать кнопки.
-    Если нет сессии — пытается восстановить из MongoDB.
+    Удаляет случайный текст пользователя, переотправляет вопрос/меню вниз.
     """
     user_id = update.effective_user.id
 
-    # Если сессия уже в памяти — тест идёт через inline-кнопки
+    # Удаляем сообщение пользователя — убираем мусор из чата
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Если идёт обычный тест или challenge (inline-кнопки)
     if user_id in user_data:
         data = user_data[user_id]
         if data.get("is_battle"):
-            return  # битвы используют текстовый ввод — пропускаем
-        # Для обычного теста и challenge — напоминаем про кнопки
-        await update.message.reply_text(
-            "👆 Нажми кнопку под вопросом для ответа.",
-            reply_markup=_STUCK_KB,
-        )
+            return  # битвы используют текстовый ввод — не трогаем
+
+        # Удаляем старый пузырь с вопросом, чтобы переотправить вниз
+        old_mid = data.get("quiz_message_id")
+        old_cid = data.get("quiz_chat_id")
+        if old_mid and old_cid:
+            try:
+                await context.bot.delete_message(chat_id=old_cid, message_id=old_mid)
+            except Exception:
+                pass
+            data["quiz_message_id"] = None  # сбрасываем, чтобы send_question отправил новым
+
+        # Переотправляем вопрос вниз
+        if data.get("is_challenge"):
+            await send_challenge_question(context.bot, user_id)
+        else:
+            await send_question(context.bot, user_id)
         return
 
     # Нет сессии в памяти — пробуем восстановить из БД
     db_session = get_active_quiz_session(user_id)
-    if not db_session:
+    if db_session:
+        mode = db_session.get("mode", "level")
+        await _restore_session_to_memory(user_id, db_session)
+
+        if user_id in user_data:
+            user_data[user_id]["quiz_chat_id"]  = update.message.chat_id
+            user_data[user_id]["username"]      = update.effective_user.username
+            user_data[user_id]["first_name"]    = update.effective_user.first_name or "Игрок"
+
+        if is_question_timed_out(db_session):
+            await _handle_timeout_after_restart(update.message, user_id, db_session)
+            return
+
+        if mode in ("random20", "hardcore20"):
+            await send_challenge_question(context.bot, user_id)
+        else:
+            await send_question(context.bot, user_id)
         return
 
-    mode = db_session.get("mode", "level")
-    await _restore_session_to_memory(user_id, db_session)
-
-    if user_id in user_data:
-        user_data[user_id]["quiz_chat_id"]  = update.message.chat_id
-        user_data[user_id]["username"]      = update.effective_user.username
-        user_data[user_id]["first_name"]    = update.effective_user.first_name or "Игрок"
-
-    if is_question_timed_out(db_session):
-        await _handle_timeout_after_restart(update.message, user_id, db_session)
-        return
-
-    # Восстановили — показываем текущий вопрос с кнопками
-    if mode in ("random20", "hardcore20"):
-        await send_challenge_question(context.bot, user_id)
-    else:
-        await send_question(context.bot, user_id)
+    # Совсем нет сессии — отправляем главное меню вниз
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="📖 *Главное меню*\n\nВыбери действие:",
+        reply_markup=_main_keyboard(),
+        parse_mode="Markdown",
+    )
 
 
 async def cleanup_old_battles_job(context):
