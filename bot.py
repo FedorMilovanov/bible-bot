@@ -587,12 +587,14 @@ async def confirm_level_handler(update: Update, context):
         chat_id=query.message.chat_id,
     )
 
+    chat_id = query.message.chat_id
+
     user_data[user_id] = _create_session_data(
         user_id=user_id,
         session_id=session_id,
         questions=questions,
         level_name=cfg["name"],
-        chat_id=query.message.chat_id,
+        chat_id=chat_id,
         level_key=cfg["pool_key"],
         correct_answers=0,
         start_time=time.time(),
