@@ -294,10 +294,13 @@ async def start(update: Update, context):
 async def back_to_main(update: Update, context):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
-        "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
-        "Выбери действие:",
+    # Отправляем новое сообщение внизу чата — Telegram автоматически
+    # прокручивает экран к нему. Старое сообщение остаётся в истории.
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="📖 *БИБЛЕЙСКИЙ ТЕСТ-БОТ*\n\n"
+             "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
+             "Выбери действие:",
         reply_markup=_main_keyboard(),
         parse_mode="Markdown",
     )
@@ -774,16 +777,23 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
                     await bot.send_message(chat_id=qcid, text=timeout_text, parse_mode="Markdown")
                 except Exception:
                     pass
-            # Сбрасываем quiz_message_id, чтобы следующий send_question
-            # создал свежее сообщение с кнопками, а не редактировал этот пузырь
-            data["quiz_message_id"] = None
         elif qcid:
             try:
                 await bot.send_message(chat_id=qcid, text=timeout_text, parse_mode="Markdown")
             except Exception:
                 pass
+
+        # Сбрасываем quiz_message_id, чтобы следующий send_question
+        # создал свежее сообщение с кнопками, а не редактировал пузырь таймаута
+        data["quiz_message_id"] = None
+
         # Пауза всегда — вне зависимости от наличия qmid
         await asyncio.sleep(FEEDBACK_DELAY_WRONG)
+
+        # Перечитываем актуальное состояние (на случай гонки)
+        if user_id not in user_data:
+            return
+        data = user_data[user_id]
 
         is_challenge = data.get("is_challenge", False)
         if data["current_question"] < len(data["questions"]):
@@ -792,6 +802,7 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
             else:
                 await send_question(bot, user_id)
         else:
+            # Тест завершён по таймауту — показываем результаты
             await _finalize_quiz_bubble(bot, user_id)
             if is_challenge:
                 await show_challenge_results(bot, user_id)
