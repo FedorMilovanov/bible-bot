@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 from config import (
     QUIZ_TIMEOUT, CHALLENGE_TIMEOUT,
+    TIMED_MODE_TIMEOUT, SPEED_MODE_TIMEOUT,
     FEEDBACK_DELAY_CORRECT, FEEDBACK_DELAY_WRONG,
     BATTLE_QUESTIONS, CHALLENGE_QUESTIONS, QUIZ_QUESTIONS,
     MAX_BTN_LEN, CALLBACK_DEBOUNCE,
@@ -564,11 +565,31 @@ async def level_selected(update: Update, context):
 
 
 async def confirm_level_handler(update: Update, context):
-    """Запускает тест после подтверждения на экране предпросмотра."""
+    """Показывает экран выбора режима перед стартом теста."""
     query = update.callback_query
     await query.answer()
 
     level_key = query.data.replace("confirm_level_", "")
+    cfg = LEVEL_CONFIG.get(level_key)
+    if not cfg:
+        return
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧘 Без ограничения времени", callback_data=f"relaxed_mode_{level_key}")],
+        [InlineKeyboardButton(f"⏱ На время ({TIMED_MODE_TIMEOUT} сек)  ×1.5 баллов", callback_data=f"timed_mode_{level_key}")],
+        [InlineKeyboardButton(f"⚡ Скоростной ({SPEED_MODE_TIMEOUT} сек)  ×2 баллов", callback_data=f"speed_mode_{level_key}")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="start_test")],
+    ])
+    await query.edit_message_text(
+        f"📚 *{cfg['name']}*\n\nВыбери режим:",
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+
+
+async def _launch_level_test(query, update, level_key: str, quiz_mode: str,
+                              time_limit: int | None, score_multiplier: float):
+    """Общая логика запуска теста после выбора режима."""
     cfg = LEVEL_CONFIG.get(level_key)
     if not cfg:
         return
@@ -583,7 +604,7 @@ async def confirm_level_handler(update: Update, context):
     session_id = create_quiz_session(
         user_id=user_id, mode="level", question_ids=question_ids,
         questions_data=questions, level_key=cfg["pool_key"],
-        level_name=cfg["name"], time_limit=None,
+        level_name=cfg["name"], time_limit=time_limit,
         chat_id=query.message.chat_id,
     )
 
@@ -603,20 +624,48 @@ async def confirm_level_handler(update: Update, context):
         battle_points=0,
         username=update.effective_user.username,
         first_name=update.effective_user.first_name,
+        quiz_mode=quiz_mode,
+        score_multiplier=score_multiplier,
+        quiz_time_limit=time_limit,
     )
 
+    mode_label = {"relaxed": "🧘 Без таймера", "timed": "⏱ 60 сек / ×1.5", "speed": "⚡ 30 сек / ×2"}.get(quiz_mode, "")
     await query.edit_message_text(
-        f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)}\nНачинаем! ⏱",
+        f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} · {mode_label}\nНачинаем!",
         parse_mode="Markdown",
     )
-    await send_question(context.bot, user_id)
+    await send_question(query.message.get_bot(), user_id, time_limit=time_limit)
+
+
+async def relaxed_mode_handler(update: Update, context):
+    """Режим без таймера, обычные баллы ×1."""
+    query = update.callback_query
+    await query.answer()
+    level_key = query.data.replace("relaxed_mode_", "")
+    await _launch_level_test(query, update, level_key, "relaxed", None, 1.0)
+
+
+async def timed_mode_handler(update: Update, context):
+    """Режим с таймером TIMED_MODE_TIMEOUT сек, баллы ×1.5."""
+    query = update.callback_query
+    await query.answer()
+    level_key = query.data.replace("timed_mode_", "")
+    await _launch_level_test(query, update, level_key, "timed", TIMED_MODE_TIMEOUT, 1.5)
+
+
+async def speed_mode_handler(update: Update, context):
+    """Скоростной режим SPEED_MODE_TIMEOUT сек, баллы ×2."""
+    query = update.callback_query
+    await query.answer()
+    level_key = query.data.replace("speed_mode_", "")
+    await _launch_level_test(query, update, level_key, "speed", SPEED_MODE_TIMEOUT, 2.0)
 
 
 # ═══════════════════════════════════════════════
 # ВОПРОСЫ И ОТВЕТЫ
 # ═══════════════════════════════════════════════
 
-async def send_question(bot, user_id):
+async def send_question(bot, user_id, time_limit=None):
     """
     Отправляет или редактирует сообщение с вопросом.
     Первый вопрос — новое сообщение; последующие — редактирование того же «пузыря».
@@ -641,10 +690,6 @@ async def send_question(bot, user_id):
     sent_at = time.time()
     data["question_sent_at"]     = sent_at
 
-    old_task = data.get("timer_task")
-    if old_task and not old_task.done():
-        old_task.cancel()
-
     session_id = data.get("session_id")
     if session_id:
         set_question_sent_at(session_id, sent_at)
@@ -664,7 +709,10 @@ async def send_question(bot, user_id):
     ])
     keyboard = InlineKeyboardMarkup(buttons)
     progress = build_progress_bar(q_num, total)
-    text = f"*Вопрос {q_num + 1}/{total}* {progress}\n\n{q['question']}{options_text}"
+    # Используем time_limit из аргумента или из сохранённых данных сессии
+    effective_limit = time_limit if time_limit is not None else data.get("quiz_time_limit")
+    timer_str = f" • ⏱ {effective_limit} сек" if effective_limit else ""
+    text = f"*Вопрос {q_num + 1}/{total}*{timer_str} {progress}\n\n{q['question']}{options_text}"
 
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
@@ -703,7 +751,14 @@ async def send_question(bot, user_id):
             logger.error("send_question: send_message failed for user %s: %s", user_id, e)
             return
 
-    data["timer_task"] = asyncio.create_task(auto_timeout(bot, user_id, q_num))
+    # Запускаем таймер если задан time_limit (для timed/speed режимов)
+    if effective_limit:
+        old_task = data.get("timer_task")
+        if old_task and not old_task.done():
+            old_task.cancel()
+        data["timer_task"] = asyncio.create_task(
+            _handle_question_timeout(bot, user_id, q_num, effective_limit)
+        )
 
 
 async def _finalize_quiz_bubble(bot, user_id, text="✅ *Тест завершён!*"):
@@ -934,11 +989,15 @@ async def show_results(bot, user_id):
     if session_id:
         finish_quiz_session(session_id)
 
-    add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken)
+    add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken,
+                       score_multiplier=data.get("score_multiplier", 1.0))
     position, entry = get_user_position(user_id)
 
     cfg = next((v for v in LEVEL_CONFIG.values() if v["pool_key"] == data["level_key"]), None)
-    earned_points = score * (cfg["points_per_q"] if cfg else 1)
+    base_points = score * (cfg["points_per_q"] if cfg else 1)
+    score_multiplier = data.get("score_multiplier", 1.0)
+    earned_points = round(base_points * score_multiplier)
+    multiplier_label = {1.5: " ×1.5 ⏱", 2.0: " ×2 ⚡"}.get(score_multiplier, "")
 
     if percentage >= 90:   grade = "Отлично! 🌟"
     elif percentage >= 70: grade = "Хорошо! 👍"
@@ -949,7 +1008,7 @@ async def show_results(bot, user_id):
         f"🏆 *РЕЗУЛЬТАТЫ*\n\n"
         f"*Категория:* {data['level_name']}\n"
         f"*Правильно:* {score}/{total} ({percentage:.0f}%)\n"
-        f"*Баллы:* +{earned_points} 💎\n"
+        f"*Баллы:* +{earned_points} 💎{multiplier_label}\n"
         f"*Время:* {format_time(time_taken)}\n"
         f"*Позиция:* #{position}\n"
         f"*Оценка:* {grade}\n"
@@ -3320,6 +3379,9 @@ def main():
     app.add_handler(CallbackQueryHandler(cancel_quiz_handler,      pattern="^cancel_quiz$"))
     # Подтверждение уровня перед стартом (4.5)
     app.add_handler(CallbackQueryHandler(confirm_level_handler,    pattern=r"^confirm_level_"))
+    app.add_handler(CallbackQueryHandler(relaxed_mode_handler,    pattern=r"^relaxed_mode_"))
+    app.add_handler(CallbackQueryHandler(timed_mode_handler,      pattern=r"^timed_mode_"))
+    app.add_handler(CallbackQueryHandler(speed_mode_handler,      pattern=r"^speed_mode_"))
 
     # Session recovery
     app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
