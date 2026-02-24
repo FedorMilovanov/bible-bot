@@ -106,6 +106,33 @@ def get_qid(q: dict) -> str:
     """Возвращает стабильный ID вопроса: q['id'] если есть, иначе md5-хэш текста."""
     return str(q.get("id") or stable_question_id(q))
 
+def _create_session_data(
+    user_id: int,
+    session_id: str,
+    questions: list,
+    level_name: str,
+    chat_id: int,
+    **extra_fields
+) -> dict:
+    """
+    Фабрика для создания единообразной структуры user_data[user_id].
+    Использовать везде где инициализируется новая сессия.
+    """
+    base_data = {
+        "session_id": session_id,
+        "questions": questions,
+        "current_question": 0,
+        "answered_questions": [],
+        "level_name": level_name,
+        "quiz_chat_id": chat_id,
+        "quiz_message_id": None,
+        "processing_answer": False,
+        "timer_task": None,
+        "question_sent_at": None,
+    }
+    base_data.update(extra_fields)
+    return base_data
+
 REPORT_TYPE_LABELS = {
     "bug":      "🐞 Баг",
     "idea":     "💡 Идея",
@@ -439,24 +466,21 @@ async def intro_start_handler(update: Update, context):
         chat_id=query.message.chat_id,
     )
 
-    user_data[user_id] = {
-        "session_id":         session_id,
-        "questions":          questions,
-        "level_name":         cfg["name"],
-        "level_key":          cfg["pool_key"],
-        "current_question":   0,
-        "correct_answers":    0,
-        "answered_questions": [],
-        "start_time":         time.time(),
-        "last_activity":      time.time(),
-        "is_battle":          False,
-        "battle_points":      0,
-        "processing_answer":  False,
-        "username":           update.effective_user.username,
-        "first_name":         update.effective_user.first_name,
-        "quiz_chat_id":       query.message.chat_id,
-        "quiz_message_id":    None,
-    }
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=cfg["name"],
+        chat_id=query.message.chat_id,
+        level_key=cfg["pool_key"],
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+    )
 
     await query.edit_message_text(
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} • 💎 2 балла за ответ\nНачинаем! ⏱",
@@ -560,24 +584,21 @@ async def confirm_level_handler(update: Update, context):
         chat_id=query.message.chat_id,
     )
 
-    user_data[user_id] = {
-        "session_id":         session_id,
-        "questions":          questions,
-        "level_name":         cfg["name"],
-        "level_key":          cfg["pool_key"],
-        "current_question":   0,
-        "correct_answers":    0,
-        "answered_questions": [],
-        "start_time":         time.time(),
-        "last_activity":      time.time(),
-        "is_battle":          False,
-        "battle_points":      0,
-        "processing_answer":  False,
-        "username":           update.effective_user.username,
-        "first_name":         update.effective_user.first_name,
-        "quiz_chat_id":       query.message.chat_id,
-        "quiz_message_id":    None,
-    }
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=cfg["name"],
+        chat_id=chat_id,
+        level_key=cfg["pool_key"],
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+    )
 
     await query.edit_message_text(
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)}\nНачинаем! ⏱",
@@ -1206,24 +1227,22 @@ async def retry_errors(update: Update, context):
         await query.answer("Ошибок нет!", show_alert=True)
         return
 
-    user_data[user_id] = {
-        "questions":           wrong_questions,
-        "level_name":          f"🔁 Повторение ошибок ({prev_data['level_name']})",
-        "level_key":           prev_data["level_key"],
-        "current_question":    0,
-        "correct_answers":     0,
-        "answered_questions":  [],
-        "start_time":          time.time(),
-        "last_activity":       time.time(),
-        "is_battle":           False,
-        "battle_points":       0,
-        "is_retry":            True,
-        "processing_answer":   False,
-        "username":            query.from_user.username,
-        "first_name":          query.from_user.first_name,
-        "quiz_chat_id":        query.message.chat_id,
-        "quiz_message_id":     None,
-    }
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=None,
+        questions=wrong_questions,
+        level_name=f"🔁 Повторение ошибок ({prev_data['level_name']})",
+        chat_id=query.message.chat_id,
+        level_key=prev_data["level_key"],
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        is_retry=True,
+        username=query.from_user.username,
+        first_name=query.from_user.first_name,
+    )
 
     await query.edit_message_text(
         f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong_questions)}\nПоехали! 💪",
@@ -1330,28 +1349,27 @@ async def _restore_session_to_memory(user_id: int, db_session: dict):
     is_challenge = mode in ("random20", "hardcore20")
     time_limit = db_session.get("time_limit")
 
-    user_data[user_id] = {
-        "session_id":           db_session["_id"],
-        "questions":            questions,
-        "level_name":           db_session.get("level_name", ""),
-        "level_key":            db_session.get("level_key", mode),
-        "current_question":     current_index,
-        "correct_answers":      correct_count,
-        "answered_questions":   answered,
-        "start_time":           start_time_val,
-        "last_activity":        time.time(),
-        "is_battle":            False,
-        "battle_points":        0,
-        "is_challenge":         is_challenge,
-        "challenge_mode":       mode if is_challenge else None,
-        "challenge_eligible":   is_bonus_eligible(user_id, mode) if is_challenge else False,
-        "challenge_time_limit": time_limit,
-        "processing_answer":    False,
-        "username":             None,   # будет обновлено при первом ответе
-        "first_name":           "Игрок",
-        "quiz_chat_id":         db_session.get("chat_id"),  # восстанавливаем из БД
-        "quiz_message_id":      None,
-    }
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=db_session["_id"],
+        questions=questions,
+        level_name=db_session.get("level_name", "Тест"),
+        chat_id=db_session.get("chat_id"),
+        current_question=current_index,
+        answered_questions=answered,
+        is_challenge=is_challenge,
+        level_key=db_session.get("level_key", mode),
+        correct_answers=correct_count,
+        start_time=start_time_val,
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        challenge_mode=mode if is_challenge else None,
+        challenge_eligible=is_bonus_eligible(user_id, mode) if is_challenge else False,
+        challenge_time_limit=time_limit,
+        username=None,
+        first_name="Игрок",
+    )
 
 
 async def _handle_timeout_after_restart(message, user_id: int, db_session: dict):
@@ -1447,21 +1465,25 @@ async def restart_session_handler(update: Update, context):
             time_limit=time_limit,
             chat_id=query.message.chat_id,
         )
-        user_data[user_id] = {
-            "session_id": new_session_id, "questions": questions,
-            "level_name": mode_name, "level_key": mode,
-            "current_question": 0, "correct_answers": 0,
-            "answered_questions": [], "start_time": time.time(),
-            "last_activity": time.time(),
-            "is_battle": False, "battle_points": 0,
-            "is_challenge": True, "challenge_mode": mode,
-            "challenge_eligible": eligible, "challenge_time_limit": time_limit,
-            "processing_answer": False,
-            "username":      query.from_user.username,
-            "first_name":    query.from_user.first_name or "Игрок",
-            "quiz_chat_id":  query.message.chat_id,
-            "quiz_message_id": None,
-        }
+        user_data[user_id] = _create_session_data(
+            user_id=user_id,
+            session_id=new_session_id,
+            questions=questions,
+            level_name=mode_name,
+            chat_id=query.message.chat_id,
+            level_key=mode,
+            correct_answers=0,
+            start_time=time.time(),
+            last_activity=time.time(),
+            is_battle=False,
+            battle_points=0,
+            is_challenge=True,
+            challenge_mode=mode,
+            challenge_eligible=eligible,
+            challenge_time_limit=time_limit,
+            username=query.from_user.username,
+            first_name=query.from_user.first_name or "Игрок",
+        )
         await query.edit_message_text(f"{mode_name}\n\n📋 20 вопросов\nПоехали! 💪", parse_mode="Markdown")
         await send_challenge_question(context.bot, user_id)
     else:
@@ -1478,19 +1500,21 @@ async def restart_session_handler(update: Update, context):
             level_name=cfg["name"], time_limit=None,
             chat_id=query.message.chat_id,
         )
-        user_data[user_id] = {
-            "session_id": new_session_id, "questions": questions,
-            "level_name": cfg["name"], "level_key": cfg["pool_key"],
-            "current_question": 0, "correct_answers": 0,
-            "answered_questions": [], "start_time": time.time(),
-            "last_activity": time.time(),
-            "is_battle": False, "battle_points": 0,
-            "processing_answer": False,
-            "username":      query.from_user.username,
-            "first_name":    query.from_user.first_name or "Игрок",
-            "quiz_chat_id":  query.message.chat_id,
-            "quiz_message_id": None,
-        }
+        user_data[user_id] = _create_session_data(
+            user_id=user_id,
+            session_id=new_session_id,
+            questions=questions,
+            level_name=cfg["name"],
+            chat_id=query.message.chat_id,
+            level_key=cfg["pool_key"],
+            correct_answers=0,
+            start_time=time.time(),
+            last_activity=time.time(),
+            is_battle=False,
+            battle_points=0,
+            username=query.from_user.username,
+            first_name=query.from_user.first_name or "Игрок",
+        )
         await query.edit_message_text(
             f"🔁 *Начинаем заново*\n{cfg['name']}\n\n📝 Вопросов: {len(questions)}",
             parse_mode="Markdown",
@@ -1611,18 +1635,22 @@ async def start_battle_questions(update: Update, context):
         await query.edit_message_text("❌ Битва не найдена.")
         return
 
-    user_data[user_id] = {
-        "battle_id":        battle_id,
-        "role":             role,
-        "questions":        battle["questions"],
-        "current_question": 0,
-        "correct_answers":  0,
-        "start_time":       time.time(),
-        "last_activity":    time.time(),
-        "is_battle":        True,
-        "battle_points":    0,
-        "battle_chat_id":   query.message.chat_id,  # фиксируем chat_id один раз
-    }
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=battle_id,
+        questions=battle["questions"],
+        level_name="⚔️ PvP Битва",
+        chat_id=query.message.chat_id,
+        battle_id=battle_id,
+        role=role,
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=True,
+        battle_points=0,
+        battle_chat_id=query.message.chat_id,
+        battle_role=role,
+    )
 
     await query.edit_message_text("⚔️ *БИТВА: Вопрос 1/10*\n\nНачинаем! 🍀", parse_mode="Markdown")
     await send_battle_question(context.bot, query.message.chat_id, user_id)
@@ -2325,28 +2353,27 @@ async def challenge_start(update: Update, context):
         chat_id=query.message.chat_id,
     )
 
-    user_data[user_id] = {
-        "session_id":           session_id,
-        "questions":            questions,
-        "level_name":           mode_name,
-        "level_key":            mode,
-        "current_question":     0,
-        "correct_answers":      0,
-        "answered_questions":   [],
-        "start_time":           time.time(),
-        "last_activity":        time.time(),
-        "is_battle":            False,
-        "battle_points":        0,
-        "is_challenge":         True,
-        "challenge_mode":       mode,
-        "challenge_eligible":   eligible,
-        "challenge_time_limit": time_limit,
-        "processing_answer":    False,
-        "username":             query.from_user.username,
-        "first_name":           query.from_user.first_name or "Игрок",
-        "quiz_chat_id":         query.message.chat_id,
-        "quiz_message_id":      None,
-    }
+    cfg = {"name": mode_name}
+    chat_id = query.message.chat_id
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=f"⚡ Challenge: {cfg['name']}",
+        chat_id=chat_id,
+        is_challenge=True,
+        challenge_time_limit=time_limit,
+        level_key=mode,
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        challenge_mode=mode,
+        challenge_eligible=eligible,
+        username=query.from_user.username,
+        first_name=query.from_user.first_name or "Игрок",
+    )
 
     await query.edit_message_text(
         f"{mode_name}\n\n📋 20 вопросов • {'✅ бонус доступен' if eligible else '❌ бонус уже получен'}\n\nПоехали! 💪",
