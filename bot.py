@@ -643,6 +643,10 @@ async def send_question(bot, user_id):
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
 
+    if not quiz_chat_id:
+        logger.error("send_question: quiz_chat_id is None for user %s, cannot send question!", user_id)
+        return
+
     if quiz_message_id and quiz_chat_id:
         try:
             await bot.edit_message_text(
@@ -653,17 +657,25 @@ async def send_question(bot, user_id):
             err_str = str(e).lower()
             if "not modified" not in err_str:
                 # Если редактирование не удалось по другой причине — шлём новым сообщением
-                msg = await bot.send_message(
-                    chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-                )
-                data["quiz_message_id"] = msg.message_id
-                data["quiz_chat_id"]    = msg.chat.id
+                try:
+                    msg = await bot.send_message(
+                        chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+                    )
+                    data["quiz_message_id"] = msg.message_id
+                    data["quiz_chat_id"]    = msg.chat.id
+                except Exception as e2:
+                    logger.error("send_question: fallback send_message failed for user %s: %s", user_id, e2)
+                    return
     else:
-        msg = await bot.send_message(
-            chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-        )
-        data["quiz_message_id"] = msg.message_id
-        data["quiz_chat_id"]    = msg.chat.id
+        try:
+            msg = await bot.send_message(
+                chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
+            data["quiz_message_id"] = msg.message_id
+            data["quiz_chat_id"]    = msg.chat.id
+        except Exception as e:
+            logger.error("send_question: send_message failed for user %s: %s", user_id, e)
+            return
 
     data["timer_task"] = asyncio.create_task(auto_timeout(bot, user_id, q_num))
 
@@ -796,18 +808,21 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
         data = user_data[user_id]
 
         is_challenge = data.get("is_challenge", False)
-        if data["current_question"] < len(data["questions"]):
-            if is_challenge:
-                await send_challenge_question(bot, user_id)
+        try:
+            if data["current_question"] < len(data["questions"]):
+                if is_challenge:
+                    await send_challenge_question(bot, user_id)
+                else:
+                    await send_question(bot, user_id)
             else:
-                await send_question(bot, user_id)
-        else:
-            # Тест завершён по таймауту — показываем результаты
-            await _finalize_quiz_bubble(bot, user_id)
-            if is_challenge:
-                await show_challenge_results(bot, user_id)
-            else:
-                await show_results(bot, user_id)
+                # Тест завершён по таймауту — показываем результаты
+                await _finalize_quiz_bubble(bot, user_id)
+                if is_challenge:
+                    await show_challenge_results(bot, user_id)
+                else:
+                    await show_results(bot, user_id)
+        except Exception:
+            logger.error("_handle_question_timeout: error sending next question for user %s", user_id, exc_info=True)
     finally:
         if user_id in user_data:
             user_data[user_id]["processing_answer"] = False
@@ -2413,18 +2428,26 @@ async def send_challenge_question(bot, user_id):
         except Exception as e:
             err_str = str(e).lower()
             if "not modified" not in err_str:
-                msg = await bot.send_message(
-                    chat_id=chat_id, text=text,
-                    reply_markup=keyboard, parse_mode="Markdown",
-                )
-                data["quiz_message_id"] = msg.message_id
-                data["quiz_chat_id"]    = msg.chat.id
+                try:
+                    msg = await bot.send_message(
+                        chat_id=chat_id, text=text,
+                        reply_markup=keyboard, parse_mode="Markdown",
+                    )
+                    data["quiz_message_id"] = msg.message_id
+                    data["quiz_chat_id"]    = msg.chat.id
+                except Exception as e2:
+                    logger.error("send_challenge_question: fallback send_message failed for user %s: %s", user_id, e2)
+                    return
     else:
-        msg = await bot.send_message(
-            chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-        )
-        data["quiz_message_id"] = msg.message_id
-        data["quiz_chat_id"]    = msg.chat.id
+        try:
+            msg = await bot.send_message(
+                chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
+            data["quiz_message_id"] = msg.message_id
+            data["quiz_chat_id"]    = msg.chat.id
+        except Exception as e:
+            logger.error("send_challenge_question: send_message failed for user %s: %s", user_id, e)
+            return
 
     if time_limit:
         data["timer_task"] = asyncio.create_task(
