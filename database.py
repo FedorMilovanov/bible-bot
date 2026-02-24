@@ -727,7 +727,8 @@ def get_all_user_ids() -> list:
 # ═══════════════════════════════════════════════
 
 def add_to_leaderboard(user_id, username, first_name,
-                       level_key, score, total, time_seconds):
+                       level_key, score, total, time_seconds,
+                       score_multiplier: float = 1.0):
     if collection is None:
         return
     uid = _uid(user_id)
@@ -751,7 +752,7 @@ def add_to_leaderboard(user_id, username, first_name,
         f"{level_key}_attempts": 1,
         f"{level_key}_correct": score,
         f"{level_key}_total": total,
-        "total_points": score * ppq,
+        "total_points": round(score * ppq * score_multiplier),
     }
 
     try:
