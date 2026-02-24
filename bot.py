@@ -92,6 +92,7 @@ from typing import Optional
 
 # Хранилище активных сессий (в памяти)
 user_data: dict = {}
+user_locks: dict = {}  # {user_id: asyncio.Lock} для thread-safe обработки ответов
 
 # Счётчик неверных вводов подряд
 _bad_input_count: dict = {}
@@ -102,9 +103,11 @@ def stable_question_id(q: dict) -> str:
     text = q.get("question", "")
     return hashlib.md5(text.encode()).hexdigest()[:12]
 
-def get_qid(q: dict) -> str:
-    """Возвращает стабильный ID вопроса: q['id'] если есть, иначе md5-хэш текста."""
-    return str(q.get("id") or stable_question_id(q))
+def get_qid(question_obj: dict) -> str:
+    """Генерирует уникальный ID вопроса на основе SHA256."""
+    text = question_obj.get("question", "") + "".join(question_obj.get("options", []))
+    # Используем SHA256 но оставляем длину 12 символов для обратной совместимости
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
 
 def _create_session_data(
     user_id: int,
