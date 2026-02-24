@@ -592,7 +592,7 @@ async def confirm_level_handler(update: Update, context):
         session_id=session_id,
         questions=questions,
         level_name=cfg["name"],
-        chat_id=chat_id,
+        chat_id=query.message.chat_id,
         level_key=cfg["pool_key"],
         correct_answers=0,
         start_time=time.time(),
