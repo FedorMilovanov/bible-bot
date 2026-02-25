@@ -1405,6 +1405,7 @@ async def show_results(bot, user_id):
         f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)!\n"
         f"Попробуй сам 👉 {deep_link}"
     )
+    keyboard_rows.append([InlineKeyboardButton("📖 Посмотреть тест", callback_data="review_test_0")])
     keyboard_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
 
     # Шаг 0: конфетти при идеальном результате — до карточки результатов
@@ -1859,6 +1860,71 @@ def _build_error_page(wrong: list, index: int) -> tuple:
         [InlineKeyboardButton("🔙 Вернуться в Меню", callback_data="back_to_main")],
     ])
     return safe_truncate(text, 4000), keyboard
+
+
+
+async def noop_handler(update: Update, context):
+    """Кнопка-счётчик — ничего не делает."""
+    await update.callback_query.answer()
+
+
+async def review_test_handler(update: Update, context):
+    """Листание вопросов теста с правильными ответами после завершения."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    data    = user_data.get(user_id, {})
+
+    q_index  = int(query.data.split("_")[-1])
+    answered = data.get("answered_questions", [])
+
+    if not answered or q_index >= len(answered):
+        await query.edit_message_text("❌ Данные теста не найдены. Пройди тест заново.")
+        return
+
+    total       = len(answered)
+    answer_data = answered[q_index]
+    q           = answer_data.get("question_obj", {})
+    user_answer = answer_data.get("user_answer", "—")
+    correct_answer = _correct_text(q)
+    is_correct  = (user_answer == correct_answer)
+    status      = "✅" if is_correct else "❌"
+
+    text = (
+        f"📖 *Просмотр теста* ({q_index + 1}/{total})\n\n"
+        f"*Вопрос:*\n{q.get('question', '—')}\n\n"
+        "*Варианты:*\n"
+    )
+    for i, opt in enumerate(q.get("options", [])):
+        if i == q.get("correct"):
+            marker = "✅"
+        elif opt == user_answer and not is_correct:
+            marker = "❌"
+        else:
+            marker = "⬜"
+        arrow = " ← твой ответ" if opt == user_answer and not is_correct else ""
+        text += f"{marker} {i+1}. {opt}{arrow}\n"
+
+    text += f"\n*Твой ответ:* {user_answer} {status}"
+
+    explanation = q.get("explanation") or q.get("fun_fact")
+    if explanation:
+        text += f"\n\n💡 *Пояснение:*\n_{explanation}_"
+    nav_row = []
+    if q_index > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Пред.", callback_data=f"review_test_{q_index - 1}"))
+    nav_row.append(InlineKeyboardButton(f"{q_index + 1}/{total}", callback_data="noop"))
+    if q_index < total - 1:
+        nav_row.append(InlineKeyboardButton("➡️ След.", callback_data=f"review_test_{q_index + 1}"))
+
+    buttons = [nav_row, [InlineKeyboardButton("🏠 В меню", callback_data="back_to_main")]]
+
+    await query.edit_message_text(
+        text=text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 async def review_errors_handler(update: Update, context):
@@ -4087,6 +4153,8 @@ def main():
     # Разбор ошибок (пагинация)
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_errors_"))
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_nav_"))
+    app.add_handler(CallbackQueryHandler(review_test_handler,   pattern=r"^review_test_\d+$"))
+    app.add_handler(CallbackQueryHandler(noop_handler,           pattern="^noop$"))
 
     # Fallback для сообщений (восстановление после рестарта)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _general_message_fallback))
