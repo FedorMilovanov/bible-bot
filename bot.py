@@ -567,8 +567,8 @@ async def chapter_1_menu(update: Update, context):
             InlineKeyboardButton("🔴 Сложный (17–25)", callback_data="level_hard_p2"),
         ],
         [
-            InlineKeyboardButton("🙏 Применение (1–16)",  callback_data="level_practical_p1"),
-            InlineKeyboardButton("🙏 Применение (17–25)", callback_data="level_practical_p2"),
+            InlineKeyboardButton("🙏 Примен. (1–16)",  callback_data="level_practical_p1"),
+            InlineKeyboardButton("🙏 Примен. (17–25)", callback_data="level_practical_p2"),
         ],
         [
             InlineKeyboardButton("🔬 Лингвистика ч.1", callback_data="level_linguistics_ch1"),
