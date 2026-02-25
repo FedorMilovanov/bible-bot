@@ -1369,6 +1369,90 @@ def _suggest_next_level(current_key: str) -> dict | None:
     return progression.get(current_key)
 
 
+async def send_final_results_menu(bot, chat_id: int, data: dict):
+    """
+    Отправляет финальное меню после результатов и достижений.
+    Всегда внизу чата — легко найти.
+    """
+    answered = data.get("answered_questions", [])
+    correct_count = sum(1 for a in answered if a.get("is_correct", False))
+    total = len(data.get("questions", []))
+    wrong_count = total - correct_count
+    level_key = data.get("level_key", "")
+    level_name = data.get("level_name", "Тест")
+    percentage = int(correct_count / total * 100) if total > 0 else 0
+
+    if percentage >= 90:
+        emoji = "🏆"
+        comment = "Отличный результат!"
+    elif percentage >= 70:
+        emoji = "👍"
+        comment = "Хорошо!"
+    elif percentage >= 50:
+        emoji = "📚"
+        comment = "Неплохо, но можно лучше"
+    else:
+        emoji = "💪"
+        comment = "Попробуй ещё раз!"
+
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{emoji} *{level_name}*\n"
+        f"Результат: *{correct_count}/{total}* ({percentage}%)\n"
+        f"_{comment}_\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📋 *Выбери действие:*"
+    )
+
+    keyboard = []
+
+    # Главная кнопка — посмотреть ответы
+    keyboard.append([
+        InlineKeyboardButton("📖 ПОСМОТРЕТЬ ОТВЕТЫ И РАЗБОР", callback_data="review_test_0"),
+    ])
+
+    # Пересдать ошибки (если есть)
+    if wrong_count > 0:
+        user_id = data.get("user_id")
+        if user_id:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🔄 Пересдать ошибки ({wrong_count} шт.)",
+                    callback_data=f"retry_errors_{user_id}",
+                ),
+            ])
+
+    # Пройти заново
+    if level_key:
+        keyboard.append([
+            InlineKeyboardButton("🔁 Пройти этот тест заново", callback_data=f"level_{level_key}"),
+        ])
+
+    # Поделиться
+    keyboard.append([
+        InlineKeyboardButton(
+            "📤 Поделиться результатом",
+            switch_inline_query=f"Я прошёл {level_name} — {correct_count}/{total}!",
+        ),
+    ])
+
+    # Навигация
+    keyboard.append([
+        InlineKeyboardButton("📚 Выбрать другой тест", callback_data="start_test"),
+        InlineKeyboardButton("🏠 Меню", callback_data="back_to_main"),
+    ])
+
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    except Exception as e:
+        logger.error("send_final_results_menu: ошибка отправки: %s", e)
+
+
 async def show_results(bot, user_id):
     """Показывает результаты: редактирует пузырь вопроса, затем фото с кнопками."""
     data       = user_data[user_id]
@@ -1418,44 +1502,9 @@ async def show_results(bot, user_id):
     # Сохраняем ошибки в user_data для пагинации
     if user_id in user_data:
         user_data[user_id]["wrong_answers"] = wrong
+        user_data[user_id]["user_id"] = user_id  # для финального меню
 
-    keyboard_rows = [
-        [InlineKeyboardButton("🔄 Ещё раз",   callback_data="start_test")],
-        [InlineKeyboardButton("⚔️ Битва",      callback_data="battle_menu")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="my_stats")],
-        [InlineKeyboardButton("⬅️ Меню",       callback_data="back_to_main")],
-    ]
-    if wrong:
-        keyboard_rows.insert(0, [InlineKeyboardButton(
-            f"🔍 Разобрать ошибки ({len(wrong)})",
-            callback_data=f"review_errors_{user_id}_0"
-        )])
-        keyboard_rows.insert(1, [InlineKeyboardButton(
-            f"🔁 Повторить ошибки ({len(wrong)})",
-            callback_data=f"retry_errors_{user_id}"
-        )])
-
-    # Рекомендация следующего уровня при хорошем результате (4.6)
-    if percentage >= 80:
-        next_lvl = _suggest_next_level(data["level_key"])
-        if next_lvl:
-            keyboard_rows.insert(0, [InlineKeyboardButton(
-                f"⬆️ Попробовать: {next_lvl['name']}",
-                callback_data=next_lvl["callback"],
-            )])
-
-    # Кнопка «Поделиться»
-    bot_info = await bot.get_me()
-    bot_username = bot_info.username or "milovanovaibot"
-    level_key_for_link = data.get("level_key", "")
-    deep_link = f"https://t.me/{bot_username}?start={level_key_for_link}"
-    share_text = (
-        f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)!\n"
-        f"Попробуй сам 👉 {deep_link}"
-    )
-    keyboard_rows.append([InlineKeyboardButton("📖 Посмотреть тест", callback_data="review_test_0")])
-    keyboard_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
-
+    # Основная карточка результатов — без кнопок (будут в финальном меню)
     # Шаг 0: конфетти при идеальном результате — до карточки результатов
     if score == total and chat_id:
         await animate_confetti(bot, chat_id)
@@ -1495,7 +1544,6 @@ async def show_results(bot, user_id):
                 chat_id=chat_id,
                 animation=InputFile(gif_buf, filename="result.gif"),
                 caption=caption,
-                reply_markup=InlineKeyboardMarkup(keyboard_rows),
                 parse_mode="Markdown",
             )
             photo_sent = True
@@ -1522,7 +1570,6 @@ async def show_results(bot, user_id):
                     chat_id=chat_id,
                     photo=InputFile(bio, filename="result.png"),
                     caption=caption,
-                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
                     parse_mode="Markdown",
                 )
                 photo_sent = True
@@ -1544,7 +1591,6 @@ async def show_results(bot, user_id):
                     chat_id=chat_id,
                     message_id=quiz_mid,
                     text=result_text,
-                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1553,7 +1599,6 @@ async def show_results(bot, user_id):
                     await bot.send_message(
                         chat_id=chat_id,
                         text=result_text,
-                        reply_markup=InlineKeyboardMarkup(keyboard_rows),
                         parse_mode="Markdown",
                     )
                 except Exception:
@@ -1563,7 +1608,6 @@ async def show_results(bot, user_id):
                 await bot.send_message(
                     chat_id=chat_id,
                     text=result_text,
-                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1587,6 +1631,11 @@ async def show_results(bot, user_id):
 
     # Проверяем и выдаём достижения после показа результатов
     await check_and_award_achievements(bot, user_id, data)
+
+    # Финальное меню — всегда внизу чата, легко найти
+    await asyncio.sleep(0.5)
+    if chat_id:
+        await send_final_results_menu(bot, chat_id, data)
 
     # (идеальный результат отмечается конфетти выше, до карточки)
 
@@ -3302,33 +3351,15 @@ async def show_challenge_results(bot, user_id):
 
     answered = data.get("answered_questions", [])
     wrong = [i for i in answered if i["user_answer"] != i["question_obj"]["options"][i["question_obj"]["correct"]]]
-    kb_rows = [
-        [InlineKeyboardButton("🔁 Сыграть ещё раз",  callback_data=f"challenge_rules_{mode}")],
-        [InlineKeyboardButton("🏆 Лидерборд недели",  callback_data=f"weekly_lb_{mode}")],
-        [InlineKeyboardButton("🏅 Достижения",         callback_data="achievements")],
-        [InlineKeyboardButton("⬅️ Меню",               callback_data="back_to_main")],
-    ]
-    if wrong:
-        # Сохраняем ошибки в user_data для пагинированного разбора
-        user_data[user_id]["wrong_answers"] = wrong
-        kb_rows.insert(1, [InlineKeyboardButton(
-            f"🔍 Разобрать ошибки ({len(wrong)})",
-            callback_data=f"review_errors_{user_id}_0",
-        )])
 
-    # Кнопка «Поделиться»
-    bot_info = await bot.get_me()
-    bot_username = bot_info.username or "milovanovaibot"
-    deep_link = f"https://t.me/{bot_username}?start={mode}"
-    share_text = (
-        f"Я прошёл {mode_name} — {score}/{total} ({pct}%)!\n"
-        f"Попробуй сам 👉 {deep_link}"
-    )
-    kb_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
+    # Сохраняем ошибки и user_id для финального меню
+    user_data[user_id]["wrong_answers"] = wrong
+    user_data[user_id]["user_id"] = user_id
 
+    # Основные результаты — без кнопок (будут в финальном меню)
     await bot.send_message(
         chat_id=chat_id, text=result,
-        reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="Markdown",
+        parse_mode="Markdown",
     )
 
     # Картинка результатов: GIF → PNG → тихий fallback
@@ -3371,6 +3402,13 @@ async def show_challenge_results(bot, user_id):
 
     if not wrong:
         await bot.send_message(chat_id=chat_id, text="🎯 *Все ответы верны!*", parse_mode="Markdown")
+
+    # Проверяем и выдаём достижения
+    await check_and_award_achievements(bot, user_id, data)
+
+    # Финальное меню — всегда внизу чата, легко найти
+    await asyncio.sleep(0.5)
+    await send_final_results_menu(bot, chat_id, data)
 
 
 # ═══════════════════════════════════════════════
