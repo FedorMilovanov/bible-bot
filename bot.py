@@ -61,7 +61,7 @@ from database import (
     create_battle_doc, get_battle, update_battle, get_waiting_battles,
     delete_battle, cleanup_stale_battles as db_cleanup_stale_battles,
     # Admin
-    get_admin_stats, get_all_user_ids, get_hardest_questions,
+    get_admin_stats, get_all_user_ids, get_hardest_questions, get_user_stats,
     # Reports
     can_submit_report, seconds_until_next_report, insert_report, mark_report_delivered,
     touch_user_activity,
@@ -495,7 +495,7 @@ async def choose_level(update, context, is_callback=False):
         [InlineKeyboardButton("📖 Глава 2 — скоро...",    callback_data="coming_soon")],
         [InlineKeyboardButton("⬅️ Назад",                  callback_data="back_to_main")],
     ])
-    text = f"🎯 *ВЫБЕРИ КАТЕГОРИЮ*\n\n📖 *1 Петра по главам:*\nГлава 1 — 5 видов вопросов\n\n⏱ На каждый вопрос — {QUIZ_TIMEOUT} сек!"
+    text = "🎯 *ВЫБЕРИ КАТЕГОРИЮ*\n\n📖 *1 Петра по главам:*\nГлава 1 — 5 видов вопросов\n\nВыбери уровень и режим прохождения 👇"
     if is_callback and hasattr(update, "callback_query"):
         await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     else:
@@ -3257,8 +3257,8 @@ async def check_and_award_achievements(bot, user_id: int, data: dict) -> list:
     if not chat_id:
         return []
 
-    # Читаем уже полученные достижения из MongoDB
-    user_doc = collection.find_one({"user_id": user_id}) or {}
+    # Читаем уже полученные достижения через существующую функцию
+    user_doc = get_user_stats(user_id) or {}
     user_achievements = user_doc.get("achievements", {})
     new_achievements = []
 
@@ -3305,8 +3305,8 @@ async def check_and_award_achievements(bot, user_id: int, data: dict) -> list:
     ach_update = {f"achievements.{k}": now_str for k in new_achievements}
     total_reward = sum(ACHIEVEMENTS[k]["reward"] for k in new_achievements)
     collection.update_one(
-        {"user_id": user_id},
-        {"$set": ach_update, "$inc": {"points": total_reward}},
+        {"_id": str(user_id)},
+        {"$set": ach_update, "$inc": {"total_points": total_reward}},
         upsert=True,
     )
 
