@@ -107,6 +107,20 @@ from typing import Optional
 user_data: dict = {}
 user_locks: dict = {}  # {user_id: asyncio.Lock} для thread-safe обработки ответов
 
+# Пользовательские настройки (в памяти; сбрасываются при рестарте)
+# Структура: {user_id: {"typewriter": bool, ...}}
+USER_PREFS: dict = {}
+
+def get_pref(user_id: int, key: str, default=True) -> bool:
+    """Читает настройку пользователя. По умолчанию все фичи включены."""
+    return USER_PREFS.get(user_id, {}).get(key, default)
+
+def set_pref(user_id: int, key: str, value: bool) -> None:
+    """Сохраняет настройку пользователя."""
+    if user_id not in USER_PREFS:
+        USER_PREFS[user_id] = {}
+    USER_PREFS[user_id][key] = value
+
 # Счётчик неверных вводов подряд
 _bad_input_count: dict = {}
 _BAD_INPUT_LIMIT = BAD_INPUT_LIMIT
@@ -144,6 +158,7 @@ def _create_session_data(
         "quiz_message_id": None,
         "processing_answer": False,
         "timer_task": None,
+        "countdown_task": None,   # живой визуальный таймер (отдельная задача)
         "question_sent_at": None,
     }
     base_data.update(extra_fields)
@@ -253,6 +268,7 @@ def _main_keyboard():
         [InlineKeyboardButton("📊 Моя статистика",        callback_data="my_stats")],
         [InlineKeyboardButton("📌 Мой статус",            callback_data="my_status")],
         [InlineKeyboardButton("✉️ Обратная связь",        callback_data="report_menu")],
+        [InlineKeyboardButton("⚙️ Настройки",             callback_data="user_settings")],
     ])
 
 
@@ -345,6 +361,49 @@ async def back_to_main(update: Update, context):
              "📖 Глава 1 • 🔬 Лингвистика • 🏛 Контекст • ⚔️ Битвы\n\n"
              "Выбери действие:",
         reply_markup=_main_keyboard(),
+        parse_mode="Markdown",
+    )
+
+
+def _settings_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру настроек с текущими состояниями переключателей."""
+    tw_on = get_pref(user_id, "typewriter", default=True)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            f"⌨️ Печатная машинка: {'✅ вкл' if tw_on else '❌ выкл'}",
+            callback_data="toggle_typewriter",
+        )],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")],
+    ])
+
+
+async def user_settings_handler(update: Update, context):
+    """Показывает меню пользовательских настроек."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    await query.edit_message_text(
+        "⚙️ *НАСТРОЙКИ*\n\n"
+        "Здесь можно включить или выключить визуальные эффекты.\n"
+        "_Настройки сохраняются до перезапуска бота._",
+        reply_markup=_settings_keyboard(user_id),
+        parse_mode="Markdown",
+    )
+
+
+async def toggle_typewriter_handler(update: Update, context):
+    """Переключает эффект печатной машинки."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    current = get_pref(user_id, "typewriter", default=True)
+    set_pref(user_id, "typewriter", not current)
+    state = "включена ✅" if not current else "выключена ❌"
+    await query.edit_message_text(
+        f"⚙️ *НАСТРОЙКИ*\n\n"
+        f"⌨️ Печатная машинка {state}\n\n"
+        "_Настройки сохраняются до перезапуска бота._",
+        reply_markup=_settings_keyboard(user_id),
         parse_mode="Markdown",
     )
 
@@ -737,6 +796,7 @@ async def send_question(bot, user_id, time_limit=None):
         return
 
     if quiz_message_id and quiz_chat_id:
+        # Последующие вопросы — редактируем пузырь мгновенно (typewriter здесь не нужен)
         try:
             await bot.edit_message_text(
                 chat_id=quiz_chat_id, message_id=quiz_message_id,
@@ -756,10 +816,17 @@ async def send_question(bot, user_id, time_limit=None):
                     logger.error("send_question: fallback send_message failed for user %s: %s", user_id, e2)
                     return
     else:
+        # Первый вопрос — typing-пауза + typewriter (если включены)
         try:
-            msg = await bot.send_message(
-                chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-            )
+            await _typing_pause(bot, quiz_chat_id, has_timer=bool(effective_limit))
+
+            use_typewriter = get_pref(user_id, "typewriter", default=True)
+            if use_typewriter:
+                msg = await typewriter_send(bot, quiz_chat_id, text, reply_markup=keyboard)
+            else:
+                msg = await bot.send_message(
+                    chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+                )
             data["quiz_message_id"] = msg.message_id
             data["quiz_chat_id"]    = msg.chat.id
         except Exception as e:
@@ -771,8 +838,14 @@ async def send_question(bot, user_id, time_limit=None):
         old_task = data.get("timer_task")
         if old_task and not old_task.done():
             old_task.cancel()
+        # Отменяем предыдущий визуальный countdown
+        _cancel_countdown(user_id)
         data["timer_task"] = asyncio.create_task(
             _handle_question_timeout(bot, user_id, q_num, effective_limit)
+        )
+        # Запускаем живой визуальный countdown параллельно
+        data["countdown_task"] = asyncio.create_task(
+            _live_countdown(bot, quiz_chat_id, effective_limit, user_id, q_num)
         )
 
 
@@ -789,6 +862,186 @@ async def _finalize_quiz_bubble(bot, user_id, text="✅ *Тест завершё
             )
         except Exception:
             pass
+
+
+def _cancel_countdown(user_id: int):
+    """
+    Отменяет живой countdown-таймер пользователя, если он запущен.
+    Вызывать при: ответе, отмене теста, таймауте вопроса.
+    """
+    data = user_data.get(user_id)
+    if not data:
+        return
+    task = data.get("countdown_task")
+    if task and not task.done():
+        task.cancel()
+    data["countdown_task"] = None
+
+
+async def _live_countdown(bot, chat_id: int, seconds: int, user_id: int, q_num: int):
+    """
+    Живой визуальный таймер: отдельное сообщение обновляется каждую секунду.
+
+    Жизненный цикл:
+    - Отправляет новое сообщение под вопросом
+    - Каждую секунду меняет текст: 🟢 → 🟡 (≤10) → 🔴 (≤5)
+    - При истечении времени удаляет сообщение
+    - При отмене (cancel()) — молча удаляет сообщение
+    - Привязан к конкретному q_num: если вопрос уже сменился — останавливается
+    """
+    msg = None
+    try:
+        msg = await bot.send_message(chat_id=chat_id, text=f"🟢 {seconds} сек")
+
+        for i in range(seconds, 0, -1):
+            await asyncio.sleep(1)
+
+            # Прерываем если вопрос уже сменился или сессия закрыта
+            data = user_data.get(user_id)
+            if not data or data.get("current_question") != q_num:
+                return
+
+            emoji = "🔴" if i <= 5 else "🟡" if i <= 10 else "🟢"
+            bar_filled = max(0, round(i / seconds * 8))
+            bar = "█" * bar_filled + "░" * (8 - bar_filled)
+            try:
+                await msg.edit_text(f"{emoji} {i} сек  {bar}")
+            except Exception:
+                return  # сообщение удалено или недоступно — останавливаемся
+
+    except asyncio.CancelledError:
+        pass  # нормальная отмена — просто удаляем сообщение
+    except Exception as e:
+        logger.debug("_live_countdown error for user %s: %s", user_id, e)
+    finally:
+        # Всегда удаляем сообщение таймера при выходе
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+
+# ═══════════════════════════════════════════════════════════════
+# АНИМАЦИИ: печатная машинка, typing-пауза, конфетти
+# ═══════════════════════════════════════════════════════════════
+
+async def _typing_pause(bot, chat_id: int, has_timer: bool) -> None:
+    """
+    Показывает индикатор «печатает…» перед отправкой вопроса.
+    При наличии таймера — пропускаем (каждая секунда на счету).
+    """
+    if has_timer:
+        return
+    try:
+        await bot.send_chat_action(chat_id=chat_id, action="typing")
+        await asyncio.sleep(0.8)
+    except Exception:
+        pass
+
+
+async def typewriter_send(bot, chat_id: int, text: str,
+                           reply_markup=None, delay: float = 0.04) -> object:
+    """
+    Отправляет сообщение с эффектом печатной машинки.
+
+    Используется ТОЛЬКО для первого вопроса (новое сообщение, не edit).
+    Печатаем только текст вопроса — без вариантов ответа и Markdown-разметки,
+    чтобы избежать битого парсинга на промежуточных шагах.
+
+    Финальный вызов edit_text передаёт полный text + reply_markup + parse_mode.
+    """
+    # Шаг 1: отправляем заглушку-курсор
+    try:
+        msg = await bot.send_message(chat_id=chat_id, text="▌")
+    except Exception as e:
+        logger.warning("typewriter_send: initial send failed: %s", e)
+        # Fallback — обычная отправка
+        return await bot.send_message(
+            chat_id=chat_id, text=text,
+            reply_markup=reply_markup, parse_mode="Markdown",
+        )
+
+    # Шаг 2: находим только строку вопроса (до вариантов ответа)
+    # text имеет вид "*Вопрос N/M* ... \n\n<вопрос>\n\n1. вариант..."
+    # Печатаем только до первого двойного переноса после заголовка
+    parts = text.split("\n\n", 2)
+    # parts[0] = заголовок, parts[1] = тело вопроса, parts[2] = варианты (если есть)
+    header   = parts[0] if len(parts) > 0 else ""
+    question = parts[1] if len(parts) > 1 else text
+
+    displayed = header + "\n\n"
+    for char in question:
+        displayed += char
+        # Обновляем не при каждом символе — Telegram лимитирует edit до ~20/сек
+        # Обновляем каждые 2 символа для плавности без флуда
+        if len(displayed) % 2 == 0:
+            try:
+                await msg.edit_text(displayed + "▌")
+            except Exception:
+                break
+        await asyncio.sleep(delay)
+
+    # Шаг 3: финальный вариант — полный текст с разметкой и кнопками
+    try:
+        await msg.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    except Exception as e:
+        logger.warning("typewriter_send: final edit failed: %s", e)
+        # Если финальный edit упал — шлём заново
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        msg = await bot.send_message(
+            chat_id=chat_id, text=text,
+            reply_markup=reply_markup, parse_mode="Markdown",
+        )
+
+    return msg
+
+
+async def animate_confetti(bot, chat_id: int) -> None:
+    """
+    Анимация конфетти при идеальном результате (score == total).
+    Запускать ДО отправки карточки результатов.
+    """
+    frames = [
+        "       🎊       ",
+        "    🎉  🎊  🎉    ",
+        " 🎊  🎉  🎊  🎉  🎊 ",
+        "🎉🎊🎉🎊🎉🎊🎉🎊🎉",
+        " 🎊  🎉  🎊  🎉  🎊 ",
+        "    🎉  🎊  🎉    ",
+        "       🎊       ",
+    ]
+    msg = None
+    try:
+        # Слот-машина — визуальный «звук» праздника
+        await bot.send_dice(chat_id=chat_id, emoji="🎰")
+
+        msg = await bot.send_message(chat_id=chat_id, text=frames[0])
+        for frame in frames[1:]:
+            await asyncio.sleep(0.18)
+            try:
+                await msg.edit_text(frame)
+            except Exception:
+                break
+
+        await asyncio.sleep(0.18)
+        try:
+            await msg.edit_text("🎉 *ИДЕАЛЬНЫЙ РЕЗУЛЬТАТ!* 🎉", parse_mode="Markdown")
+        except Exception:
+            pass
+
+        await asyncio.sleep(2.0)
+    except Exception as e:
+        logger.debug("animate_confetti error: %s", e)
+    finally:
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
 
 
 async def report_inaccuracy_handler(update: Update, context):
@@ -858,6 +1111,8 @@ async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeou
         return
 
     data["processing_answer"] = True
+    # Countdown больше не нужен — время вышло, удаляем визуальный таймер
+    _cancel_countdown(user_id)
     try:
         q            = data["questions"][q_num_at_send]
         correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
@@ -1065,6 +1320,10 @@ async def show_results(bot, user_id):
     share_text = f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)! Попробуй сам 👉 @peter1_quiz_bot"
     keyboard_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
 
+    # Шаг 0: конфетти при идеальном результате — до карточки результатов
+    if score == total and chat_id:
+        await animate_confetti(bot, chat_id)
+
     # Шаг 1: редактируем пузырь вопроса — показываем заглушку "Генерирую..."
     stub_deleted = False
     if quiz_mid and chat_id:
@@ -1148,21 +1407,101 @@ async def show_results(bot, user_id):
             except Exception:
                 logger.error("show_results: не удалось отправить результаты (no quiz_mid)", exc_info=True)
 
-    if not wrong and not photo_sent:
-        # Дополнительно отмечаем идеальный результат только если нет картинки
-        try:
-            await bot.send_message(
-                chat_id=chat_id,
-                text="🎯 *Все ответы верны — отличная работа!*",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
+    # (идеальный результат отмечается конфетти выше, до карточки)
 
 
 # ═══════════════════════════════════════════════
 # INLINE-ОТВЕТ НА ВОПРОС (основной тест)
 # ═══════════════════════════════════════════════
+
+async def _animate_answer_buttons(
+    query,
+    btn_index: int,
+    correct_index: int,
+    is_numeric_mode: bool,
+    shuffled: list[str],
+) -> None:
+    """
+    Визуальная анимация кнопок после ответа.
+
+    Два режима кнопок (определяется is_numeric_mode):
+      - Числовой: кнопки "1","2","3","4" — меняем только текст, callback не трогаем
+      - Текстовый: кнопки с полным текстом варианта
+
+    Структура клавиатуры:
+      rows[0..N-1] — варианты ответа (каждая строка = 1 вариант или ряд чисел)
+      rows[-1]     — [⚠️ Неточность?, ↩️ выйти] — не трогаем
+
+    is_correct  → анимация: ✅ → 🎉 → ⭐ → ✅ (по 0.3 сек)
+    is_incorrect → подсвечиваем нажатую ❌ и правильную ✅, без анимации
+    """
+    is_correct = (btn_index == correct_index)
+
+    try:
+        # Получаем текущую клавиатуру из сообщения
+        rows = [
+            [InlineKeyboardButton(btn.text, callback_data=btn.callback_data)
+             for btn in row]
+            for row in query.message.reply_markup.inline_keyboard
+        ]
+        # Последняя строка — служебные кнопки, не трогаем
+        answer_rows = rows[:-1]
+        service_row = rows[-1]
+
+        if is_numeric_mode:
+            # Числовой режим: все варианты в одной строке [1][2][3][4]
+            # answer_rows[0] содержит все кнопки-цифры
+            num_row = answer_rows[0]
+
+            if is_correct:
+                for emoji in ["✅", "🎉", "⭐", "✅"]:
+                    num_row[btn_index].text = f"{emoji}"
+                    try:
+                        await query.edit_message_reply_markup(
+                            reply_markup=InlineKeyboardMarkup(answer_rows + [service_row])
+                        )
+                    except Exception:
+                        return
+                    await asyncio.sleep(0.3)
+            else:
+                num_row[btn_index].text  = "❌"
+                num_row[correct_index].text = "✅"
+                try:
+                    await query.edit_message_reply_markup(
+                        reply_markup=InlineKeyboardMarkup(answer_rows + [service_row])
+                    )
+                except Exception:
+                    pass
+
+        else:
+            # Текстовый режим: каждый вариант — отдельная строка
+            # answer_rows[i] = [InlineKeyboardButton(текст, callback_data=...)]
+            correct_text = shuffled[correct_index]
+            user_text    = shuffled[btn_index]
+
+            if is_correct:
+                for emoji in ["✅", "🎉", "⭐", "✅"]:
+                    answer_rows[btn_index][0].text = f"{emoji} {user_text}"
+                    try:
+                        await query.edit_message_reply_markup(
+                            reply_markup=InlineKeyboardMarkup(answer_rows + [service_row])
+                        )
+                    except Exception:
+                        return
+                    await asyncio.sleep(0.3)
+            else:
+                answer_rows[btn_index][0].text   = f"❌ {user_text}"
+                answer_rows[correct_index][0].text = f"✅ {correct_text}"
+                try:
+                    await query.edit_message_reply_markup(
+                        reply_markup=InlineKeyboardMarkup(answer_rows + [service_row])
+                    )
+                except Exception:
+                    pass
+
+    except Exception as e:
+        logger.debug("_animate_answer_buttons error: %s", e)
+
 
 async def _handle_inline_answer(update: Update, context, prefix: str):
     """
@@ -1213,9 +1552,28 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
         timer_task = data.get("timer_task")
         if timer_task and not timer_task.done():
             timer_task.cancel()
+        # Отменяем живой countdown — ответ уже получен
+        _cancel_countdown(user_id)
 
         is_correct = (user_answer == correct_text)
         _reset_bad_input(user_id)
+
+        # ── Анимация кнопок ──────────────────────────────────────────────────
+        # Находим индекс правильного ответа в перемешанном списке
+        try:
+            correct_index = shuffled.index(correct_text)
+        except ValueError:
+            correct_index = btn_index  # fallback: считаем ответ верным визуально
+
+        # Числовой режим: кнопки "1"/"2"... — когда хотя бы один вариант длинный
+        is_numeric_mode = (
+            query.message.reply_markup is not None
+            and len(query.message.reply_markup.inline_keyboard) > 0
+            and len(query.message.reply_markup.inline_keyboard[0]) > 1
+        )
+        await _animate_answer_buttons(query, btn_index, correct_index, is_numeric_mode, shuffled)
+        # ─────────────────────────────────────────────────────────────────────
+
         if is_correct:
             data["correct_answers"] += 1
             feedback = f"✅ *Верно!*\n\n_{correct_text}_"
@@ -2498,6 +2856,8 @@ async def send_challenge_question(bot, user_id):
     old_task = data.get("timer_task")
     if old_task and not old_task.done():
         old_task.cancel()
+    # Отменяем предыдущий визуальный countdown
+    _cancel_countdown(user_id)
 
     session_id = data.get("session_id")
     if session_id:
@@ -2549,10 +2909,17 @@ async def send_challenge_question(bot, user_id):
                     logger.error("send_challenge_question: fallback send_message failed for user %s: %s", user_id, e2)
                     return
     else:
+        # Первый вопрос challenge — typing-пауза + typewriter (если включены)
         try:
-            msg = await bot.send_message(
-                chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-            )
+            await _typing_pause(bot, chat_id, has_timer=bool(time_limit))
+
+            use_typewriter = get_pref(user_id, "typewriter", default=True)
+            if use_typewriter:
+                msg = await typewriter_send(bot, chat_id, text, reply_markup=keyboard)
+            else:
+                msg = await bot.send_message(
+                    chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+                )
             data["quiz_message_id"] = msg.message_id
             data["quiz_chat_id"]    = msg.chat.id
         except Exception as e:
@@ -2562,6 +2929,10 @@ async def send_challenge_question(bot, user_id):
     if time_limit:
         data["timer_task"] = asyncio.create_task(
             challenge_timeout(bot, user_id, q_num)
+        )
+        # Запускаем живой визуальный countdown параллельно
+        data["countdown_task"] = asyncio.create_task(
+            _live_countdown(bot, chat_id, time_limit, user_id, q_num)
         )
 
 
@@ -2798,6 +3169,8 @@ async def cancel_quiz_handler(update: Update, context):
     timer_task = data.get("timer_task")
     if timer_task and not timer_task.done():
         timer_task.cancel()
+    # Отменяем живой countdown
+    _cancel_countdown(user_id)
 
     # Отменяем сессию в БД и чистим память
     cancel_active_quiz_session(user_id)
@@ -3463,6 +3836,8 @@ def main():
     app.add_handler(CallbackQueryHandler(show_weekly_leaderboard, pattern="^weekly_lb_"))
     app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
     app.add_handler(CallbackQueryHandler(back_to_main,     pattern="^back_to_main$"))
+    app.add_handler(CallbackQueryHandler(user_settings_handler,     pattern="^user_settings$"))
+    app.add_handler(CallbackQueryHandler(toggle_typewriter_handler, pattern="^toggle_typewriter$"))
     app.add_handler(CallbackQueryHandler(
         button_handler,
         pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|"
