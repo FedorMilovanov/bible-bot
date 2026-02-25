@@ -544,6 +544,13 @@ def init_user_stats(user_id, username, first_name):
             "challenge_streak_last_date": "",
             "daily_streak": 0,
             "daily_streak_last": "",
+            # ── Статистика для достижений ──
+            "perfect_count": 0,
+            "max_streak_ever": 0,
+            "daily_activity_streak": 0,
+            "daily_activity_last": "",
+            "last_perfect_date": "",
+            "last_daily_bonus": "",
         }
         for key in ALL_LEVEL_KEYS:
             new_entry[f"{key}_attempts"] = 0
@@ -1301,3 +1308,101 @@ def mark_report_delivered(report_id: str):
         )
     except Exception as e:
         logger.error("mark_report_delivered error: %s", e)
+
+
+# ═══════════════════════════════════════════════
+# ДОСТИЖЕНИЯ — СТАТИСТИКА И ЕЖЕДНЕВНЫЙ БОНУС
+# ═══════════════════════════════════════════════
+
+def update_achievement_stats(user_id: int, is_perfect: bool, max_streak: int) -> dict:
+    """Обновляет статистику для достижений после теста. Возвращает актуальные значения."""
+    if collection is None:
+        return {}
+
+    uid   = _uid(user_id)
+    today = _today_utc()
+    entry = collection.find_one({"_id": uid})
+    if not entry:
+        return {}
+
+    updates    = {}
+    increments = {}
+
+    # perfect_count
+    if is_perfect:
+        increments["perfect_count"] = 1
+        updates["last_perfect_date"] = today
+
+    # max_streak_ever
+    current_max = entry.get("max_streak_ever", 0)
+    if max_streak > current_max:
+        updates["max_streak_ever"] = max_streak
+
+    # daily_activity_streak
+    last_activity = entry.get("daily_activity_last", "")
+    daily_streak  = entry.get("daily_activity_streak", 0)
+    if last_activity != today:
+        if last_activity:
+            try:
+                last_dt  = datetime.strptime(last_activity, "%Y-%m-%d")
+                today_dt = datetime.strptime(today, "%Y-%m-%d")
+                delta    = (today_dt - last_dt).days
+                daily_streak = daily_streak + 1 if delta == 1 else 1
+            except Exception:
+                daily_streak = 1
+        else:
+            daily_streak = 1
+        updates["daily_activity_streak"] = daily_streak
+        updates["daily_activity_last"]   = today
+
+    update_query = {}
+    if updates:
+        update_query["$set"] = updates
+    if increments:
+        update_query["$inc"] = increments
+    if update_query:
+        try:
+            collection.update_one({"_id": uid}, update_query)
+        except Exception as e:
+            logger.error("update_achievement_stats error: %s", e)
+
+    return {
+        "perfect_count":   entry.get("perfect_count", 0) + (1 if is_perfect else 0),
+        "max_streak_ever": max(current_max, max_streak),
+        "daily_streak":    daily_streak if last_activity != today else entry.get("daily_activity_streak", 0),
+        "total_tests":     entry.get("total_tests", 0),
+    }
+
+
+def check_daily_bonus(user_id: int) -> int:
+    """Проверяет и начисляет ежедневный бонус за первый тест дня. Возвращает баллы (0 = уже получен)."""
+    if collection is None:
+        return 0
+
+    uid   = _uid(user_id)
+    today = _today_utc()
+    entry = collection.find_one({"_id": uid})
+    if not entry:
+        return 0
+
+    if entry.get("last_daily_bonus", "") == today:
+        return 0  # Уже получил сегодня
+
+    daily_streak = entry.get("daily_activity_streak", 0)
+    if daily_streak >= 7:
+        bonus = 15
+    elif daily_streak >= 3:
+        bonus = 10
+    else:
+        bonus = 5
+
+    try:
+        collection.update_one(
+            {"_id": uid},
+            {"$set": {"last_daily_bonus": today}, "$inc": {"total_points": bonus}},
+        )
+    except Exception as e:
+        logger.error("check_daily_bonus error: %s", e)
+        return 0
+
+    return bonus
