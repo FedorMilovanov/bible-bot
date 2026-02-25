@@ -234,6 +234,8 @@ LEVEL_CONFIG = {
     "level_linguistics_ch1":   {"pool_key": "linguistics_ch1",  "name": "🔬 Лингвистика: Избранные и странники (ч.1)",       "points_per_q": 3, "num_questions": 10},
     "level_linguistics_ch1_2": {"pool_key": "linguistics_ch1_2","name": "🔬 Лингвистика: Живая надежда (ч.2)",               "points_per_q": 3, "num_questions": 10},
     "level_linguistics_ch1_3": {"pool_key": "linguistics_ch1_3","name": "🔬 Лингвистика: Искупление и истина (ч.3)",         "points_per_q": 3, "num_questions": 10},
+    # ── Случайный режим (все вопросы) ───────────────────────────────────────
+    "level_random_all":          {"pool_key": "random_all",       "name": "🎲 Случайный режим (все темы)",                     "points_per_q": 1, "num_questions": 10},
     # ── Исторический контекст ───────────────────────────────────────────────
     "level_nero":              {"pool_key": "nero",             "name": "👑 Правление Нерона",                               "points_per_q": 2, "num_questions": 10},
     "level_geography":         {"pool_key": "geography",        "name": "🌍 География земли",                                "points_per_q": 2, "num_questions": 10},
@@ -555,32 +557,36 @@ async def chapter_1_menu(update: Update, context):
     await query.answer()
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🟢 Легкий (1–16)",   callback_data="level_easy_p1"),
-            InlineKeyboardButton("🟢 Легкий (17–25)",  callback_data="level_easy_p2"),
+            InlineKeyboardButton("🟢 Легкий — 1",   callback_data="level_easy_p1"),
+            InlineKeyboardButton("🟢 Легкий — 2",   callback_data="level_easy_p2"),
         ],
         [
-            InlineKeyboardButton("🟡 Средний (1–16)",  callback_data="level_medium_p1"),
-            InlineKeyboardButton("🟡 Средний (17–25)", callback_data="level_medium_p2"),
+            InlineKeyboardButton("🟡 Средний — 1",  callback_data="level_medium_p1"),
+            InlineKeyboardButton("🟡 Средний — 2",  callback_data="level_medium_p2"),
         ],
         [
-            InlineKeyboardButton("🔴 Сложный (1–16)",  callback_data="level_hard_p1"),
-            InlineKeyboardButton("🔴 Сложный (17–25)", callback_data="level_hard_p2"),
+            InlineKeyboardButton("🔴 Сложный — 1",  callback_data="level_hard_p1"),
+            InlineKeyboardButton("🔴 Сложный — 2",  callback_data="level_hard_p2"),
         ],
         [
-            InlineKeyboardButton("🙏 Примен. (1–16)",  callback_data="level_practical_p1"),
-            InlineKeyboardButton("🙏 Примен. (17–25)", callback_data="level_practical_p2"),
+            InlineKeyboardButton("🙏 Применение — 1", callback_data="level_practical_p1"),
+            InlineKeyboardButton("🙏 Применение — 2", callback_data="level_practical_p2"),
         ],
         [
-            InlineKeyboardButton("🔬 Лингвистика ч.1", callback_data="level_linguistics_ch1"),
-            InlineKeyboardButton("🔬 Лингвистика ч.2", callback_data="level_linguistics_ch1_2"),
+            InlineKeyboardButton("🔬 Лингвистика — 1", callback_data="level_linguistics_ch1"),
+            InlineKeyboardButton("🔬 Лингвистика — 2", callback_data="level_linguistics_ch1_2"),
         ],
-        [InlineKeyboardButton("🔬 Лингвистика ч.3",    callback_data="level_linguistics_ch1_3")],
+        [
+            InlineKeyboardButton("🔬 Лингвистика — 3", callback_data="level_linguistics_ch1_3"),
+            InlineKeyboardButton("🎲 Случайный",        callback_data="random_all_start"),
+        ],
         [InlineKeyboardButton("⬅️ Назад",               callback_data="start_test")],
     ])
     await query.edit_message_text(
         "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
         "🟢 Легкий (1 балл) • 🟡 Средний (2 балла) • 🔴 Сложный (3 балла)\n"
-        "🙏 Применение (2 балла) • 🔬 Лингвистика (3 балла)",
+        "🙏 Применение (2 балла) • 🔬 Лингвистика (3 балла)\n"
+        "🎲 Случайный — 10 вопросов из всех тем, без таймера (1 балл)",
         reply_markup=keyboard, parse_mode="Markdown",
     )
 
@@ -850,6 +856,68 @@ async def relaxed_mode_handler(update: Update, context):
     await query.answer()
     level_key = query.data.replace("relaxed_mode_", "")
     await _launch_level_test(query, update, level_key, "relaxed", None, 1.0)
+
+
+async def random_all_start_handler(update: Update, context):
+    """Случайный режим: 10 вопросов из всех доступных пулов, без таймера."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    _touch(user_id)
+
+    # Собираем все доступные вопросы из всех пулов
+    all_pool_keys = [
+        "easy", "easy_p1", "easy_p2",
+        "medium", "medium_p1", "medium_p2",
+        "hard", "hard_p1", "hard_p2",
+        "practical_ch1", "practical_p1", "practical_p2",
+        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+    ]
+    all_questions = []
+    seen = set()
+    for key in all_pool_keys:
+        for q in get_pool_by_key(key):
+            qid = get_qid(q)
+            if qid not in seen:
+                seen.add(qid)
+                all_questions.append(q)
+
+    questions = random.sample(all_questions, min(10, len(all_questions)))
+    level_name = "🎲 Случайный режим (все темы)"
+
+    cancel_active_quiz_session(user_id)
+    question_ids = [get_qid(q) for q in questions]
+    session_id = create_quiz_session(
+        user_id=user_id, mode="level", question_ids=question_ids,
+        questions_data=questions, level_key="random_all",
+        level_name=level_name, time_limit=None,
+        chat_id=query.message.chat_id,
+    )
+
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=level_name,
+        chat_id=query.message.chat_id,
+        level_key="random_all",
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+        quiz_mode="relaxed",
+        score_multiplier=1.0,
+        quiz_time_limit=None,
+    )
+
+    await query.edit_message_text(
+        f"*{level_name}*\n\n📝 Вопросов: {len(questions)} · 🧘 Без таймера\nНачинаем!",
+        parse_mode="Markdown",
+    )
+    await send_question(query.message.get_bot(), user_id, time_limit=None)
 
 
 async def timed_mode_handler(update: Update, context):
@@ -4370,6 +4438,7 @@ def main():
 
     # Общие кнопки
     app.add_handler(CallbackQueryHandler(chapter_1_menu,   pattern="^chapter_1_menu$"))
+    app.add_handler(CallbackQueryHandler(random_all_start_handler, pattern="^random_all_start$"))
     app.add_handler(CallbackQueryHandler(historical_menu,  pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(intro_hint_handler,  pattern=r"^intro_hint_"))
     app.add_handler(CallbackQueryHandler(intro_start_handler, pattern=r"^intro_start_"))
