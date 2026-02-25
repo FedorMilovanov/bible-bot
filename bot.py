@@ -324,6 +324,26 @@ async def start(update: Update, context):
             )
             return
 
+    # ── Deep link: /start level_easy, /start random20, и т.д. ──────────────────
+    if context.args and len(context.args) > 0:
+        level_key = context.args[0]
+        if level_key in LEVEL_CONFIG:
+            cfg = LEVEL_CONFIG[level_key]
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🧘 Без ограничения времени", callback_data=f"relaxed_mode_{level_key}")],
+                [InlineKeyboardButton(f"⏱ На время ({TIMED_MODE_TIMEOUT} сек)  ×1.5 баллов", callback_data=f"timed_mode_{level_key}")],
+                [InlineKeyboardButton(f"⚡ Скоростной ({SPEED_MODE_TIMEOUT} сек)  ×2 баллов", callback_data=f"speed_mode_{level_key}")],
+                [InlineKeyboardButton("↩️ В главное меню", callback_data="back_to_main")],
+            ])
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"📚 *{cfg['name']}*\n\nВыбери режим прохождения:",
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+            return
+        # Если level_key не распознан — показываем обычное меню
+
     name = user.first_name or "друг"
     streak = update_daily_streak(user.id)
     _, entry = get_user_position(user.id)
@@ -1317,7 +1337,14 @@ async def show_results(bot, user_id):
             )])
 
     # Кнопка «Поделиться»
-    share_text = f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)! Попробуй сам 👉 @peter1_quiz_bot"
+    bot_info = await bot.get_me()
+    bot_username = bot_info.username or "milovanovaibot"
+    level_key_for_link = data.get("level_key", "")
+    deep_link = f"https://t.me/{bot_username}?start={level_key_for_link}"
+    share_text = (
+        f"Я прошёл тест «{data['level_name']}» — {score}/{total} ({percentage:.0f}%)!\n"
+        f"Попробуй сам 👉 {deep_link}"
+    )
     keyboard_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
 
     # Шаг 0: конфетти при идеальном результате — до карточки результатов
@@ -3078,7 +3105,13 @@ async def show_challenge_results(bot, user_id):
         )])
 
     # Кнопка «Поделиться»
-    share_text = f"Я прошёл {mode_name} — {score}/{total} ({pct}%)! Попробуй сам 👉 @peter1_quiz_bot"
+    bot_info = await bot.get_me()
+    bot_username = bot_info.username or "milovanovaibot"
+    deep_link = f"https://t.me/{bot_username}?start={mode}"
+    share_text = (
+        f"Я прошёл {mode_name} — {score}/{total} ({pct}%)!\n"
+        f"Попробуй сам 👉 {deep_link}"
+    )
     kb_rows.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query=share_text)])
 
     await bot.send_message(
@@ -3365,7 +3398,7 @@ async def button_handler(update: Update, context):
             "• 🏆 Таблица лидеров — общая и по категориям\n"
             "• 🔍 Разбор ошибок — листай и изучай каждую ошибку\n"
             "• 🔁 Повторение ошибок — перепройди только то, что не знал\n\n"
-            "_v2.6 • Soli Deo Gloria_",
+            "_v3.0 • Soli Deo Gloria_",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]),
             parse_mode="Markdown",
         ),
