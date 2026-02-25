@@ -644,7 +644,7 @@ async def level_selected(update: Update, context):
         f"📝 *{cfg['name']}*\n\n"
         f"• Вопросов: {num_q}\n"
         f"• Баллов за ответ: {cfg['points_per_q']}\n"
-        f"• Таймер: 60 сек\n\n"
+        f"• Таймер: {TIMED_MODE_TIMEOUT} сек\n\n"
         f"Начинаем?",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
@@ -723,7 +723,7 @@ async def _launch_level_test(query, update, level_key: str, quiz_mode: str,
         quiz_time_limit=time_limit,
     )
 
-    mode_label = {"relaxed": "🧘 Без таймера", "timed": "⏱ 60 сек / ×1.5", "speed": "⚡ 30 сек / ×2"}.get(quiz_mode, "")
+    mode_label = {"relaxed": "🧘 Без таймера", "timed": f"⏱ {TIMED_MODE_TIMEOUT} сек / ×1.5", "speed": f"⚡ {SPEED_MODE_TIMEOUT} сек / ×2"}.get(quiz_mode, "")
     await query.edit_message_text(
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} · {mode_label}\nНачинаем!",
         parse_mode="Markdown",
@@ -961,7 +961,7 @@ async def _typing_pause(bot, chat_id: int, has_timer: bool) -> None:
 
 
 async def typewriter_send(bot, chat_id: int, text: str,
-                           reply_markup=None, delay: float = 0.04) -> object:
+                           reply_markup=None, delay: float = None) -> object:
     """
     Отправляет сообщение с эффектом печатной машинки.
 
@@ -990,6 +990,12 @@ async def typewriter_send(bot, chat_id: int, text: str,
     header   = parts[0] if len(parts) > 0 else ""
     question = parts[1] if len(parts) > 1 else text
 
+    # Адаптивная задержка: короткий текст — 0.03 сек, длинный — 0.02 сек
+    if delay is None:
+        _delay = 0.02 if len(question) > 50 else 0.03
+    else:
+        _delay = delay
+
     displayed = header + "\n\n"
     for char in question:
         displayed += char
@@ -1000,7 +1006,7 @@ async def typewriter_send(bot, chat_id: int, text: str,
                 await msg.edit_text(displayed + "▌")
             except Exception:
                 break
-        await asyncio.sleep(delay)
+        await asyncio.sleep(_delay)
 
     # Шаг 3: финальный вариант — полный текст с разметкой и кнопками
     try:
@@ -1036,8 +1042,13 @@ async def animate_confetti(bot, chat_id: int) -> None:
     ]
     msg = None
     try:
-        # Слот-машина — визуальный «звук» праздника
-        await bot.send_dice(chat_id=chat_id, emoji="🎰")
+        # Дартс — символ точности и результата
+        dice_msg = await bot.send_dice(chat_id=chat_id, emoji="🎯")
+        await asyncio.sleep(1.5)
+        try:
+            await dice_msg.delete()
+        except Exception:
+            pass
 
         msg = await bot.send_message(chat_id=chat_id, text=frames[0])
         for frame in frames[1:]:
