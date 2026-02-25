@@ -555,6 +555,22 @@ async def choose_level(update, context, is_callback=False):
 async def chapter_1_menu(update: Update, context):
     query = update.callback_query
     await query.answer()
+
+    # Подсчёт уникальных вопросов для Случайного режима
+    _random_pool_keys = [
+        "easy", "easy_p1", "easy_p2",
+        "medium", "medium_p1", "medium_p2",
+        "hard", "hard_p1", "hard_p2",
+        "practical_ch1", "practical_p1", "practical_p2",
+        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "intro1", "intro2", "intro3",
+    ]
+    _seen = set()
+    for _k in _random_pool_keys:
+        for _q in get_pool_by_key(_k):
+            _seen.add(get_qid(_q))
+    _total_unique = len(_seen)
+
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🟢 Легкий — 1",   callback_data="level_easy_p1"),
@@ -583,10 +599,11 @@ async def chapter_1_menu(update: Update, context):
         [InlineKeyboardButton("⬅️ Назад",               callback_data="start_test")],
     ])
     await query.edit_message_text(
-        "📖 *1 ПЕТРА — ГЛАВА 1 (ст. 1–25)*\n\n"
+        "📖 *1 ПЕТРА — ГЛАВА 1*\n\n"
         "🟢 Легкий (1 балл) • 🟡 Средний (2 балла) • 🔴 Сложный (3 балла)\n"
         "🙏 Применение (2 балла) • 🔬 Лингвистика (3 балла)\n"
-        "🎲 Случайный — 10 вопросов из всех тем, без таймера (1 балл)",
+        f"🎲 Случайный — 10 из {_total_unique} вопросов · все темы · без таймера (1 балл)\n"
+        "💡 Тесты можно проходить несколько раз — каждый раз новый набор вопросов",
         reply_markup=keyboard, parse_mode="Markdown",
     )
 
@@ -872,6 +889,7 @@ async def random_all_start_handler(update: Update, context):
         "hard", "hard_p1", "hard_p2",
         "practical_ch1", "practical_p1", "practical_p2",
         "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "intro1", "intro2", "intro3",
     ]
     all_questions = []
     seen = set()
