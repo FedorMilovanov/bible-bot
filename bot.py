@@ -1,6 +1,6 @@
 """
 bot.py — Библейский тест-бот (1 Петра)
-Рефакторинг v2: MongoDB-битвы, GC, admin-панель, inline mode, картинка результатов.
+v4.0: финальное меню, объединённый выбор режима, мобильный прогресс-бар.
 """
 from keep_alive import keep_alive
 keep_alive()
@@ -711,6 +711,42 @@ async def random_fact_handler(update: Update, context):
 # ВЫБОР УРОВНЯ → СТАРТ СЕССИИ
 # ═══════════════════════════════════════════════
 
+async def _show_level_mode_selection(query, level_key: str):
+    """Показывает объединённый экран выбора режима для уровня (один шаг вместо двух)."""
+    cfg = LEVEL_CONFIG.get(level_key)
+    if not cfg:
+        return
+
+    pool_size = len(get_pool_by_key(cfg["pool_key"]))
+    num_q = min(cfg.get("num_questions", 10), pool_size)
+    ppq = cfg.get("points_per_q", 1)
+
+    text = (
+        f"📝 *{cfg['name']}*\n\n"
+        f"📋 Вопросов: {num_q}\n"
+        f"⭐ Баллов за ответ: {ppq}\n\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"*Выбери режим:*\n\n"
+        f"🧘 *Спокойный* — без ограничения времени\n"
+        f"   _Баллы: ×1.0_\n\n"
+        f"⏱ *На время* — {TIMED_MODE_TIMEOUT} сек на вопрос\n"
+        f"   _Баллы: ×1.5_\n\n"
+        f"⚡ *Скоростной* — {SPEED_MODE_TIMEOUT} сек на вопрос\n"
+        f"   _Баллы: ×2.0_"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🧘 Спокойный",                callback_data=f"relaxed_mode_{level_key}"),
+            InlineKeyboardButton(f"⏱ {TIMED_MODE_TIMEOUT} сек", callback_data=f"timed_mode_{level_key}"),
+            InlineKeyboardButton(f"⚡ {SPEED_MODE_TIMEOUT} сек", callback_data=f"speed_mode_{level_key}"),
+        ],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="start_test")],
+    ])
+
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
 async def level_selected(update: Update, context):
     query = update.callback_query
     await query.answer()
@@ -741,45 +777,18 @@ async def level_selected(update: Update, context):
         )
         return ConversationHandler.END
 
-    # Экран подтверждения перед стартом
-    pool_size = len(get_pool_by_key(cfg["pool_key"]))
-    num_q = min(cfg.get("num_questions", 10), pool_size)
-    await query.edit_message_text(
-        f"📝 *{cfg['name']}*\n\n"
-        f"• Вопросов: {num_q}\n"
-        f"• Баллов за ответ: {cfg['points_per_q']}\n"
-        f"• Таймер: {TIMED_MODE_TIMEOUT} сек\n\n"
-        f"Начинаем?",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ Начать", callback_data=f"confirm_level_{query.data}")],
-            [InlineKeyboardButton("⬅️ Назад",  callback_data="start_test")],
-        ]),
-    )
+    # Сразу показываем объединённый экран выбора режима
+    await _show_level_mode_selection(query, query.data)
     return ConversationHandler.END
 
 
 async def confirm_level_handler(update: Update, context):
-    """Показывает экран выбора режима перед стартом теста."""
+    """Обратная совместимость: confirm_level_ → экран выбора режима."""
     query = update.callback_query
     await query.answer()
-
     level_key = query.data.replace("confirm_level_", "")
-    cfg = LEVEL_CONFIG.get(level_key)
-    if not cfg:
-        return
+    await _show_level_mode_selection(query, level_key)
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧘 Без ограничения времени", callback_data=f"relaxed_mode_{level_key}")],
-        [InlineKeyboardButton(f"⏱ На время ({TIMED_MODE_TIMEOUT} сек)  ×1.5 баллов", callback_data=f"timed_mode_{level_key}")],
-        [InlineKeyboardButton(f"⚡ Скоростной ({SPEED_MODE_TIMEOUT} сек)  ×2 баллов", callback_data=f"speed_mode_{level_key}")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="start_test")],
-    ])
-    await query.edit_message_text(
-        f"📚 *{cfg['name']}*\n\nВыбери режим:",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
 
 
 async def _launch_level_test(query, update, level_key: str, quiz_mode: str,
@@ -905,7 +914,7 @@ async def send_question(bot, user_id, time_limit=None):
     # Используем time_limit из аргумента или из сохранённых данных сессии
     effective_limit = time_limit if time_limit is not None else data.get("quiz_time_limit")
     timer_str = f" • ⏱ {effective_limit} сек" if effective_limit else ""
-    text = f"*Вопрос {q_num + 1}/{total}*{timer_str} {progress}\n\n{q['question']}{options_text}"
+    text = f"*Вопрос {q_num + 1}/{total}*{timer_str}\n{progress}\n\n{q['question']}{options_text}"
 
     quiz_message_id = data.get("quiz_message_id")
     quiz_chat_id    = data.get("quiz_chat_id")
@@ -1351,22 +1360,23 @@ def _is_wrong(item: dict) -> bool:
 def _suggest_next_level(current_key: str) -> dict | None:
     """Возвращает следующий уровень сложности для текущего ключа, или None."""
     progression = {
-        "easy_p1":        {"name": "🟡 Средний (1–16)",         "callback": "confirm_level_level_medium_p1"},
-        "easy_p2":        {"name": "🟡 Средний (17–25)",        "callback": "confirm_level_level_medium_p2"},
-        "easy":           {"name": "🟡 Средний (1–25)",         "callback": "confirm_level_level_medium"},
-        "medium_p1":      {"name": "🔴 Сложный (1–16)",         "callback": "confirm_level_level_hard_p1"},
-        "medium_p2":      {"name": "🔴 Сложный (17–25)",        "callback": "confirm_level_level_hard_p2"},
-        "medium":         {"name": "🔴 Сложный (1–25)",         "callback": "confirm_level_level_hard"},
-        "hard_p1":        {"name": "🙏 Применение (1–16)",      "callback": "confirm_level_level_practical_p1"},
-        "hard_p2":        {"name": "🙏 Применение (17–25)",     "callback": "confirm_level_level_practical_p2"},
-        "hard":           {"name": "🙏 Применение (1–25)",      "callback": "confirm_level_level_practical_ch1"},
-        "practical_p1":   {"name": "🔬 Лингвистика ч.1",       "callback": "confirm_level_level_linguistics_ch1"},
-        "practical_p2":   {"name": "🔬 Лингвистика ч.2",       "callback": "confirm_level_level_linguistics_ch1_2"},
-        "practical_ch1":  {"name": "🔬 Лингвистика ч.1",       "callback": "confirm_level_level_linguistics_ch1"},
-        "linguistics_ch1":   {"name": "🔬 Лингвистика ч.2",    "callback": "confirm_level_level_linguistics_ch1_2"},
-        "linguistics_ch1_2": {"name": "🔬 Лингвистика ч.3",    "callback": "confirm_level_level_linguistics_ch1_3"},
+        "easy_p1":        {"name": "🟡 Средний (1–16)",         "callback": "level_medium_p1"},
+        "easy_p2":        {"name": "🟡 Средний (17–25)",        "callback": "level_medium_p2"},
+        "easy":           {"name": "🟡 Средний (1–25)",         "callback": "level_medium"},
+        "medium_p1":      {"name": "🔴 Сложный (1–16)",         "callback": "level_hard_p1"},
+        "medium_p2":      {"name": "🔴 Сложный (17–25)",        "callback": "level_hard_p2"},
+        "medium":         {"name": "🔴 Сложный (1–25)",         "callback": "level_hard"},
+        "hard_p1":        {"name": "🙏 Применение (1–16)",      "callback": "level_practical_p1"},
+        "hard_p2":        {"name": "🙏 Применение (17–25)",     "callback": "level_practical_p2"},
+        "hard":           {"name": "🙏 Применение (1–25)",      "callback": "level_practical_ch1"},
+        "practical_p1":   {"name": "🔬 Лингвистика ч.1",       "callback": "level_linguistics_ch1"},
+        "practical_p2":   {"name": "🔬 Лингвистика ч.2",       "callback": "level_linguistics_ch1_2"},
+        "practical_ch1":  {"name": "🔬 Лингвистика ч.1",       "callback": "level_linguistics_ch1"},
+        "linguistics_ch1":   {"name": "🔬 Лингвистика ч.2",    "callback": "level_linguistics_ch1_2"},
+        "linguistics_ch1_2": {"name": "🔬 Лингвистика ч.3",    "callback": "level_linguistics_ch1_3"},
     }
     return progression.get(current_key)
+
 
 
 async def send_final_results_menu(bot, chat_id: int, data: dict):
@@ -1374,9 +1384,16 @@ async def send_final_results_menu(bot, chat_id: int, data: dict):
     Отправляет финальное меню после результатов и достижений.
     Всегда внизу чата — легко найти.
     """
-    answered = data.get("answered_questions", [])
-    correct_count = sum(1 for a in answered if a.get("is_correct", False))
+    # Берём уже подсчитанный результат из data (он записывается в show_results / show_challenge_results)
+    # Fallback: считаем вручную через сравнение user_answer с правильным вариантом
     total = len(data.get("questions", []))
+    correct_count = data.get("correct_answers", None)
+    if correct_count is None:
+        answered = data.get("answered_questions", [])
+        correct_count = sum(
+            1 for a in answered
+            if isinstance(a, dict) and not _is_wrong(a)
+        )
     wrong_count = total - correct_count
     level_key = data.get("level_key", "")
     level_name = data.get("level_name", "Тест")
@@ -2675,10 +2692,16 @@ async def help_command(update: Update, context):
         "/cancel — отменить действие\n"
         "/help — эта справка\n\n"
         "*Как играть:*\n"
-        "1. Выбери категорию и уровень\n"
-        "2. Отвечай на вопросы, нажимая кнопки\n"
-        "3. Набирай баллы и поднимайся в рейтинге!\n\n"
-        "По вопросам → кнопка «✉️ Обратная связь»"
+        "1. Выбери категорию и уровень сложности\n"
+        "2. Выбери режим: 🧘 Спокойный / ⏱ На время / ⚡ Скоростной\n"
+        "3. Отвечай на вопросы, нажимая кнопки с цифрами\n"
+        "4. После теста — просмотри разбор ошибок и пересдай!\n\n"
+        "*Режимы:*\n"
+        "🧘 Спокойный — без таймера, ×1.0 баллов\n"
+        "⏱ На время — 30 сек/вопрос, ×1.5 баллов\n"
+        "⚡ Скоростной — 15 сек/вопрос, ×2.0 баллов\n\n"
+        "Нашёл ошибку в вопросе? Нажми «⚠️ Неточность» во время теста.\n\n"
+        "_v4.0 • Soli Deo Gloria_"
     )
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=_main_keyboard())
 
@@ -3028,24 +3051,34 @@ def pick_challenge_questions(mode):
                  get_pool_by_key("linguistics_ch1_3"))
 
     def safe_sample(pool, n):
+        """Безопасная выборка — не падает на пустом или коротком пуле."""
         pool = list(pool)
-        return random.sample(pool, n) if len(pool) >= n else random.choices(pool, k=n)
+        if not pool or n <= 0:
+            return []
+        return random.sample(pool, min(n, len(pool)))
 
     if mode == "random20":
-        # 6+5+6+1+1+1 = 20: добавляем 1 вопрос из Введения (−1 из medium)
-        questions = (safe_sample(get_pool_by_key("easy"),          6) +
-                     safe_sample(get_pool_by_key("medium"),         5) +
-                     safe_sample(get_pool_by_key("hard"),           6) +
-                     safe_sample(get_pool_by_key("practical_ch1"),  1) +
-                     safe_sample(pool_ling,                         1) +
-                     safe_sample(INTRO_POOL,                        1))
+        # Целевое: 6+5+6+1+1+1 = 20
+        # Если INTRO_POOL пустой — компенсируем +1 из medium
+        intro = safe_sample(INTRO_POOL, 1)
+        medium_n = 5 if intro else 6
+        questions = (safe_sample(get_pool_by_key("easy"),         6) +
+                     safe_sample(get_pool_by_key("medium"),        medium_n) +
+                     safe_sample(get_pool_by_key("hard"),          6) +
+                     safe_sample(get_pool_by_key("practical_ch1"), 1) +
+                     safe_sample(pool_ling,                        1) +
+                     intro)
     else:
-        # 4+4+7+4+1 = 20: добавляем 1 вопрос из Введения (−1 из medium)
-        questions = (safe_sample(get_pool_by_key("easy"),          4) +
-                     safe_sample(get_pool_by_key("medium"),         4) +
-                     safe_sample(get_pool_by_key("hard"),           7) +
-                     safe_sample(pool_ling,                         4) +
-                     safe_sample(INTRO_POOL,                        1))
+        # Целевое: 4+4+7+4+1 = 20
+        # Если INTRO_POOL пустой — компенсируем +1 из hard
+        intro = safe_sample(INTRO_POOL, 1)
+        hard_n = 7 if intro else 8
+        questions = (safe_sample(get_pool_by_key("easy"),   4) +
+                     safe_sample(get_pool_by_key("medium"),  4) +
+                     safe_sample(get_pool_by_key("hard"),    hard_n) +
+                     safe_sample(pool_ling,                  4) +
+                     intro)
+
     random.shuffle(questions)
     return questions
 
@@ -3199,8 +3232,7 @@ async def send_challenge_question(bot, user_id):
     ])
     keyboard = InlineKeyboardMarkup(buttons)
     text = (
-        f"{data['level_name']}\n"
-        f"Вопрос *{q_num + 1}/{total}*{timer_str}\n{progress}\n\n"
+        f"*Вопрос {q_num + 1}/{total}*{timer_str}\n{progress}\n\n"
         f"{q['question']}{options_text}"
     )
 
@@ -3731,18 +3763,18 @@ async def button_handler(update: Update, context):
     dispatch = {
         "about":         lambda: query.edit_message_text(
             "📚 *БИБЛЕЙСКИЙ ТЕСТ-БОТ: 1 ПЕТРА*\n"
-            "_Интерактивный инструмент для глубокого изучения Писания._\n\n"
+            "Интерактивный инструмент для глубокого изучения Писания.\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "🎯 *ЦЕЛЬ ПРОЕКТА*\n"
-            "Бот создан для погружения в контекст, язык и богословие Первого послания Петра — "
+            "Погружение в контекст, язык и богословие Первого послания Петра — "
             "не просто проверка памяти, а осмысленное изучение текста.\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "🧩 *СТРУКТУРА ТЕСТОВ*\n\n"
-            "📖 *Глава 1 — по частям (ст. 1–16 и ст. 17–25)*\n"
-            "• 🟢 *Лёгкий* (1 балл) — факты, имена, даты\n"
-            "• 🟡 *Средний* (2 балла) — контекст и связи\n"
-            "• 🔴 *Сложный* (3 балла) — богословие и толкование\n"
-            "• 🙏 *Применение* (2 балла) — практика и жизнь\n\n"
+            "📖 *Глава 1* — по частям (ст. 1–16 и ст. 17–25)\n"
+            "• 🟢 Лёгкий (1 балл) — факты, имена, даты\n"
+            "• 🟡 Средний (2 балла) — контекст и связи\n"
+            "• 🔴 Сложный (3 балла) — богословие и толкование\n"
+            "• 🙏 Применение (2 балла) — практика и жизнь\n\n"
             "🔬 *Лингвистика* (3 балла за вопрос)\n"
             "• Ч.1 — Избранные и странники\n"
             "• Ч.2 — Живая надежда\n"
@@ -3753,15 +3785,39 @@ async def button_handler(update: Update, context):
             "• 👑 Правление Нерона\n"
             "• 🌍 География провинций\n\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "⚡ *ДОПОЛНИТЕЛЬНЫЕ РЕЖИМЫ*\n"
-            "• 🎲 *Челлендж (20)* — случайные вопросы всех уровней, бонус раз в день\n"
-            "• ⚔️ *PvP Битва* — соревнование с другим игроком в реальном времени\n\n"
-            "📊 *СИСТЕМА БАЛЛОВ*\n"
-            "• 💎 Баллы зависят от сложности уровня\n"
-            "• 🏆 Таблица лидеров — общая и по категориям\n"
-            "• 🔍 Разбор ошибок — листай и изучай каждую ошибку\n"
-            "• 🔁 Повторение ошибок — перепройди только то, что не знал\n\n"
-            "_v3.0 • Soli Deo Gloria_",
+            "⚡️ *РЕЖИМЫ ПРОХОЖДЕНИЯ*\n\n"
+            "🧘 *Спокойный* — без таймера, баллы ×1.0\n"
+            "⏱ *На время* — 30 сек, баллы ×1.5\n"
+            "⚡ *Скоростной* — 15 сек, баллы ×2.0\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "🎮 *ДОПОЛНИТЕЛЬНЫЕ РЕЖИМЫ*\n\n"
+            "🎲 *Random Challenge (20)* — случайные вопросы из всех категорий, бонус раз в день\n"
+            "💀 *Hardcore Challenge (20)* — 10 сек на вопрос, повышенная сложность\n"
+            "⚔️ *PvP Битва* — соревнование с другим игроком в реальном времени\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📊 *СИСТЕМА ПРОГРЕССА*\n\n"
+            "💎 *Баллы* — зависят от сложности и режима\n"
+            "🏆 *Достижения* — разблокируй награды за успехи\n"
+            "🔥 *Серии* — бонусы за правильные ответы подряд\n"
+            "📅 *Ежедневный бонус* — награда за первый тест дня\n"
+            "🏅 *Лидерборд* — общий и по категориям\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📖 *ПОСЛЕ ТЕСТА*\n\n"
+            "✅ Просмотр всех ответов с разбором\n"
+            "🔄 Пересдача только ошибок\n"
+            "📤 Поделиться результатом с друзьями\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "🏆 *ДОСТИЖЕНИЯ*\n\n"
+            "⭐ Первые шаги — пройди первый тест\n"
+            "💎 Перфекционист I/II/III — 100% в тестах\n"
+            "🔥 Огненная серия — 5/10/20 правильных подряд\n"
+            "🏃 Марафонец — пройди 10/50/100 тестов\n"
+            "⚡ Молния — ответь за 3 сек\n"
+            "📅 Неделя знаний — 7 дней подряд\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📬 *ОБРАТНАЯ СВЯЗЬ*\n\n"
+            "Нашёл ошибку в вопросе? Нажми \"⚠️ Неточность\" прямо во время теста.\n\n"
+            "_v4.0 • Soli Deo Gloria_",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]),
             parse_mode="Markdown",
         ),
@@ -4306,7 +4362,7 @@ def main():
 
     app.add_error_handler(on_error)
 
-    logger.info("🤖 Бот запущен! (Рефакторинг v2)")
+    logger.info("🤖 Бот запущен! (v4.0)")
     logger.info("🛡 Admin ID: %s", ADMIN_USER_ID)
     app.run_polling()
 
