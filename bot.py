@@ -68,7 +68,7 @@ from database import (
     # History
     get_user_history,
 )
-from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name
+from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
 
 # ── Вопросы Введения (для Random20, Hardcore20, Битв) ────────────────────────
@@ -1337,34 +1337,60 @@ async def show_results(bot, user_id):
         except Exception:
             quiz_mid = None  # редактирование не удалось — забудем об этом пузыре
 
-    # Шаг 2: пробуем генерировать картинку и отправить её с кнопками
+    # Шаг 2: пробуем генерировать GIF (анимированный), fallback → PNG → текст
     photo_sent = False
     try:
         rank_name = get_rank_name(percentage)
-        img_bytes = await generate_result_image(
-            bot=bot,
-            user_id=user_id,
-            first_name=first_name,
+
+        # Попытка 1: анимированный GIF
+        gif_buf = await create_result_gif(
             score=score,
             total=total,
             rank_name=rank_name,
+            time_seconds=time_taken,
+            first_name=first_name,
         )
-        if img_bytes:
-            bio = io.BytesIO(img_bytes)
-            bio.name = "result.png"
-            bio.seek(0)
+        if gif_buf:
             caption = (
                 f"🏆 *{score}/{total}* ({percentage:.0f}%) • {rank_name}\n"
                 f"⏱ {format_time(time_taken)} • 💎 +{earned_points} • #{position}"
             )
-            await bot.send_photo(
+            await bot.send_animation(
                 chat_id=chat_id,
-                photo=InputFile(bio, filename="result.png"),
+                animation=InputFile(gif_buf, filename="result.gif"),
                 caption=caption,
                 reply_markup=InlineKeyboardMarkup(keyboard_rows),
                 parse_mode="Markdown",
             )
             photo_sent = True
+
+        # Fallback: PNG если GIF не вышел
+        if not photo_sent:
+            img_bytes = await generate_result_image(
+                bot=bot,
+                user_id=user_id,
+                first_name=first_name,
+                score=score,
+                total=total,
+                rank_name=rank_name,
+            )
+            if img_bytes:
+                bio = io.BytesIO(img_bytes)
+                bio.name = "result.png"
+                bio.seek(0)
+                caption = (
+                    f"🏆 *{score}/{total}* ({percentage:.0f}%) • {rank_name}\n"
+                    f"⏱ {format_time(time_taken)} • 💎 +{earned_points} • #{position}"
+                )
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=InputFile(bio, filename="result.png"),
+                    caption=caption,
+                    reply_markup=InlineKeyboardMarkup(keyboard_rows),
+                    parse_mode="Markdown",
+                )
+                photo_sent = True
+
     except Exception as e:
         logger.error("Result image error", exc_info=True)
 
@@ -3060,24 +3086,41 @@ async def show_challenge_results(bot, user_id):
         reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="Markdown",
     )
 
-    # Картинка результатов
+    # Картинка результатов: GIF → PNG → тихий fallback
     try:
         rank_name = get_rank_name(pct)
-        img_bytes = await generate_result_image(
-            bot=bot,
-            user_id=user_id,
+        time_taken_ch = time.time() - data.get("start_time", time.time())
+
+        gif_buf = await create_result_gif(
+            score=score,
+            total=total,
+            rank_name=rank_name,
+            time_seconds=time_taken_ch,
             first_name=first_name,
-            score=score, total=total, rank_name=rank_name,
         )
-        if img_bytes:
-            bio = io.BytesIO(img_bytes)
-            bio.name = "result.png"
-            bio.seek(0)
-            await bot.send_photo(
+        if gif_buf:
+            await bot.send_animation(
                 chat_id=chat_id,
-                photo=InputFile(bio, filename="result.png"),
+                animation=InputFile(gif_buf, filename="result.gif"),
                 caption=f"🏆 {score}/{total} • {rank_name}",
             )
+        else:
+            # Fallback: статичный PNG
+            img_bytes = await generate_result_image(
+                bot=bot,
+                user_id=user_id,
+                first_name=first_name,
+                score=score, total=total, rank_name=rank_name,
+            )
+            if img_bytes:
+                bio = io.BytesIO(img_bytes)
+                bio.name = "result.png"
+                bio.seek(0)
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=InputFile(bio, filename="result.png"),
+                    caption=f"🏆 {score}/{total} • {rank_name}",
+                )
     except Exception as e:
         logger.error("Challenge result image error", exc_info=True)
 
