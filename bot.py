@@ -160,6 +160,8 @@ def _create_session_data(
         "timer_task": None,
         "countdown_task": None,   # живой визуальный таймер (отдельная задача)
         "question_sent_at": None,
+        "current_streak": 0,   # Текущая серия правильных ответов подряд
+        "max_streak": 0,       # Максимальная серия за тест
     }
     base_data.update(extra_fields)
     return base_data
@@ -212,21 +214,21 @@ _STUCK_KB = InlineKeyboardMarkup([
 # ─────────────────────────────────────────────
 LEVEL_CONFIG = {
     # ── Легкий ──────────────────────────────────────────────────────────────
-    "level_easy":              {"pool_key": "easy",             "name": "🟢 Легкий уровень (ст. 1–25)",                      "points_per_q": 1, "num_questions": 15},
-    "level_easy_p1":           {"pool_key": "easy_p1",          "name": "🟢 Легкий (ст. 1–16)",                              "points_per_q": 1, "num_questions": 15},
-    "level_easy_p2":           {"pool_key": "easy_p2",          "name": "🟢 Легкий (ст. 17–25)",                             "points_per_q": 1, "num_questions": 15},
+    "level_easy":              {"pool_key": "easy",             "name": "🟢 Легкий уровень (ст. 1–25)",                      "points_per_q": 1, "num_questions": 10},
+    "level_easy_p1":           {"pool_key": "easy_p1",          "name": "🟢 Легкий (ст. 1–16)",                              "points_per_q": 1, "num_questions": 10},
+    "level_easy_p2":           {"pool_key": "easy_p2",          "name": "🟢 Легкий (ст. 17–25)",                             "points_per_q": 1, "num_questions": 10},
     # ── Средний ─────────────────────────────────────────────────────────────
-    "level_medium":            {"pool_key": "medium",           "name": "🟡 Средний (ст. 1–25)",                             "points_per_q": 2, "num_questions": 15},
-    "level_medium_p1":         {"pool_key": "medium_p1",        "name": "🟡 Средний (ст. 1–16)",                             "points_per_q": 2, "num_questions": 15},
-    "level_medium_p2":         {"pool_key": "medium_p2",        "name": "🟡 Средний (ст. 17–25)",                            "points_per_q": 2, "num_questions": 15},
+    "level_medium":            {"pool_key": "medium",           "name": "🟡 Средний (ст. 1–25)",                             "points_per_q": 2, "num_questions": 10},
+    "level_medium_p1":         {"pool_key": "medium_p1",        "name": "🟡 Средний (ст. 1–16)",                             "points_per_q": 2, "num_questions": 10},
+    "level_medium_p2":         {"pool_key": "medium_p2",        "name": "🟡 Средний (ст. 17–25)",                            "points_per_q": 2, "num_questions": 10},
     # ── Сложный ─────────────────────────────────────────────────────────────
-    "level_hard":              {"pool_key": "hard",             "name": "🔴 Сложный (ст. 1–25)",                             "points_per_q": 3, "num_questions": 15},
-    "level_hard_p1":           {"pool_key": "hard_p1",          "name": "🔴 Сложный (ст. 1–16)",                             "points_per_q": 3, "num_questions": 15},
-    "level_hard_p2":           {"pool_key": "hard_p2",          "name": "🔴 Сложный (ст. 17–25)",                            "points_per_q": 3, "num_questions": 15},
+    "level_hard":              {"pool_key": "hard",             "name": "🔴 Сложный (ст. 1–25)",                             "points_per_q": 3, "num_questions": 10},
+    "level_hard_p1":           {"pool_key": "hard_p1",          "name": "🔴 Сложный (ст. 1–16)",                             "points_per_q": 3, "num_questions": 10},
+    "level_hard_p2":           {"pool_key": "hard_p2",          "name": "🔴 Сложный (ст. 17–25)",                            "points_per_q": 3, "num_questions": 10},
     # ── Применение ──────────────────────────────────────────────────────────
-    "level_practical_ch1":     {"pool_key": "practical_ch1",    "name": "🙏 Применение (ст. 1–25)",                          "points_per_q": 2, "num_questions": 15},
-    "level_practical_p1":      {"pool_key": "practical_p1",     "name": "🙏 Применение (ст. 1–16)",                          "points_per_q": 2, "num_questions": 15},
-    "level_practical_p2":      {"pool_key": "practical_p2",     "name": "🙏 Применение (ст. 17–25)",                         "points_per_q": 2, "num_questions": 15},
+    "level_practical_ch1":     {"pool_key": "practical_ch1",    "name": "🙏 Применение (ст. 1–25)",                          "points_per_q": 2, "num_questions": 10},
+    "level_practical_p1":      {"pool_key": "practical_p1",     "name": "🙏 Применение (ст. 1–16)",                          "points_per_q": 2, "num_questions": 10},
+    "level_practical_p2":      {"pool_key": "practical_p2",     "name": "🙏 Применение (ст. 17–25)",                         "points_per_q": 2, "num_questions": 10},
     # ── Лингвистика ─────────────────────────────────────────────────────────
     "level_linguistics_ch1":   {"pool_key": "linguistics_ch1",  "name": "🔬 Лингвистика: Избранные и странники (ч.1)",       "points_per_q": 3, "num_questions": 10},
     "level_linguistics_ch1_2": {"pool_key": "linguistics_ch1_2","name": "🔬 Лингвистика: Живая надежда (ч.2)",               "points_per_q": 3, "num_questions": 10},
@@ -239,6 +241,60 @@ LEVEL_CONFIG = {
     "level_intro3":            {"pool_key": "intro3",           "name": "📜 Введение: Структура и цель",                     "points_per_q": 2, "num_questions": 10},
 }
 
+# ═══════════════════════════════════════════════
+# ДОСТИЖЕНИЯ
+# ═══════════════════════════════════════════════
+
+ACHIEVEMENTS = {
+    "first_steps": {
+        "name": "Первые шаги",
+        "icon": "⭐",
+        "description": "Пройди свой первый тест",
+        "reward": 10,
+    },
+    "fire_streak_5": {
+        "name": "Огненная серия",
+        "icon": "🔥",
+        "description": "5 правильных подряд",
+        "reward": 15,
+    },
+    "fire_streak_10": {
+        "name": "Снайпер",
+        "icon": "🎯",
+        "description": "10 правильных подряд",
+        "reward": 30,
+    },
+    "perfectionist": {
+        "name": "Перфекционист",
+        "icon": "💎",
+        "description": "100% в любом тесте",
+        "reward": 25,
+    },
+    "marathoner_10": {
+        "name": "Бегун",
+        "icon": "🏃",
+        "description": "Пройди 10 тестов",
+        "reward": 20,
+    },
+    "marathoner_50": {
+        "name": "Марафонец",
+        "icon": "🏅",
+        "description": "Пройди 50 тестов",
+        "reward": 50,
+    },
+    "lightning": {
+        "name": "Молния",
+        "icon": "⚡",
+        "description": "Ответь за 3 сек в скоростном режиме",
+        "reward": 20,
+    },
+    "master": {
+        "name": "Мастер",
+        "icon": "👑",
+        "description": "100% во всех категориях",
+        "reward": 100,
+    },
+}
 
 # ─────────────────────────────────────────────
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -788,21 +844,16 @@ async def send_question(bot, user_id, time_limit=None):
     if session_id:
         set_question_sent_at(session_id, sent_at)
 
-    # Inline-кнопки: если вариант слишком длинный — номера в тексте, цифры-кнопки
-    max_btn_len = MAX_BTN_LEN
-    options_text = ""
-    if any(len(opt) > max_btn_len for opt in shuffled):
-        options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
-        buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"qa_{i}") for i in range(len(shuffled))]]
-    else:
-        buttons = [[InlineKeyboardButton(opt, callback_data=f"qa_{i}")] for i, opt in enumerate(shuffled)]
+    # Всегда: варианты текстом, кнопки с цифрами
+    options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
+    buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"qa_{i}") for i in range(len(shuffled))]]
 
     buttons.append([
         InlineKeyboardButton("⚠️ Неточность?", callback_data=f"report_inaccuracy_{q_num}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
     keyboard = InlineKeyboardMarkup(buttons)
-    progress = build_progress_bar(q_num, total)
+    progress = build_progress_bar(q_num + 1, total, data.get("answered_questions", []))
     # Используем time_limit из аргумента или из сохранённых данных сессии
     effective_limit = time_limit if time_limit is not None else data.get("quiz_time_limit")
     timer_str = f" • ⏱ {effective_limit} сек" if effective_limit else ""
@@ -836,17 +887,13 @@ async def send_question(bot, user_id, time_limit=None):
                     logger.error("send_question: fallback send_message failed for user %s: %s", user_id, e2)
                     return
     else:
-        # Первый вопрос — typing-пауза + typewriter (если включены)
+        # Первый вопрос — отправляем сразу без анимации
         try:
             await _typing_pause(bot, quiz_chat_id, has_timer=bool(effective_limit))
 
-            use_typewriter = get_pref(user_id, "typewriter", default=True)
-            if use_typewriter:
-                msg = await typewriter_send(bot, quiz_chat_id, text, reply_markup=keyboard)
-            else:
-                msg = await bot.send_message(
-                    chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-                )
+            msg = await bot.send_message(
+                chat_id=quiz_chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
             data["quiz_message_id"] = msg.message_id
             data["quiz_chat_id"]    = msg.chat.id
         except Exception as e:
@@ -1305,6 +1352,8 @@ async def show_results(bot, user_id):
     elif percentage >= 50: grade = "Удовлетворительно 📖"
     else:                  grade = "Нужно повторить 📚"
 
+    max_streak = data.get("max_streak", 0)
+    streak_line = f"\n🔥 *Лучшая серия:* {max_streak} подряд!" if max_streak >= 3 else ""
     result_text = (
         f"🏆 *РЕЗУЛЬТАТЫ*\n\n"
         f"*Категория:* {data['level_name']}\n"
@@ -1312,7 +1361,7 @@ async def show_results(bot, user_id):
         f"*Баллы:* +{earned_points} 💎{multiplier_label}\n"
         f"*Время:* {format_time(time_taken)}\n"
         f"*Позиция:* #{position}\n"
-        f"*Оценка:* {grade}\n"
+        f"*Оценка:* {grade}{streak_line}\n"
     )
 
     answered = data.get("answered_questions", [])
@@ -1470,6 +1519,9 @@ async def show_results(bot, user_id):
                 )
             except Exception:
                 logger.error("show_results: не удалось отправить результаты (no quiz_mid)", exc_info=True)
+
+    # Проверяем и выдаём достижения после показа результатов
+    await check_and_award_achievements(bot, user_id, data)
 
     # (идеальный результат отмечается конфетти выше, до карточки)
 
@@ -1640,11 +1692,24 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
 
         if is_correct:
             data["correct_answers"] += 1
-            feedback = f"✅ *Верно!*\n\n_{correct_text}_"
+            data["current_streak"] = data.get("current_streak", 0) + 1
+            streak = data["current_streak"]
+            if data["current_streak"] > data.get("max_streak", 0):
+                data["max_streak"] = data["current_streak"]
+            if streak >= 10:   streak_text = f"🔥×{streak} НЕВЕРОЯТНО!"
+            elif streak >= 5:  streak_text = f"🔥×{streak} ГОРЯЧО!"
+            elif streak >= 2:  streak_text = f"🔥×{streak}"
+            else:              streak_text = ""
+            streak_suffix = f" {streak_text}" if streak_text else ""
+            feedback = f"✅ *Верно!*{streak_suffix}\n\n_{correct_text}_"
         else:
+            data["current_streak"] = 0
             feedback = f"❌ *Неверно*\n\n✅ Правильно: *{correct_text}*"
 
         elapsed = time.time() - data.get("question_sent_at", time.time())
+        # Отслеживаем самый быстрый ответ (для достижения "Молния")
+        if elapsed < data.get("fastest_answer", 9999):
+            data["fastest_answer"] = elapsed
         q_id    = get_qid(q)
         record_question_stat(q_id, data["level_key"], is_correct, elapsed)
 
@@ -2175,7 +2240,7 @@ async def send_battle_question(bot, chat_id: int, user_id: int):
     data["current_correct_text"] = correct_text
     data["question_sent_at"]     = time.time()
 
-    progress = build_progress_bar(q_num, len(data["questions"]))
+    progress = build_progress_bar(q_num + 1, len(data["questions"]))
     options_text = ""
     if any(len(opt) > MAX_BTN_LEN for opt in shuffled):
         options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
@@ -2759,9 +2824,23 @@ async def category_leaderboard_handler(update: Update, context):
 # RANDOM CHALLENGE
 # ═══════════════════════════════════════════════
 
-def build_progress_bar(current, total=20, length=10):
-    filled = round(current / total * length)
-    return "▰" * filled + "▱" * (length - filled)
+def build_progress_bar(current: int, total: int, answered_questions: list = None) -> str:
+    """
+    Цветной прогресс-бар:
+    🟩 = правильный ответ  🟥 = неправильный  🟨 = текущий вопрос  ⬜ = не отвечал
+    """
+    bar = ""
+    for i in range(total):
+        if answered_questions and i < len(answered_questions):
+            item = answered_questions[i]
+            user_ans = item.get("user_answer", "")
+            correct = _correct_text(item["question_obj"])
+            bar += "🟩" if user_ans == correct else "🟥"
+        elif i == current - 1:
+            bar += "🟨"
+        else:
+            bar += "⬜"
+    return bar
 
 
 def pick_challenge_questions(mode):
@@ -2927,17 +3006,13 @@ async def send_challenge_question(bot, user_id):
     if session_id:
         set_question_sent_at(session_id, sent_at)
 
-    progress = build_progress_bar(q_num, total)
+    progress = build_progress_bar(q_num + 1, total, data.get("answered_questions", []))
     time_limit = data.get("challenge_time_limit")
     timer_str  = f" • ⏱ {time_limit} сек" if time_limit else ""
 
-    max_btn_len = MAX_BTN_LEN
-    options_text = ""
-    if any(len(opt) > max_btn_len for opt in shuffled):
-        options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
-        buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"cha_{i}") for i in range(len(shuffled))]]
-    else:
-        buttons = [[InlineKeyboardButton(opt, callback_data=f"cha_{i}")] for i, opt in enumerate(shuffled)]
+    # Всегда: варианты текстом, кнопки с цифрами
+    options_text = "\n\n" + "\n".join(f"*{i+1}.* {opt}" for i, opt in enumerate(shuffled))
+    buttons = [[InlineKeyboardButton(str(i + 1), callback_data=f"cha_{i}") for i in range(len(shuffled))]]
 
     buttons.append([
         InlineKeyboardButton("⚠️ Неточность?", callback_data=f"report_inaccuracy_{q_num}"),
@@ -2973,17 +3048,13 @@ async def send_challenge_question(bot, user_id):
                     logger.error("send_challenge_question: fallback send_message failed for user %s: %s", user_id, e2)
                     return
     else:
-        # Первый вопрос challenge — typing-пауза + typewriter (если включены)
+        # Первый вопрос challenge — отправляем сразу без анимации
         try:
             await _typing_pause(bot, chat_id, has_timer=bool(time_limit))
 
-            use_typewriter = get_pref(user_id, "typewriter", default=True)
-            if use_typewriter:
-                msg = await typewriter_send(bot, chat_id, text, reply_markup=keyboard)
-            else:
-                msg = await bot.send_message(
-                    chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
-                )
+            msg = await bot.send_message(
+                chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="Markdown",
+            )
             data["quiz_message_id"] = msg.message_id
             data["quiz_chat_id"]    = msg.chat.id
         except Exception as e:
@@ -3176,24 +3247,103 @@ async def show_challenge_results(bot, user_id):
 # ДОСТИЖЕНИЯ И ЕЖЕНЕДЕЛЬНЫЙ ЛИДЕРБОРД
 # ═══════════════════════════════════════════════
 
+
+async def check_and_award_achievements(bot, user_id: int, data: dict) -> list:
+    """
+    Проверяет условия достижений и выдаёт награды.
+    Возвращает список ключей новых достижений.
+    """
+    chat_id = data.get("quiz_chat_id")
+    if not chat_id:
+        return []
+
+    # Читаем уже полученные достижения из MongoDB
+    user_doc = collection.find_one({"user_id": user_id}) or {}
+    user_achievements = user_doc.get("achievements", {})
+    new_achievements = []
+
+    answered   = data.get("answered_questions", [])
+    questions  = data.get("questions", [])
+    total      = len(questions)
+    score      = sum(1 for item in answered if item.get("user_answer") == _correct_text(item["question_obj"]))
+    total_tests = user_doc.get("total_tests", 0)
+
+    # ── Первые шаги ──
+    if "first_steps" not in user_achievements and total_tests >= 1:
+        new_achievements.append("first_steps")
+
+    # ── Огненная серия (5 подряд) ──
+    if "fire_streak_5" not in user_achievements and data.get("max_streak", 0) >= 5:
+        new_achievements.append("fire_streak_5")
+
+    # ── Снайпер (10 подряд) ──
+    if "fire_streak_10" not in user_achievements and data.get("max_streak", 0) >= 10:
+        new_achievements.append("fire_streak_10")
+
+    # ── Перфекционист (100%) ──
+    if "perfectionist" not in user_achievements and total > 0 and score == total:
+        new_achievements.append("perfectionist")
+
+    # ── Бегун (10 тестов) ──
+    if "marathoner_10" not in user_achievements and total_tests >= 10:
+        new_achievements.append("marathoner_10")
+
+    # ── Марафонец (50 тестов) ──
+    if "marathoner_50" not in user_achievements and total_tests >= 50:
+        new_achievements.append("marathoner_50")
+
+    # ── Молния (ответ за 3 сек в скоростном режиме) ──
+    if "lightning" not in user_achievements:
+        if data.get("fastest_answer", 9999) <= 3 and data.get("quiz_mode") == "speed":
+            new_achievements.append("lightning")
+
+    if not new_achievements:
+        return []
+
+    # Сохраняем и уведомляем
+    now_str = datetime.now().strftime("%d.%m.%Y")
+    ach_update = {f"achievements.{k}": now_str for k in new_achievements}
+    total_reward = sum(ACHIEVEMENTS[k]["reward"] for k in new_achievements)
+    collection.update_one(
+        {"user_id": user_id},
+        {"$set": ach_update, "$inc": {"points": total_reward}},
+        upsert=True,
+    )
+
+    for ach_key in new_achievements:
+        ach = ACHIEVEMENTS[ach_key]
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"🏆 *ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!*\n\n"
+                    f"{ach['icon']} *{ach['name']}*\n"
+                    f"_{ach['description']}_\n\n"
+                    f"🎁 Награда: *+{ach['reward']} баллов*"
+                ),
+                parse_mode="Markdown",
+            )
+            await asyncio.sleep(1.5)
+        except Exception as e:
+            logger.warning("check_and_award_achievements: send failed: %s", e)
+
+    return new_achievements
+
+
 async def show_achievements(update: Update, context):
     query   = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     achievements, streak_count, streak_last = get_user_achievements(user_id)
 
-    def ach_status(key, name, desc):
+    text = "🏅 *МОИ ДОСТИЖЕНИЯ*\n━━━━━━━━━━━━━━━━\n\n"
+    for key, ach in ACHIEVEMENTS.items():
         if key in achievements:
-            return f"✅ *{name}*\n   _{desc}_\n   📅 {achievements[key]}\n"
-        return f"🔒 *{name}*\n   _{desc}_\n"
+            text += f"✅ {ach['icon']} *{ach['name']}*\n   _{ach['description']}_\n   📅 {achievements[key]}\n\n"
+        else:
+            text += f"🔒 {ach['icon']} *{ach['name']}*\n   _{ach['description']}_\n\n"
 
-    text = (
-        "🏅 *МОИ ДОСТИЖЕНИЯ*\n━━━━━━━━━━━━━━━━\n\n"
-        + ach_status("perfect_20",  "Perfect 20",        "Ответить на все 20 вопросов правильно")
-        + "\n"
-        + ach_status("streak_3",    "Серия 18+ (3 дня)", "3 дня подряд набирать 18+ в Random Challenge")
-        + f"\n━━━━━━━━━━━━━━━━\n🔥 *Текущая серия:* {streak_count} дн."
-    )
+    text += f"━━━━━━━━━━━━━━━━\n🔥 *Текущая серия:* {streak_count} дн."
     if streak_last:
         text += f"\n📅 Последний раз: {streak_last}"
 
