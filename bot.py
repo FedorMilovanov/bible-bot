@@ -62,6 +62,7 @@ from database import (
     delete_battle, cleanup_stale_battles as db_cleanup_stale_battles,
     # Admin
     get_admin_stats, get_all_user_ids, get_hardest_questions, get_user_stats,
+    update_achievement_stats, check_daily_bonus,
     # Reports
     can_submit_report, seconds_until_next_report, insert_report, mark_report_delivered,
     touch_user_activity,
@@ -246,53 +247,100 @@ LEVEL_CONFIG = {
 # ═══════════════════════════════════════════════
 
 ACHIEVEMENTS = {
+    # ═══ Первые шаги ═══
     "first_steps": {
         "name": "Первые шаги",
         "icon": "⭐",
         "description": "Пройди свой первый тест",
         "reward": 10,
     },
-    "fire_streak_5": {
+    # ═══ Перфекционист (уровни) ═══
+    "perfectionist_1": {
+        "name": "Перфекционист I",
+        "icon": "💎",
+        "description": "100% в любом тесте",
+        "reward": 25,
+        "requirement": {"perfect_count": 1},
+    },
+    "perfectionist_2": {
+        "name": "Перфекционист II",
+        "icon": "💎💎",
+        "description": "100% в 5 тестах",
+        "reward": 50,
+        "requirement": {"perfect_count": 5},
+    },
+    "perfectionist_3": {
+        "name": "Перфекционист III",
+        "icon": "💎💎💎",
+        "description": "100% в 15 тестах",
+        "reward": 100,
+        "requirement": {"perfect_count": 15},
+    },
+    # ═══ Огненная серия (уровни) ═══
+    "streak_5": {
         "name": "Огненная серия",
         "icon": "🔥",
         "description": "5 правильных подряд",
         "reward": 15,
+        "requirement": {"max_streak": 5},
     },
-    "fire_streak_10": {
+    "streak_10": {
         "name": "Снайпер",
         "icon": "🎯",
         "description": "10 правильных подряд",
         "reward": 30,
+        "requirement": {"max_streak": 10},
     },
-    "perfectionist": {
-        "name": "Перфекционист",
-        "icon": "💎",
-        "description": "100% в любом тесте",
-        "reward": 25,
+    "streak_20": {
+        "name": "Легенда",
+        "icon": "👑",
+        "description": "20 правильных подряд",
+        "reward": 75,
+        "requirement": {"max_streak": 20},
     },
+    # ═══ Марафонец (уровни) ═══
     "marathoner_10": {
         "name": "Бегун",
         "icon": "🏃",
         "description": "Пройди 10 тестов",
         "reward": 20,
+        "requirement": {"total_tests": 10},
     },
     "marathoner_50": {
         "name": "Марафонец",
         "icon": "🏅",
         "description": "Пройди 50 тестов",
         "reward": 50,
+        "requirement": {"total_tests": 50},
     },
+    "marathoner_100": {
+        "name": "Ультрамарафонец",
+        "icon": "🏆",
+        "description": "Пройди 100 тестов",
+        "reward": 100,
+        "requirement": {"total_tests": 100},
+    },
+    # ═══ Молния ═══
     "lightning": {
         "name": "Молния",
         "icon": "⚡",
         "description": "Ответь за 3 сек в скоростном режиме",
         "reward": 20,
     },
-    "master": {
-        "name": "Мастер",
-        "icon": "👑",
-        "description": "100% во всех категориях",
+    # ═══ Ежедневная активность ═══
+    "daily_streak_7": {
+        "name": "Неделя знаний",
+        "icon": "📅",
+        "description": "Проходи тесты 7 дней подряд",
+        "reward": 30,
+        "requirement": {"daily_streak": 7},
+    },
+    "daily_streak_30": {
+        "name": "Месяц мудрости",
+        "icon": "📆",
+        "description": "Проходи тесты 30 дней подряд",
         "reward": 100,
+        "requirement": {"daily_streak": 30},
     },
 }
 
@@ -1520,6 +1568,22 @@ async def show_results(bot, user_id):
                 )
             except Exception:
                 logger.error("show_results: не удалось отправить результаты (no quiz_mid)", exc_info=True)
+
+    # Ежедневный бонус за первый тест дня
+    _daily_bonus = check_daily_bonus(user_id)
+    if _daily_bonus > 0 and chat_id:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"🌅 *ЕЖЕДНЕВНЫЙ БОНУС!*\n\n"
+                    f"Это твой первый тест сегодня!\n"
+                    f"🎁 *+{_daily_bonus} баллов*"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
 
     # Проверяем и выдаём достижения после показа результатов
     await check_and_award_achievements(bot, user_id, data)
@@ -3315,110 +3379,144 @@ async def show_challenge_results(bot, user_id):
 
 
 async def check_and_award_achievements(bot, user_id: int, data: dict) -> list:
-    """
-    Проверяет условия достижений и выдаёт награды.
-    Возвращает список ключей новых достижений.
-    """
+    """Проверяет условия достижений и выдаёт награды. Возвращает список новых ключей."""
     chat_id = data.get("quiz_chat_id")
     if not chat_id:
         return []
 
-    # Читаем уже полученные достижения через существующую функцию
-    user_doc = get_user_stats(user_id) or {}
+    user_doc          = get_user_stats(user_id) or {}
     user_achievements = user_doc.get("achievements", {})
+
+    answered  = data.get("answered_questions", [])
+    questions = data.get("questions", [])
+    total     = len(questions)
+    score     = sum(1 for item in answered
+                    if item.get("user_answer") == _correct_text(item["question_obj"]))
+    is_perfect  = total > 0 and score == total
+    max_streak  = data.get("max_streak", 0)
+
+    # Обновляем статистику и получаем актуальные значения
+    stats = update_achievement_stats(user_id, is_perfect, max_streak)
+    stats["total_tests"] = user_doc.get("total_tests", 0) + 1  # текущий тест ещё не записан
+
     new_achievements = []
 
-    answered   = data.get("answered_questions", [])
-    questions  = data.get("questions", [])
-    total      = len(questions)
-    score      = sum(1 for item in answered if item.get("user_answer") == _correct_text(item["question_obj"]))
-    total_tests = user_doc.get("total_tests", 0)
-
-    # ── Первые шаги ──
-    if "first_steps" not in user_achievements and total_tests >= 1:
+    # Первые шаги
+    if "first_steps" not in user_achievements and stats["total_tests"] >= 1:
         new_achievements.append("first_steps")
 
-    # ── Огненная серия (5 подряд) ──
-    if "fire_streak_5" not in user_achievements and data.get("max_streak", 0) >= 5:
-        new_achievements.append("fire_streak_5")
+    # Перфекционист (уровни)
+    pc = stats.get("perfect_count", 0)
+    for key, threshold in [("perfectionist_1", 1), ("perfectionist_2", 5), ("perfectionist_3", 15)]:
+        if key not in user_achievements and pc >= threshold:
+            new_achievements.append(key)
 
-    # ── Снайпер (10 подряд) ──
-    if "fire_streak_10" not in user_achievements and data.get("max_streak", 0) >= 10:
-        new_achievements.append("fire_streak_10")
+    # Огненная серия (уровни)
+    ms = stats.get("max_streak_ever", 0)
+    for key, threshold in [("streak_5", 5), ("streak_10", 10), ("streak_20", 20)]:
+        if key not in user_achievements and ms >= threshold:
+            new_achievements.append(key)
 
-    # ── Перфекционист (100%) ──
-    if "perfectionist" not in user_achievements and total > 0 and score == total:
-        new_achievements.append("perfectionist")
+    # Марафонец (уровни)
+    tt = stats.get("total_tests", 0)
+    for key, threshold in [("marathoner_10", 10), ("marathoner_50", 50), ("marathoner_100", 100)]:
+        if key not in user_achievements and tt >= threshold:
+            new_achievements.append(key)
 
-    # ── Бегун (10 тестов) ──
-    if "marathoner_10" not in user_achievements and total_tests >= 10:
-        new_achievements.append("marathoner_10")
+    # Ежедневная активность
+    ds = stats.get("daily_streak", 0)
+    for key, threshold in [("daily_streak_7", 7), ("daily_streak_30", 30)]:
+        if key not in user_achievements and ds >= threshold:
+            new_achievements.append(key)
 
-    # ── Марафонец (50 тестов) ──
-    if "marathoner_50" not in user_achievements and total_tests >= 50:
-        new_achievements.append("marathoner_50")
-
-    # ── Молния (ответ за 3 сек в скоростном режиме) ──
+    # Молния
     if "lightning" not in user_achievements:
         if data.get("fastest_answer", 9999) <= 3 and data.get("quiz_mode") == "speed":
             new_achievements.append("lightning")
 
-    if not new_achievements:
-        return []
-
-    # Сохраняем и уведомляем
-    now_str = datetime.now().strftime("%d.%m.%Y")
-    ach_update = {f"achievements.{k}": now_str for k in new_achievements}
-    total_reward = sum(ACHIEVEMENTS[k]["reward"] for k in new_achievements)
-    collection.update_one(
-        {"_id": str(user_id)},
-        {"$set": ach_update, "$inc": {"total_points": total_reward}},
-        upsert=True,
-    )
-
-    for ach_key in new_achievements:
-        ach = ACHIEVEMENTS[ach_key]
+    if new_achievements:
+        now_str      = datetime.now().strftime("%d.%m.%Y")
+        ach_update   = {f"achievements.{k}": now_str for k in new_achievements}
+        total_reward = sum(ACHIEVEMENTS[k]["reward"] for k in new_achievements)
         try:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"🏆 *ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!*\n\n"
-                    f"{ach['icon']} *{ach['name']}*\n"
-                    f"_{ach['description']}_\n\n"
-                    f"🎁 Награда: *+{ach['reward']} баллов*"
-                ),
-                parse_mode="Markdown",
+            collection.update_one(
+                {"_id": str(user_id)},
+                {"$set": ach_update, "$inc": {"total_points": total_reward}},
+                upsert=True,
             )
-            await asyncio.sleep(1.5)
         except Exception as e:
-            logger.warning("check_and_award_achievements: send failed: %s", e)
+            logger.error("check_and_award_achievements DB error: %s", e)
+
+        for ach_key in new_achievements:
+            ach = ACHIEVEMENTS[ach_key]
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"🏆 *ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!*\n\n"
+                        f"{ach['icon']} *{ach['name']}*\n"
+                        f"_{ach['description']}_\n\n"
+                        f"🎁 Награда: *+{ach['reward']} баллов*"
+                    ),
+                    parse_mode="Markdown",
+                )
+                await asyncio.sleep(1.5)
+            except Exception as e:
+                logger.warning("check_and_award_achievements: send failed: %s", e)
 
     return new_achievements
 
-
 async def show_achievements(update: Update, context):
+    """Показывает все достижения с прогрессом и статистикой."""
     query   = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    achievements, streak_count, streak_last = get_user_achievements(user_id)
+    user_id    = query.from_user.id
+    user_stats = get_user_stats(user_id) or {}
+    achievements = user_stats.get("achievements", {})
 
-    text = "🏅 *МОИ ДОСТИЖЕНИЯ*\n━━━━━━━━━━━━━━━━\n\n"
+    perfect_count = user_stats.get("perfect_count", 0)
+    max_streak    = user_stats.get("max_streak_ever", 0)
+    total_tests   = user_stats.get("total_tests", 0)
+    daily_streak  = user_stats.get("daily_activity_streak", 0)
+
+    text     = "🏅 *МОИ ДОСТИЖЕНИЯ*\n━━━━━━━━━━━━━━━━\n\n"
+    unlocked = 0
+
     for key, ach in ACHIEVEMENTS.items():
         if key in achievements:
-            text += f"✅ {ach['icon']} *{ach['name']}*\n   _{ach['description']}_\n   📅 {achievements[key]}\n\n"
+            unlocked += 1
+            text += f"✅ {ach['icon']} *{ach['name']}*\n"
+            text += f"   _{ach['description']}_\n"
+            text += f"   📅 {achievements[key]}\n\n"
         else:
-            text += f"🔒 {ach['icon']} *{ach['name']}*\n   _{ach['description']}_\n\n"
+            req      = ach.get("requirement", {})
+            progress = ""
+            if "perfect_count" in req:
+                progress = f" ({perfect_count}/{req['perfect_count']})"
+            elif "max_streak" in req:
+                progress = f" ({max_streak}/{req['max_streak']})"
+            elif "total_tests" in req:
+                progress = f" ({total_tests}/{req['total_tests']})"
+            elif "daily_streak" in req:
+                progress = f" ({daily_streak}/{req['daily_streak']})"
+            text += f"🔒 {ach['icon']} *{ach['name']}*{progress}\n"
+            text += f"   _{ach['description']}_\n"
+            text += f"   🎁 +{ach['reward']} баллов\n\n"
 
-    text += f"━━━━━━━━━━━━━━━━\n🔥 *Текущая серия:* {streak_count} дн."
-    if streak_last:
-        text += f"\n📅 Последний раз: {streak_last}"
+    text += (
+        f"━━━━━━━━━━━━━━━━\n"
+        f"✅ Разблокировано: {unlocked}/{len(ACHIEVEMENTS)}\n"
+        f"📊 Тестов пройдено: {total_tests}\n"
+        f"💎 Идеальных тестов: {perfect_count}\n"
+        f"🔥 Лучшая серия: {max_streak}\n"
+        f"📅 Дней подряд: {daily_streak}"
+    )
 
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")]]),
         parse_mode="Markdown",
     )
-
 
 async def show_weekly_leaderboard(update: Update, context):
     query  = update.callback_query
