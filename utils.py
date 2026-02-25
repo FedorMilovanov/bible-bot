@@ -474,6 +474,202 @@ async def generate_result_image(
 
 
 # ═══════════════════════════════════════════════
+# ГЕНЕРАЦИЯ АНИМИРОВАННОГО GIF РЕЗУЛЬТАТОВ
+# ═══════════════════════════════════════════════
+
+async def create_result_gif(
+    score: int,
+    total: int,
+    rank_name: str,
+    time_seconds: float | None = None,
+    first_name: str = "",
+) -> io.BytesIO | None:
+    """
+    Генерирует анимированный GIF с результатами теста (20 кадров, 100ms каждый).
+
+    Структура:
+      Кадры  1–12 : анимация счётчика (0 → score), заполнение прогресс-бара
+      Кадры 13–15 : fade-in ранга и деталей
+      Кадры 16–20 : финальный статичный кадр
+
+    Возвращает io.BytesIO или None при ошибке / отсутствии Pillow.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.warning("Pillow not installed — skipping GIF generation")
+        return None
+
+    try:
+        pct = round(score / max(total, 1) * 100)
+
+        # ── Шрифты ───────────────────────────────────────────────────────────
+        bold_path    = _find_font(bold=True)
+        regular_path = _find_font(bold=False)
+
+        def _lf(path, size):
+            if path:
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    pass
+            return ImageFont.load_default()
+
+        f_title   = _lf(bold_path,    22)
+        f_score   = _lf(bold_path,    68)
+        f_pct     = _lf(regular_path, 32)
+        f_rank    = _lf(bold_path,    24)
+        f_details = _lf(regular_path, 18)
+
+        # ── Цвета ────────────────────────────────────────────────────────────
+        C_BG       = (30,  30,  46)
+        C_TITLE    = (220, 220, 255)
+        C_SCORE    = (255, 215,   0)   # золотой
+        C_PCT      = (180, 180, 210)
+        C_BAR_BG   = (50,  50,  70)
+        C_BAR_EDGE = (100, 100, 120)
+        C_FLASH    = (255, 255, 255)
+
+        if pct >= 80:
+            C_BAR = (76,  175,  80)    # зелёный
+        elif pct >= 50:
+            C_BAR = (255, 193,   7)    # жёлтый
+        else:
+            C_BAR = (244,  67,  54)    # красный
+
+        W, H = 600, 400
+        BAR_X, BAR_Y = 100, 225
+        BAR_W, BAR_H = 400, 28
+
+        # Убираем эмодзи из ранга — Pillow их не рендерит
+        rank_clean = re.sub(r'[\U00010000-\U0010ffff]', '', rank_name).strip()
+        name_clean = re.sub(r'[\U00010000-\U0010ffff]', '', first_name).strip()
+
+        wrong_count = total - score
+        time_str = format_duration(time_seconds) if time_seconds else None
+
+        def _draw_base(draw: ImageDraw.ImageDraw):
+            """Рисует фоновый градиент и заголовок."""
+            r1, g1, b1 = C_BG
+            r2, g2, b2 = (50, 50, 80)
+            for y in range(H):
+                t = y / H
+                r = int(r1 + (r2 - r1) * t)
+                g = int(g1 + (g2 - g1) * t)
+                b = int(b1 + (b2 - b1) * t)
+                draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+            # Заголовок
+            title = f"РЕЗУЛЬТАТЫ{(' • ' + name_clean[:12]) if name_clean else ''}"
+            draw.text((W // 2, 30), title, fill=C_TITLE, font=f_title, anchor="mm")
+
+        def _draw_score_and_bar(draw: ImageDraw.ImageDraw, cur_score: int, cur_pct: int):
+            """Рисует текущий счёт и прогресс-бар."""
+            draw.text((W // 2, 140), f"{cur_score} / {total}",
+                      fill=C_SCORE, font=f_score, anchor="mm")
+
+            # Фон бара
+            draw.rectangle(
+                [BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H],
+                fill=C_BAR_BG, outline=C_BAR_EDGE,
+            )
+            # Заполнение
+            filled = max(0, int(BAR_W * cur_pct / 100))
+            if filled > 0:
+                draw.rectangle(
+                    [BAR_X, BAR_Y, BAR_X + filled, BAR_Y + BAR_H],
+                    fill=C_BAR,
+                )
+
+            draw.text((W // 2, 275), f"{cur_pct}%",
+                      fill=C_PCT, font=f_pct, anchor="mm")
+
+        def _draw_details(draw: ImageDraw.ImageDraw, alpha: float):
+            """Рисует ранг и статистику с заданной прозрачностью (0.0–1.0)."""
+            def fade(base_color):
+                return tuple(int(c * alpha + 30 * (1 - alpha)) for c in base_color)
+
+            rank_color   = fade((150, 200, 255))
+            detail_color = fade((170, 170, 200))
+
+            # Ранг — чуть выше деталей
+            draw.text((W // 2, 315), rank_clean or rank_name,
+                      fill=rank_color, font=f_rank, anchor="mm")
+
+            # Детали: правильные / ошибки / время
+            x_left  = 130
+            x_right = 470
+            y_base  = 355
+
+            draw.text((x_left,  y_base), f"✓ {score} правильных",
+                      fill=detail_color, font=f_details, anchor="lm")
+            draw.text((x_left,  y_base + 25), f"✗ {wrong_count} ошибок",
+                      fill=detail_color, font=f_details, anchor="lm")
+            if time_str:
+                draw.text((x_right, y_base + 12), f"t: {time_str}",
+                          fill=detail_color, font=f_details, anchor="rm")
+
+        # ── Генерируем кадры ─────────────────────────────────────────────────
+        frames: list[Image.Image] = []
+
+        # Кадры 1–12: анимация счётчика
+        for i in range(1, 13):
+            img = Image.new("RGB", (W, H), C_BG)
+            draw = ImageDraw.Draw(img)
+            _draw_base(draw)
+
+            cur_score = int(score * i / 12)
+            cur_pct   = int(pct   * i / 12)
+            _draw_score_and_bar(draw, cur_score, cur_pct)
+            frames.append(img)
+
+        # Кадр «вспышка» для хорошего результата (между 12 и 13)
+        if pct >= 80:
+            flash = Image.new("RGB", (W, H), C_FLASH)
+            frames.append(flash)
+            # Короткий: 1 кадр 60ms — добавим duration override ниже
+
+        # Кадры 13–15: fade-in деталей
+        last_base = frames[-1].copy()  # берём последний кадр как основу
+        for alpha in (0.3, 0.6, 1.0):
+            img = last_base.copy()
+            draw = ImageDraw.Draw(img)
+            # Перерисовываем финальные значения поверх
+            _draw_score_and_bar(draw, score, pct)
+            _draw_details(draw, alpha)
+            frames.append(img)
+
+        # Кадры 16–20: финальный статичный кадр
+        final = frames[-1].copy()
+        for _ in range(5):
+            frames.append(final.copy())
+
+        # ── Собираем GIF ─────────────────────────────────────────────────────
+        # Длительность кадров: 100ms по умолчанию, вспышка — 60ms
+        durations = [100] * len(frames)
+        # Если была вспышка, она идёт после 12-го кадра (индекс 12)
+        if pct >= 80 and len(frames) > 12:
+            durations[12] = 60
+
+        buf = io.BytesIO()
+        frames[0].save(
+            buf,
+            format="GIF",
+            append_images=frames[1:],
+            save_all=True,
+            duration=durations,
+            loop=0,
+            optimize=False,   # optimize=True иногда ломает анимацию в Pillow
+        )
+        buf.seek(0)
+        return buf
+
+    except Exception as e:
+        logger.error("create_result_gif error: %s", e, exc_info=True)
+        return None
+
+
+# ═══════════════════════════════════════════════
 # ФОРМАТИРОВАНИЕ
 # ═══════════════════════════════════════════════
 
