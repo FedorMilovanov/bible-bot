@@ -1445,11 +1445,59 @@ async def send_final_results_menu(bot, chat_id: int, data: dict):
             InlineKeyboardButton("🔁 Пройти этот тест заново", callback_data=f"level_{level_key}"),
         ])
 
-    # Поделиться
+    # Поделиться — формируем красивый текст
+    if percentage == 100:
+        result_emoji = "🏆"
+        result_comment = "Идеально!"
+    elif percentage >= 80:
+        result_emoji = "⭐"
+        result_comment = "Отлично!"
+    elif percentage >= 60:
+        result_emoji = "👍"
+        result_comment = "Хорошо!"
+    else:
+        result_emoji = "📚"
+        result_comment = "Есть над чем работать"
+
+    filled = "🟩" * (percentage // 10)
+    empty  = "⬜" * (10 - percentage // 10)
+    progress_bar = filled + empty
+
+    try:
+        bot_info = await bot.get_me()
+        bot_username = bot_info.username or "milovanovaibot"
+    except Exception:
+        bot_username = "milovanovaibot"
+
+    challenge_mode = data.get("challenge_mode")
+    if challenge_mode:
+        mode_name = "🎲 Random Challenge" if challenge_mode == "random20" else "💀 Hardcore Challenge"
+        share_text = (
+            f"⚡ Challenge по 1 Посланию Петра\n\n"
+            f"{mode_name}\n"
+            f"{progress_bar} {percentage}%\n\n"
+            f"{result_emoji} {correct_count}/{total} — {result_comment}\n"
+        )
+        bonus = data.get("challenge_bonus", 0)
+        if bonus and bonus > 0:
+            share_text += f"🎁 Бонус: +{bonus} баллов!\n"
+        share_text += f"\nПримешь вызов? 👉 @{bot_username}"
+    else:
+        share_text = (
+            f"📖 Тест по 1 Посланию Петра\n\n"
+            f"{level_name}\n"
+            f"{progress_bar} {percentage}%\n\n"
+            f"{result_emoji} {correct_count}/{total} — {result_comment}\n"
+        )
+        max_streak = data.get("max_streak", 0)
+        if max_streak >= 3:
+            share_text += f"🔥 Серия: {max_streak} подряд!\n"
+        share_text += f"\nПроверь свои знания 👉 @{bot_username}"
+
     keyboard.append([
         InlineKeyboardButton(
             "📤 Поделиться результатом",
-            switch_inline_query=f"Я прошёл {level_name} — {correct_count}/{total}!",
+            switch_inline_query=share_text,
         ),
     ])
 
