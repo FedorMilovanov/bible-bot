@@ -774,10 +774,7 @@ async def level_selected(update: Update, context):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "back_to_main":
-        await back_to_main(update, context)
-        return ConversationHandler.END
-
+    # BUG-FIX: убран мёртвый код — pattern="^level_" никогда не поймает "back_to_main"
     cfg = LEVEL_CONFIG.get(query.data)
     if not cfg:
         return ConversationHandler.END
@@ -1620,8 +1617,10 @@ async def show_results(bot, user_id):
     if session_id:
         finish_quiz_session(session_id)
 
-    add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken,
-                       score_multiplier=data.get("score_multiplier", 1.0))
+    # BUG-FIX: не начисляем баллы повторно за пересдачу ошибок (is_retry=True)
+    if not data.get("is_retry"):
+        add_to_leaderboard(user_id, username, first_name, data["level_key"], score, total, time_taken,
+                           score_multiplier=data.get("score_multiplier", 1.0))
     position, entry = get_user_position(user_id)
 
     cfg = next((v for v in LEVEL_CONFIG.values() if v["pool_key"] == data["level_key"]), None)
@@ -3031,14 +3030,34 @@ async def show_my_stats(query):
     text += f"🏅 Позиция: *#{position}*\n"
     text += f"💎 Баллов: *{entry.get('total_points', 0)}*\n"
     text += f"📅 Дней в игре: *{days_playing}*\n"
-    text += f"🎯 Тестов: *{total_tests}*\n"
+    text += f"🎯 Тестов пройдено: *{total_tests}*\n"
     text += f"✅ Точность: *{calculate_accuracy(total_correct, total_questions)}%*\n"
-    text += f"⏱ Среднее время: *{format_time(avg_time)}*\n\n"
-    text += f"⚔️ Битв: *{battles_played}*, Побед: *{battles_won}*\n"
+    text += f"⏱ Среднее время: *{format_time(avg_time)}*\n"
+
+    # Серия дней
+    daily_streak = entry.get("daily_activity_streak", 0)
+    if daily_streak > 0:
+        text += f"🔥 Серия дней: *{daily_streak}*\n"
+
+    # Лучшая серия правильных ответов
+    max_streak = entry.get("max_streak_ever", 0)
+    if max_streak > 0:
+        text += f"⚡ Лучшая серия: *{max_streak}* правильных подряд\n"
+
+    # Идеальных тестов
+    perfect_count = entry.get("perfect_count", 0)
+    if perfect_count > 0:
+        text += f"💎 Идеальных тестов: *{perfect_count}*\n"
+
+    text += f"\n⚔️ Битв: *{battles_played}*"
     if battles_played > 0:
-        text += f"📈 Винрейт: *{round(battles_won / battles_played * 100)}%*\n"
+        text += f", Побед: *{battles_won}* ({round(battles_won / battles_played * 100)}%)"
+    text += "\n"
 
-
+    # Количество разблокированных достижений
+    achievements = entry.get("achievements", {})
+    if achievements:
+        text += f"🏅 Достижений: *{len(achievements)}*\n"
 
     await query.edit_message_text(
         text,
@@ -3959,12 +3978,12 @@ async def button_handler(update: Update, context):
         "battle_menu":   lambda: show_battle_menu(query),
         "leaderboard":   lambda: show_general_leaderboard(query, 0),
         "my_stats":      lambda: show_my_stats(query),
-        "historical_menu": lambda: historical_menu(update, context),
-        "challenge_menu":  lambda: challenge_menu(update, context),
-        "achievements":    lambda: show_achievements(update, context),
-        "my_status":       lambda: show_status_inline(update, context),
-        "reset_session":   lambda: reset_session_inline(update, context),
-        "coming_soon":     lambda: query.answer("🚧 В разработке!", show_alert=True),
+        # BUG-FIX: historical_menu и challenge_menu убраны — у них теперь свои
+        # CallbackQueryHandler (зарегистрированы в main() раньше button_handler).
+        "achievements":  lambda: show_achievements(update, context),
+        "my_status":     lambda: show_status_inline(update, context),
+        "reset_session": lambda: reset_session_inline(update, context),
+        "coming_soon":   lambda: query.answer("🚧 В разработке!", show_alert=True),
     }
 
     handler = dispatch.get(query.data)
@@ -4363,17 +4382,19 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # ── BUG-FIX: ConversationHandler — cancel_quiz только в states и fallbacks,
+    #   без дублирования в entry_points и без лишнего глобального add_handler.
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("test", test_command),
-            CallbackQueryHandler(level_selected,        pattern="^level_"),
+            CallbackQueryHandler(level_selected,         pattern="^level_"),
             CallbackQueryHandler(start_battle_questions, pattern="^start_battle_"),
             CallbackQueryHandler(retry_errors,           pattern="^retry_errors_"),
-            CallbackQueryHandler(challenge_start,         pattern="^challenge_start_"),
+            CallbackQueryHandler(challenge_start,        pattern="^challenge_start_"),
         ],
         states={
-            CHOOSING_LEVEL:   [CallbackQueryHandler(level_selected)],
-            ANSWERING:        [
+            CHOOSING_LEVEL: [CallbackQueryHandler(level_selected)],
+            ANSWERING: [
                 CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, challenge_answer),
             ],
@@ -4389,41 +4410,46 @@ def main():
         allow_reentry=True,
     )
     app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("start", start))
 
-    app.add_handler(CallbackQueryHandler(report_inaccuracy_handler, pattern=r"^report_inaccuracy_"))
+    # ── Команды ────────────────────────────────────────────────────────────────
+    app.add_handler(CommandHandler("start",        start))
+    app.add_handler(CommandHandler("menu",         menu_command))  # BUG-FIX: регистрируем /menu
+    app.add_handler(CommandHandler("reset",        reset_command))
+    app.add_handler(CommandHandler("status",       status_command))
+    app.add_handler(CommandHandler("cancelreport", cancel_report_command))
+    app.add_handler(CommandHandler("admin",        admin_command))
+    app.add_handler(CommandHandler("broadcast",    broadcast_command))
+    app.add_handler(CommandHandler("help",         help_command))
 
-    # Inline-ответы на вопросы (основной тест, challenge и битвы)
-    app.add_handler(CallbackQueryHandler(quiz_inline_answer,       pattern=r"^qa_\d+$"))
-    app.add_handler(CallbackQueryHandler(challenge_inline_answer,  pattern=r"^cha_\d+$"))
-    app.add_handler(CallbackQueryHandler(battle_answer,            pattern=r"^ba_\d+$"))
-    app.add_handler(CallbackQueryHandler(cancel_quiz_handler,      pattern="^cancel_quiz$"))
-    # Подтверждение уровня перед стартом (4.5)
-    app.add_handler(CallbackQueryHandler(confirm_level_handler,    pattern=r"^confirm_level_"))
+    # ── Inline-ответы на вопросы ───────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(quiz_inline_answer,      pattern=r"^qa_\d+$"))
+    app.add_handler(CallbackQueryHandler(challenge_inline_answer, pattern=r"^cha_\d+$"))
+    app.add_handler(CallbackQueryHandler(battle_answer,           pattern=r"^ba_\d+$"))
+    # BUG-FIX: cancel_quiz НЕ дублируем — он уже в ConversationHandler states/fallbacks.
+    # Но нужен и глобально (вне сессии — кнопка «Выйти» может прийти в любом состоянии).
+    app.add_handler(CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"))
+
+    # ── Режимы прохождения теста ───────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(confirm_level_handler,   pattern=r"^confirm_level_"))
     app.add_handler(CallbackQueryHandler(relaxed_mode_handler,    pattern=r"^relaxed_mode_"))
     app.add_handler(CallbackQueryHandler(timed_mode_handler,      pattern=r"^timed_mode_"))
     app.add_handler(CallbackQueryHandler(speed_mode_handler,      pattern=r"^speed_mode_"))
 
-    # Session recovery
+    # ── Восстановление сессии ─────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(resume_session_handler,  pattern="^resume_session_"))
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern="^restart_session_"))
     app.add_handler(CallbackQueryHandler(cancel_session_handler,  pattern="^cancel_session_"))
 
-    # Команды
-    app.add_handler(CommandHandler("reset",       reset_command))
-    app.add_handler(CommandHandler("status",      status_command))
-    app.add_handler(CommandHandler("cancelreport", cancel_report_command))
-    app.add_handler(CommandHandler("admin",        admin_command))
-    app.add_handler(CommandHandler("broadcast",    broadcast_command))
-    app.add_handler(CommandHandler("help",         help_command))  # 6.1
+    # ── Репорты о неточностях ─────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(report_inaccuracy_handler, pattern=r"^report_inaccuracy_"))
 
-    # Admin inline-панель (6.5)
+    # ── Admin панель ──────────────────────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(
         admin_callback_handler,
         pattern=r"^admin_(hard_questions|active_sessions|cleanup|broadcast_prompt|back)$",
     ))
 
-    # Репорты
+    # ── ConversationHandler для репортов ──────────────────────────────────────
     report_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(report_start, pattern="^report_start_")],
         states={
@@ -4446,58 +4472,70 @@ def main():
     )
     app.add_handler(report_conv)
 
-    # Битвы
-    app.add_handler(CallbackQueryHandler(create_battle,  pattern="^create_battle$"))
-    app.add_handler(CallbackQueryHandler(join_battle,    pattern="^join_battle_"))
-    app.add_handler(CallbackQueryHandler(cancel_battle,  pattern="^cancel_battle_"))
+    # ── Битвы ─────────────────────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(create_battle, pattern="^create_battle$"))
+    app.add_handler(CallbackQueryHandler(join_battle,   pattern="^join_battle_"))
+    app.add_handler(CallbackQueryHandler(cancel_battle, pattern="^cancel_battle_"))
 
-    # Inline mode (задание 4.1)
+    # ── Inline mode ───────────────────────────────────────────────────────────
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    # Общие кнопки
+    # ── Навигация: главные разделы ────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(back_to_main,     pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(chapter_1_menu,   pattern="^chapter_1_menu$"))
     app.add_handler(CallbackQueryHandler(random_all_start_handler, pattern="^random_all_start$"))
-    app.add_handler(CallbackQueryHandler(historical_menu,  pattern="^historical_menu$"))
-    app.add_handler(CallbackQueryHandler(intro_hint_handler,  pattern=r"^intro_hint_"))
-    app.add_handler(CallbackQueryHandler(intro_start_handler, pattern=r"^intro_start_"))
-    app.add_handler(CallbackQueryHandler(random_fact_handler, pattern="^random_fact_intro$"))
-    app.add_handler(CallbackQueryHandler(report_menu,      pattern="^report_menu$"))
-    app.add_handler(CallbackQueryHandler(challenge_rules,  pattern="^challenge_rules_"))
-    app.add_handler(CallbackQueryHandler(show_weekly_leaderboard, pattern="^weekly_lb_"))
+
+    # BUG-FIX: historical_menu и challenge_menu убраны из button_handler dispatch
+    # и зарегистрированы ТОЛЬКО здесь (один раз, без дублирования).
+    app.add_handler(CallbackQueryHandler(historical_menu,          pattern="^historical_menu$"))
+    app.add_handler(CallbackQueryHandler(challenge_menu,           pattern="^challenge_menu$"))
+
+    app.add_handler(CallbackQueryHandler(intro_hint_handler,       pattern=r"^intro_hint_"))
+    app.add_handler(CallbackQueryHandler(intro_start_handler,      pattern=r"^intro_start_"))
+    app.add_handler(CallbackQueryHandler(random_fact_handler,      pattern="^random_fact_intro$"))
+    app.add_handler(CallbackQueryHandler(report_menu,              pattern="^report_menu$"))
+    app.add_handler(CallbackQueryHandler(challenge_rules,          pattern="^challenge_rules_"))
+    app.add_handler(CallbackQueryHandler(show_weekly_leaderboard,  pattern="^weekly_lb_"))
     app.add_handler(CallbackQueryHandler(category_leaderboard_handler, pattern="^cat_lb_"))
-    app.add_handler(CallbackQueryHandler(back_to_main,     pattern="^back_to_main$"))
+
+    # BUG-FIX: user_settings зарегистрирован ТОЛЬКО здесь (убрали из button_handler pattern)
     app.add_handler(CallbackQueryHandler(user_settings_handler,     pattern="^user_settings$"))
     app.add_handler(CallbackQueryHandler(toggle_typewriter_handler, pattern="^toggle_typewriter$"))
-    app.add_handler(CallbackQueryHandler(
-        button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|"
-                r"historical_menu|coming_soon|challenge_menu|achievements|my_status|reset_session)$",
-    ))
 
-    # История прохождений (6.3)
-    app.add_handler(CallbackQueryHandler(show_history, pattern="^my_history$"))
-
-    # Разбор ошибок (пагинация)
+    # ── История, разбор ошибок ────────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(show_history,          pattern="^my_history$"))
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_errors_"))
     app.add_handler(CallbackQueryHandler(review_errors_handler, pattern=r"^review_nav_"))
     app.add_handler(CallbackQueryHandler(review_test_handler,   pattern=r"^review_test_\d+$"))
-    app.add_handler(CallbackQueryHandler(noop_handler,           pattern="^noop$"))
+    app.add_handler(CallbackQueryHandler(noop_handler,          pattern="^noop$"))
 
-    # Fallback для сообщений (восстановление после рестарта)
+    # ── button_handler — только то, что не обработано выше ───────────────────
+    # BUG-FIX: убраны historical_menu, challenge_menu, user_settings (дубли)
+    app.add_handler(CallbackQueryHandler(
+        button_handler,
+        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats"
+                r"|leaderboard_page_\d+|coming_soon|achievements|my_status|reset_session)$",
+    ))
+
+    # ── Fallback для текстовых сообщений ──────────────────────────────────────
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _general_message_fallback))
 
-    # JobQueue
+    # ── JobQueue ──────────────────────────────────────────────────────────────
     if app.job_queue is not None:
-        app.job_queue.run_repeating(cleanup_old_battles_job,    interval=BATTLE_CLEANUP_INTERVAL, first=BATTLE_CLEANUP_INTERVAL)
-        app.job_queue.run_repeating(cleanup_stale_userdata_job, interval=GC_INTERVAL,             first=GC_INTERVAL)
-        app.job_queue.run_repeating(remind_unfinished_tests_job, interval=7200, first=7200)  # 6.4
+        app.job_queue.run_repeating(
+            cleanup_old_battles_job, interval=BATTLE_CLEANUP_INTERVAL, first=BATTLE_CLEANUP_INTERVAL,
+        )
+        app.job_queue.run_repeating(
+            cleanup_stale_userdata_job, interval=GC_INTERVAL, first=GC_INTERVAL,
+        )
+        app.job_queue.run_repeating(remind_unfinished_tests_job, interval=7200, first=7200)
         logger.info("🧹 Автоочистка активна (битвы + user_data GC + напоминания)")
     else:
         logger.warning("JobQueue недоступен — автоочистка отключена")
 
     app.add_error_handler(on_error)
 
-    logger.info("🤖 Бот запущен! (v4.0)")
+    logger.info("🤖 Бот запущен! (v4.1 — bugfix)")
     logger.info("🛡 Admin ID: %s", ADMIN_USER_ID)
     app.run_polling()
 
