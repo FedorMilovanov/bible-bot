@@ -52,6 +52,29 @@ _POOLS: dict[str, list] = {
     "intro3":            intro_part3_questions,
 }
 
+# BUG-FIX: random_all — объединённый пул всех вопросов (дедупликация по id).
+# LEVEL_CONFIG ссылается на pool_key="random_all", поэтому пул должен быть здесь.
+def _build_random_all_pool() -> list:
+    _keys = [
+        "easy", "easy_p1", "easy_p2",
+        "medium", "medium_p1", "medium_p2",
+        "hard", "hard_p1", "hard_p2",
+        "practical_ch1", "practical_p1", "practical_p2",
+        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "intro1", "intro2", "intro3",
+    ]
+    seen: set = set()
+    result: list = []
+    for k in _keys:
+        for q in _POOLS[k]:
+            qid = q.get("id", "")
+            if qid and qid not in seen:
+                seen.add(qid)
+                result.append(q)
+    return result
+
+_POOLS["random_all"] = _build_random_all_pool()
+
 # Публичное имя реестра пулов (если понадобится в админке/дебаге)
 POOL_REGISTRY = _POOLS
 
