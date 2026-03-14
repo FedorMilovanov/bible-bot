@@ -4413,7 +4413,7 @@ def main():
 
     # ── Команды ────────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start",        start))
-    app.add_handler(CommandHandler("menu",         menu_command))  # BUG-FIX: регистрируем /menu
+    app.add_handler(CommandHandler("menu",         start))          # /menu показывает главное меню
     app.add_handler(CommandHandler("reset",        reset_command))
     app.add_handler(CommandHandler("status",       status_command))
     app.add_handler(CommandHandler("cancelreport", cancel_report_command))
