@@ -2839,6 +2839,79 @@ async def help_command(update: Update, context):
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=_main_keyboard())
 
 
+async def stats_command(update: Update, context):
+    """Команда /stats — моя статистика и рейтинг."""
+    user_id = update.effective_user.id
+    position, entry = get_user_position(user_id)
+    if not entry:
+        await update.message.reply_text(
+            "📊 *МОЯ СТАТИСТИКА*\n\nВы ещё не проходили тесты.\nИспользуйте /menu чтобы начать!",
+            parse_mode="Markdown",
+            reply_markup=_main_keyboard(),
+        )
+        return
+    total_tests     = entry.get("total_tests", 0)
+    total_questions = entry.get("total_questions_answered", 0)
+    total_correct   = entry.get("total_correct_answers", 0)
+    avg_time        = entry.get("total_time_spent", 0) / max(total_tests, 1)
+    days_playing    = calculate_days_playing(entry.get("first_play_date", datetime.now().strftime("%Y-%m-%d")))
+    battles_played  = entry.get("battles_played", 0)
+    battles_won     = entry.get("battles_won", 0)
+    daily_streak    = entry.get("daily_activity_streak", 0)
+    text  = "📊 *МОЯ СТАТИСТИКА*\n\n"
+    text += f"🏅 Позиция: *#{position}*\n"
+    text += f"💎 Баллов: *{entry.get('total_points', 0)}*\n"
+    text += f"📅 Дней в игре: *{days_playing}*\n"
+    text += f"🎯 Тестов пройдено: *{total_tests}*\n"
+    text += f"✅ Точность: *{calculate_accuracy(total_correct, total_questions)}%*\n"
+    text += f"⏱ Среднее время: *{format_time(avg_time)}*\n"
+    if daily_streak > 0:
+        text += f"🔥 Серия дней: *{daily_streak}*\n"
+    text += f"⚔️ Битв: {battles_played}, Побед: {battles_won}\n"
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=_main_keyboard())
+
+
+async def random_command(update: Update, context):
+    """Команда /random — сразу запускает случайный тест из всех тем."""
+    user_id = update.effective_user.id
+    _touch(user_id)
+    all_pool_keys = [
+        "easy", "easy_p1", "easy_p2",
+        "medium", "medium_p1", "medium_p2",
+        "hard", "hard_p1", "hard_p2",
+        "practical_ch1", "practical_p1", "practical_p2",
+        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "intro1", "intro2", "intro3",
+    ]
+    all_questions = []
+    seen = set()
+    for key in all_pool_keys:
+        for q in get_pool_by_key(key):
+            qid = get_qid(q)
+            if qid not in seen:
+                seen.add(qid)
+                all_questions.append(q)
+    if not all_questions:
+        await update.message.reply_text("⚠️ Вопросы не найдены.", reply_markup=_main_keyboard())
+        return
+    questions = random.sample(all_questions, min(10, len(all_questions)))
+    level_name = "🎲 Случайный режим (все темы)"
+    cancel_active_quiz_session(user_id)
+    question_ids = [get_qid(q) for q in questions]
+    session_id = create_quiz_session(
+        user_id=user_id, mode="level", question_ids=question_ids,
+        questions_data=questions, level_key="random_all",
+        level_name=level_name, time_limit=None,
+        chat_id=update.effective_chat.id,
+    )
+    context.user_data["session_id"] = str(session_id)
+    await update.message.reply_text(
+        f"🎲 *Случайный тест*\n10 вопросов из всех тем\n\nНачинаем!",
+        parse_mode="Markdown",
+    )
+    await send_question(update, context, questions, 0, user_id, update.effective_chat.id, time_limit=None)
+
+
 async def admin_command(update: Update, context):
     """Команда /admin — только для администратора."""
     user_id = update.effective_user.id
@@ -4414,6 +4487,8 @@ def main():
     # ── Команды ────────────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start",        start))
     app.add_handler(CommandHandler("menu",         start))          # /menu показывает главное меню
+    app.add_handler(CommandHandler("stats",        stats_command))  # /stats — моя статистика
+    app.add_handler(CommandHandler("random",       random_command)) # /random — случайный тест
     app.add_handler(CommandHandler("reset",        reset_command))
     app.add_handler(CommandHandler("status",       status_command))
     app.add_handler(CommandHandler("cancelreport", cancel_report_command))
