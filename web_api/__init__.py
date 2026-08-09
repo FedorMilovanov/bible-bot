@@ -1,6 +1,8 @@
-"""HTTP API package for the Telegram Mini App."""
+"""HTTP API package for the Telegram Mini App and Telegram webhook ingress."""
 from __future__ import annotations
 
+import hmac
+import logging
 import os
 
 from flask import g, jsonify, request
@@ -11,7 +13,18 @@ from .auth import get_user_from_request
 from .db_hardening import ensure_miniapp_indexes
 from .rate_limit import GLOBAL_API_LIMITER
 from .routes import create_app as _create_routes_app
+from .telegram_transport import (
+    TELEGRAM_WEBHOOK_BRIDGE,
+    WEBHOOK_PATH,
+    InvalidWebhookUpdate,
+    TransportConfigurationError,
+    WebhookNotReady,
+    telegram_transport_mode,
+    telegram_webhook_secret,
+)
 from .user_locks import user_operation_lock
+
+logger = logging.getLogger(__name__)
 
 # Per authenticated Telegram user. Values are (requests, window seconds).
 _RATE_LIMITS = {
@@ -45,6 +58,40 @@ def create_app():
                 "environment": os.getenv("APP_ENV", "production"),
             }
         )
+
+    @app.post(WEBHOOK_PATH)
+    def _telegram_webhook():
+        try:
+            if telegram_transport_mode() != "webhook":
+                return jsonify({"error": "not found"}), 404
+            expected_secret = telegram_webhook_secret()
+        except TransportConfigurationError:
+            logger.exception("Telegram webhook transport configuration is invalid")
+            return jsonify({"error": "telegram webhook unavailable"}), 503
+
+        supplied_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if not supplied_secret or not hmac.compare_digest(supplied_secret, expected_secret):
+            return jsonify({"error": "invalid telegram webhook secret"}), 401
+        if not request.is_json:
+            return jsonify({"error": "application/json required"}), 415
+
+        try:
+            payload = request.get_json(silent=False)
+        except BadRequest:
+            return jsonify({"error": "invalid JSON"}), 400
+        if not isinstance(payload, dict):
+            return jsonify({"error": "JSON object required"}), 400
+
+        try:
+            TELEGRAM_WEBHOOK_BRIDGE.submit(payload)
+        except InvalidWebhookUpdate:
+            return jsonify({"error": "invalid telegram update"}), 400
+        except WebhookNotReady:
+            return jsonify({"error": "telegram application not ready"}), 503
+        except Exception:
+            logger.exception("unexpected Telegram webhook dispatch failure")
+            return jsonify({"error": "telegram webhook dispatch failed"}), 503
+        return jsonify({"ok": True})
 
     @app.before_request
     def _protect_api_boundary():
@@ -118,7 +165,7 @@ def create_app():
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.path.startswith("/api/"):
+        if request.path.startswith("/api/") or request.path == WEBHOOK_PATH:
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         else:
