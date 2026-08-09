@@ -1,4 +1,7 @@
-python-telegram-bot
-flask
-pymongo
-dnspython
+python-telegram-bot[job-queue]==20.7
+Flask==3.0.3
+pymongo==4.7.2
+dnspython==2.6.1
+Pillow==10.4.0
+python-dotenv==1.0.1
+waitress==3.0.2

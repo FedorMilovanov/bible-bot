@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: bible-bot
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /live
+    autoDeploy: false
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_USER_ID
+        sync: false
+      - key: MONGO_URL
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
+        value: "86400"
+      - key: WEB_THREADS
+        value: "4"

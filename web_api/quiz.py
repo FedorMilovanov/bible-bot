@@ -1,0 +1,631 @@
+"""Server-authoritative Mini App quiz sessions and scoring."""
+from __future__ import annotations
+
+import hashlib
+import logging
+import random
+import time
+import uuid
+from datetime import datetime
+from threading import Lock
+
+logger = logging.getLogger(__name__)
+
+MODE_CONFIG = {
+    "relaxed": {"time_limit": None, "multiplier": 1.0},
+    "timed": {"time_limit": 30, "multiplier": 1.5},
+    "speed": {"time_limit": 15, "multiplier": 2.0},
+}
+TIMEOUT_NETWORK_GRACE_SECONDS = 1.0
+_INDEXES_LOCK = Lock()
+_INDEXES_READY = False
+
+
+def _now() -> datetime:
+    """UTC timestamp matching the repository's existing naive-UTC Mongo model."""
+    return datetime.utcnow()
+
+
+def question_id(question: dict) -> str:
+    explicit = str(question.get("id") or "").strip()
+    if explicit:
+        return explicit
+    material = str(question.get("question", "")) + "\x1f" + "\x1f".join(question.get("options", []))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def prepare_question(question: dict) -> dict:
+    options = list(question.get("options") or [])
+    correct = int(question.get("correct", -1))
+    if not options or correct < 0 or correct >= len(options):
+        raise ValueError("question has invalid options/correct index")
+
+    indexed = list(enumerate(options))
+    random.shuffle(indexed)
+    shuffled_options = [text for _, text in indexed]
+    shuffled_correct = next(i for i, (original_idx, _) in enumerate(indexed) if original_idx == correct)
+    return {
+        "id": question_id(question),
+        "question": str(question.get("question", "")),
+        "options": shuffled_options,
+        "correct": shuffled_correct,
+        "explanation": str(question.get("explanation", "")),
+        "verse": str(question.get("verse", "")),
+        "topic": str(question.get("topic", "")),
+    }
+
+
+def public_question(question: dict) -> dict:
+    return {"id": question["id"], "question": question["question"], "options": list(question["options"])}
+
+
+def stats_level_key(pool_key: str, *, is_challenge: bool, mode: str) -> str:
+    if is_challenge:
+        return "hardcore20" if mode == "speed" else "random20"
+    return pool_key
+
+
+def miniapp_sessions():
+    try:
+        import database
+
+        db = getattr(database, "db", None)
+        if db is None:
+            return None
+        collection = db["miniapp_sessions"]
+    except Exception:
+        return None
+
+    global _INDEXES_READY
+    if not _INDEXES_READY:
+        with _INDEXES_LOCK:
+            if not _INDEXES_READY:
+                try:
+                    collection.create_index(
+                        [("updated_at_dt", 1)],
+                        expireAfterSeconds=6 * 60 * 60,
+                        name="ttl_miniapp_updated_at",
+                    )
+                    collection.create_index(
+                        [("user_id", 1), ("status", 1)],
+                        name="idx_miniapp_user_status",
+                    )
+                except Exception as exc:
+                    logger.warning("miniapp session indexes: %s", exc)
+                _INDEXES_READY = True
+    return collection
+
+
+def get_miniapp_history(user_id: int, limit: int = 10) -> list[dict]:
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return []
+    try:
+        cursor = (
+            sessions.find(
+                {"user_id": str(user_id), "status": "finished"},
+                {
+                    "stats_level_key": 1,
+                    "mode": 1,
+                    "correct_count": 1,
+                    "question_count": 1,
+                    "finished_at_dt": 1,
+                },
+            )
+            .sort("finished_at_dt", -1)
+            .limit(max(1, min(int(limit), 50)))
+        )
+        return [
+            {
+                "source": "miniapp",
+                "level_name": item.get("stats_level_key", "Mini App"),
+                "level_key": item.get("stats_level_key", ""),
+                "correct_count": int(item.get("correct_count", 0)),
+                "total_questions": int(item.get("question_count", 0)),
+                "end_time": item.get("finished_at_dt"),
+                "mode": item.get("mode", ""),
+            }
+            for item in cursor
+        ]
+    except Exception:
+        logger.exception("failed to load Mini App history")
+        return []
+
+
+def _current_question_payload(session: dict) -> dict | None:
+    questions = session.get("questions") or []
+    index = int(session.get("current_index", 0))
+    if index < 0 or index >= len(questions):
+        return None
+    time_limit = session.get("time_limit")
+    sent_at = session.get("question_sent_at")
+    remaining = None
+    if time_limit and sent_at:
+        remaining = max(0.0, float(time_limit) - (time.time() - float(sent_at)))
+    return {
+        "index": index,
+        "total": len(questions),
+        "time_limit": time_limit,
+        "remaining_seconds": remaining,
+        "question": public_question(questions[index]),
+    }
+
+
+def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
+    pool_key = str(payload.get("pool_key", "")).strip()
+    mode = str(payload.get("mode", "relaxed")).strip()
+    if mode not in MODE_CONFIG:
+        return None, "invalid quiz mode", 400
+
+    is_challenge = bool(payload.get("challenge"))
+    if is_challenge:
+        if pool_key != "random_all":
+            return None, "challenge requires random_all pool", 400
+        if mode not in {"relaxed", "speed"}:
+            return None, "invalid challenge mode", 400
+        expected_count = 20
+    else:
+        if pool_key == "random_all":
+            return None, "random_all is reserved for Challenge 20", 400
+        expected_count = 10
+
+    if "count" in payload:
+        try:
+            requested_count = int(payload["count"])
+        except (TypeError, ValueError):
+            return None, "invalid question count", 400
+        if requested_count != expected_count:
+            return None, f"question count must be {expected_count}", 400
+    count = expected_count
+
+    try:
+        from questions import get_pool_by_key
+
+        pool = get_pool_by_key(pool_key)
+    except KeyError:
+        return None, "unknown question pool", 404
+    except Exception:
+        logger.exception("failed to load question pool")
+        return None, "question pool unavailable", 503
+    if len(pool) < count:
+        return None, f"question pool contains fewer than {count} questions", 409
+
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None, "database unavailable", 503
+
+    # A user can have only one active Mini App quiz. Starting a new quiz
+    # explicitly abandons stale/incomplete ones instead of leaving competing
+    # timers and mutable sessions alive.
+    now = _now()
+    try:
+        sessions.update_many(
+            {"user_id": str(user["id"]), "status": "in_progress"},
+            {"$set": {"status": "abandoned", "updated_at_dt": now}},
+        )
+    except Exception:
+        logger.exception("failed to abandon previous Mini App sessions")
+        return None, "could not prepare quiz session", 503
+
+    try:
+        from database import get_user_stats, init_user_stats
+
+        init_user_stats(
+            int(user["id"]),
+            user.get("username", ""),
+            user.get("first_name", ""),
+        )
+        if get_user_stats(int(user["id"])) is None:
+            return None, "user profile unavailable", 503
+    except Exception:
+        logger.exception("failed to initialise user profile")
+        return None, "user profile unavailable", 503
+
+    selected = random.sample(pool, count)
+    try:
+        questions = [prepare_question(question) for question in selected]
+    except (TypeError, ValueError):
+        logger.exception("invalid question data in pool %s", pool_key)
+        return None, "question data is invalid", 500
+
+    cfg = dict(MODE_CONFIG[mode])
+    if is_challenge and mode == "speed":
+        cfg["time_limit"] = 10
+
+    now = _now()
+    session_id = str(uuid.uuid4())
+    document = {
+        "_id": session_id,
+        "user_id": str(user["id"]),
+        "username": user.get("username", ""),
+        "first_name": user.get("first_name", ""),
+        "status": "in_progress",
+        "pool_key": pool_key,
+        "stats_level_key": stats_level_key(pool_key, is_challenge=is_challenge, mode=mode),
+        "mode": mode,
+        "is_challenge": is_challenge,
+        "questions": questions,
+        "question_count": len(questions),
+        "current_index": 0,
+        "correct_count": 0,
+        "current_streak": 0,
+        "max_streak": 0,
+        "answered": [],
+        "time_limit": cfg["time_limit"],
+        "score_multiplier": cfg["multiplier"],
+        "started_at_dt": now,
+        "updated_at_dt": now,
+        # The first question is being returned now, so its server timer starts now.
+        "question_sent_at": time.time(),
+        "leaderboard_recorded": False,
+    }
+    sessions.insert_one(document)
+    current = _current_question_payload(document)
+    return {
+        "session_id": session_id,
+        "mode": mode,
+        **current,
+    }, None, 200
+
+
+def get_current_question(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
+    session_id = str(payload.get("session_id", "")).strip()
+    if not session_id:
+        return None, "session_id is required", 400
+
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None, "database unavailable", 503
+
+    user_id = str(user["id"])
+    session = sessions.find_one({"_id": session_id, "user_id": user_id})
+    if not session or session.get("status") != "in_progress":
+        return None, "quiz session not found or already finished", 409
+
+    questions = session.get("questions") or []
+    index = int(session.get("current_index", 0))
+    if index < 0 or index >= len(questions):
+        return None, "quiz session is inconsistent", 409
+
+    if session.get("question_sent_at") is None:
+        now_ts = time.time()
+        sessions.update_one(
+            {
+                "_id": session_id,
+                "user_id": user_id,
+                "status": "in_progress",
+                "current_index": index,
+                "question_sent_at": None,
+            },
+            {"$set": {"question_sent_at": now_ts, "updated_at_dt": _now()}},
+        )
+        session = sessions.find_one({"_id": session_id, "user_id": user_id}) or session
+
+    current = _current_question_payload(session)
+    if current is None:
+        return None, "quiz session is inconsistent", 409
+    return {"session_id": session_id, **current}, None, 200
+
+
+def _stored_result(session: dict) -> dict:
+    return {
+        "points": int(session.get("awarded_points", 0)),
+        "daily_bonus": int(session.get("daily_bonus", 0)),
+        "new_achievements": list(session.get("new_achievements") or []),
+    }
+
+
+def _confirmed_attempt_increment(before: dict, after: dict, level_key: str) -> bool:
+    attempts_key = f"{level_key}_attempts"
+    return (
+        int(after.get(attempts_key, 0)) >= int(before.get(attempts_key, 0)) + 1
+        and int(after.get("total_tests", 0)) >= int(before.get("total_tests", 0)) + 1
+    )
+
+
+def _finalize_quiz(session: dict, user: dict) -> dict | None:
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None
+
+    if session.get("leaderboard_recorded") and session.get("status") == "finished":
+        return _stored_result(session)
+
+    # Claim finalization before touching aggregate stats. This makes retries
+    # at-most-once and avoids duplicate points if the HTTP response is lost.
+    try:
+        from pymongo import ReturnDocument
+
+        claimed = sessions.find_one_and_update(
+            {
+                "_id": session["_id"],
+                "leaderboard_recorded": False,
+            },
+            {
+                "$set": {
+                    "leaderboard_recorded": True,
+                    "status": "finalizing",
+                    "updated_at_dt": _now(),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except Exception:
+        logger.exception("failed to claim Mini App finalization")
+        return None
+
+    if not claimed:
+        existing = sessions.find_one({"_id": session["_id"]})
+        if existing and existing.get("status") == "finished":
+            return _stored_result(existing)
+        return None
+
+    total = int(claimed.get("question_count") or len(claimed.get("questions", [])))
+    score = int(claimed.get("correct_count", 0))
+    elapsed = max(0.0, (_now() - claimed["started_at_dt"]).total_seconds())
+    uid = int(user["id"])
+    username = user.get("username", "")
+    first_name = user.get("first_name", "")
+    new_achievements: list[str] = []
+    daily_bonus = 0
+
+    try:
+        if claimed.get("is_challenge"):
+            from database import (
+                get_user_stats,
+                is_bonus_eligible,
+                update_challenge_stats,
+                update_weekly_leaderboard,
+            )
+
+            challenge_mode = claimed["stats_level_key"]
+            before_stats = get_user_stats(uid) or {}
+            eligible = is_bonus_eligible(uid, challenge_mode)
+            points, new_achievements = update_challenge_stats(
+                uid, username, first_name, challenge_mode, score, total, elapsed, eligible
+            )
+            after_stats = get_user_stats(uid) or {}
+            if not _confirmed_attempt_increment(before_stats, after_stats, challenge_mode):
+                raise RuntimeError("challenge aggregate stats update was not confirmed")
+            try:
+                update_weekly_leaderboard(uid, username, first_name, challenge_mode, score, elapsed)
+            except Exception:
+                logger.exception("weekly leaderboard update failed")
+        else:
+            from database import (
+                POINTS_PER_QUESTION,
+                add_to_leaderboard,
+                check_daily_bonus,
+                get_user_stats,
+                update_achievement_stats,
+            )
+
+            level_key = claimed["stats_level_key"]
+            multiplier = float(claimed.get("score_multiplier", 1.0))
+            before_stats = get_user_stats(uid) or {}
+            add_to_leaderboard(
+                uid,
+                username,
+                first_name,
+                level_key,
+                score,
+                total,
+                elapsed,
+                score_multiplier=multiplier,
+            )
+            after_stats = get_user_stats(uid) or {}
+            if not _confirmed_attempt_increment(before_stats, after_stats, level_key):
+                raise RuntimeError("leaderboard aggregate stats update was not confirmed")
+            try:
+                update_achievement_stats(uid, score == total, int(claimed.get("max_streak", 0)))
+                daily_bonus = check_daily_bonus(uid)
+            except Exception:
+                logger.exception("secondary achievement/bonus update failed")
+            points = round(score * POINTS_PER_QUESTION.get(level_key, 1) * multiplier) + daily_bonus
+    except Exception as exc:
+        logger.exception("failed to persist Mini App result %s", claimed.get("_id"))
+        sessions.update_one(
+            {"_id": claimed["_id"]},
+            {
+                "$set": {
+                    "status": "score_error",
+                    "score_error": type(exc).__name__,
+                    "updated_at_dt": _now(),
+                }
+            },
+        )
+        return None
+
+    finished_at = _now()
+    sessions.update_one(
+        {"_id": claimed["_id"]},
+        {
+            "$set": {
+                "status": "finished",
+                "finished_at_dt": finished_at,
+                "updated_at_dt": finished_at,
+                "awarded_points": points,
+                "daily_bonus": daily_bonus,
+                "new_achievements": new_achievements,
+            }
+        },
+    )
+    return {"points": points, "daily_bonus": daily_bonus, "new_achievements": new_achievements}
+
+
+def _replay_answer_response(session: dict, requested_question_id: str, user: dict) -> dict | None:
+    answered = next((item for item in session.get("answered", []) if item.get("id") == requested_question_id), None)
+    if not answered:
+        return None
+
+    questions = session.get("questions") or []
+    question = next((item for item in questions if item.get("id") == requested_question_id), None)
+    if not question:
+        return None
+
+    total = int(session.get("question_count") or len(questions))
+    completed = int(session.get("current_index", 0)) >= total
+    result = _stored_result(session) if session.get("status") == "finished" else {
+        "points": 0,
+        "daily_bonus": 0,
+        "new_achievements": [],
+    }
+    if completed and session.get("status") == "in_progress":
+        finalized = _finalize_quiz(session, user)
+        if finalized is None:
+            return None
+        result = finalized
+        session = miniapp_sessions().find_one({"_id": session["_id"]}) or session
+
+    return {
+        "ok": bool(answered.get("ok")),
+        "timed_out": bool(answered.get("timed_out")),
+        "correct_index": int(answered.get("correct", question["correct"])),
+        "explanation": question.get("explanation", ""),
+        "verse": question.get("verse", ""),
+        "topic": question.get("topic", ""),
+        "finished": completed,
+        "score": int(session.get("correct_count", 0)),
+        "total": total,
+        "max_streak": int(session.get("max_streak", 0)),
+        **result,
+    }
+
+
+def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
+    session_id = str(payload.get("session_id", "")).strip()
+    requested_question_id = str(payload.get("question_id", "")).strip()
+    try:
+        chosen = int(payload.get("chosen", -1))
+    except (TypeError, ValueError):
+        return None, "invalid answer", 400
+    if not session_id:
+        return None, "session_id is required", 400
+    if not requested_question_id:
+        return None, "question_id is required", 400
+
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None, "database unavailable", 503
+
+    user_id = str(user["id"])
+    session = sessions.find_one({"_id": session_id, "user_id": user_id})
+    if not session:
+        return None, "quiz session not found", 409
+
+    if session.get("status") in {"finalizing", "score_error"}:
+        return None, "result finalization is incomplete; retry later or inspect server logs", 503
+
+    replay = _replay_answer_response(session, requested_question_id, user)
+    if replay is not None:
+        return replay, None, 200
+
+    # Re-read after a possible concurrent finalization attempt in replay handling.
+    session = sessions.find_one({"_id": session_id, "user_id": user_id}) or session
+    if session.get("status") in {"finalizing", "score_error"}:
+        return None, "result finalization is incomplete; retry later or inspect server logs", 503
+    if session.get("status") != "in_progress":
+        return None, "quiz session is not active", 409
+
+    index = int(session.get("current_index", 0))
+    questions = session.get("questions") or []
+    if index < 0 or index >= len(questions):
+        return None, "quiz session is inconsistent", 409
+
+    question = questions[index]
+    if requested_question_id != question.get("id"):
+        return None, "question already processed or out of order", 409
+    option_count = len(question.get("options") or [])
+    if chosen < -1 or chosen >= option_count:
+        return None, "answer index out of range", 400
+
+    now_ts = time.time()
+    sent_at = session.get("question_sent_at")
+    time_limit = session.get("time_limit")
+    if time_limit and not sent_at:
+        return None, "question has not been presented", 409
+    elapsed_question = max(0.0, now_ts - float(sent_at or now_ts))
+    timed_out = bool(
+        time_limit
+        and (chosen == -1 or elapsed_question > float(time_limit) + TIMEOUT_NETWORK_GRACE_SECONDS)
+    )
+    correct_index = int(question["correct"])
+    ok = not timed_out and chosen == correct_index
+    current_streak = int(session.get("current_streak", 0)) + 1 if ok else 0
+    max_streak = max(int(session.get("max_streak", 0)), current_streak)
+
+    try:
+        from pymongo import ReturnDocument
+
+        updated = sessions.find_one_and_update(
+            {
+                "_id": session_id,
+                "user_id": user_id,
+                "status": "in_progress",
+                "current_index": index,
+            },
+            {
+                "$inc": {"current_index": 1, "correct_count": 1 if ok else 0},
+                "$set": {
+                    "current_streak": current_streak,
+                    "max_streak": max_streak,
+                    "updated_at_dt": _now(),
+                    # The next question timer starts only when /api/quiz/current serves it.
+                    "question_sent_at": None,
+                },
+                "$push": {
+                    "answered": {
+                        "id": question["id"],
+                        "chosen": chosen,
+                        "correct": correct_index,
+                        "ok": ok,
+                        "timed_out": timed_out,
+                        "elapsed_seconds": round(elapsed_question, 3),
+                    }
+                },
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except Exception:
+        logger.exception("failed to advance Mini App session")
+        return None, "could not save answer", 503
+    if not updated:
+        # A concurrent/retried request may have won the atomic update. Return the
+        # stored result instead of forcing a user to restart after a lost response.
+        latest = sessions.find_one({"_id": session_id, "user_id": user_id})
+        if latest and latest.get("status") in {"finalizing", "score_error"}:
+            return None, "result finalization is incomplete; retry later or inspect server logs", 503
+        replay = _replay_answer_response(latest or {}, requested_question_id, user)
+        if replay is not None:
+            return replay, None, 200
+        return None, "answer could not be committed", 409
+
+    try:
+        from database import record_question_stat
+
+        record_question_stat(question["id"], session["pool_key"], ok, elapsed_question)
+    except Exception:
+        logger.exception("failed to record question stat")
+
+    total = int(updated.get("question_count") or len(questions))
+    finished = int(updated.get("current_index", 0)) >= total
+    result = {"points": 0, "daily_bonus": 0, "new_achievements": []}
+    if finished:
+        finalized = _finalize_quiz(updated, user)
+        if finalized is None:
+            return None, "result persistence failed", 503
+        result = finalized
+
+    return {
+        "ok": ok,
+        "timed_out": timed_out,
+        "correct_index": correct_index,
+        "explanation": question.get("explanation", ""),
+        "verse": question.get("verse", ""),
+        "topic": question.get("topic", ""),
+        "finished": finished,
+        "score": int(updated.get("correct_count", 0)),
+        "total": total,
+        "max_streak": max_streak,
+        **result,
+    }, None, 200
