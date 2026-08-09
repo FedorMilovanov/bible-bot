@@ -6,11 +6,11 @@ if (tg) {
   tg.ready();
   tg.expand();
   try { tg.setHeaderColor('#0f0f1a'); } catch (_) {}
-  try { tg.enableClosingConfirmation(); } catch (_) {}
 }
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const quizFlow = new window.QuizFlowGuard();
 
 const LEVELS = [
   { key: 'easy_p1', name: '🟢 Легкий — 1 (ст. 1–16)', pts: 1 },
@@ -114,6 +114,21 @@ function stopTimer() {
     clearInterval(state.timer);
     state.timer = null;
   }
+}
+
+function quizScreenActive() {
+  return Boolean($('#screen-quiz')?.classList.contains('active'));
+}
+
+function isCurrentQuizFlow(epoch, sessionId = null) {
+  if (!quizFlow.isCurrent(epoch) || !quizScreenActive()) return false;
+  return sessionId === null || state.sessionId === sessionId;
+}
+
+function invalidateQuizFlow() {
+  stopTimer();
+  quizFlow.invalidate();
+  state.answerPending = false;
 }
 
 function startTimer(remainingSeconds = null) {
@@ -311,6 +326,7 @@ function openChallenge() {
 
 async function startQuiz(poolKey, mode = 'relaxed', count = 10, challenge = false) {
   if (!(await ensureTelegramAuth())) return;
+  const flowEpoch = quizFlow.begin();
   resetQuizState(poolKey, mode, count, challenge);
   showScreen('quiz');
   setQuizLoading('Готовлю вопросы…');
@@ -320,9 +336,12 @@ async function startQuiz(poolKey, mode = 'relaxed', count = 10, challenge = fals
       method: 'POST',
       body: JSON.stringify({ pool_key: poolKey, mode, count, challenge }),
     });
+    if (!isCurrentQuizFlow(flowEpoch)) return;
     state.sessionId = data.session_id;
     applyCurrentQuestion(data);
   } catch (error) {
+    if (!quizFlow.isCurrent(flowEpoch)) return;
+    invalidateQuizFlow();
     showScreen('home');
     toast(error.status === 401 ? 'Открой приложение из Telegram-бота.' : `Не удалось начать тест: ${error.message}`, 4200);
   }
@@ -347,14 +366,19 @@ function applyCurrentQuestion(data) {
 
 async function loadCurrentQuestion() {
   if (!state.sessionId) return;
+  const flowEpoch = quizFlow.current();
+  const sessionId = state.sessionId;
+  if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
   setQuizLoading('Загружаю следующий вопрос…');
   try {
     const data = await api('/api/quiz/current', {
       method: 'POST',
-      body: JSON.stringify({ session_id: state.sessionId }),
+      body: JSON.stringify({ session_id: sessionId }),
     });
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
     applyCurrentQuestion(data);
   } catch (error) {
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
     $('#quizQuestion').textContent = 'Не удалось загрузить следующий вопрос';
     const box = $('#quizOptions');
     box.replaceChildren();
@@ -426,7 +450,9 @@ function renderFeedback(question, chosen, result) {
 }
 
 async function submitAnswer(chosen, localTimeout = false) {
-  if (state.answerPending || !state.sessionId || !state.question) return;
+  if (state.answerPending || !state.sessionId || !state.question || !quizScreenActive()) return;
+  const flowEpoch = quizFlow.current();
+  const sessionId = state.sessionId;
   state.answerPending = true;
   stopTimer();
   const question = state.question;
@@ -437,8 +463,9 @@ async function submitAnswer(chosen, localTimeout = false) {
   try {
     const result = await api('/api/quiz/answer', {
       method: 'POST',
-      body: JSON.stringify({ session_id: state.sessionId, question_id: question.id, chosen }),
+      body: JSON.stringify({ session_id: sessionId, question_id: question.id, chosen }),
     });
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
 
     state.score = result.score;
     state.maxStreak = result.max_streak || state.maxStreak;
@@ -459,11 +486,13 @@ async function submitAnswer(chosen, localTimeout = false) {
     haptic(result.ok ? 'success' : 'error');
     state.answerPending = false;
 
-    window.setTimeout(() => {
+    quizFlow.schedule(flowEpoch, () => {
+      if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
       if (result.finished) showResult();
       else loadCurrentQuestion();
     }, result.ok ? 900 : 1800);
   } catch (error) {
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
     state.answerPending = false;
     buttons.forEach((button) => { button.disabled = false; });
     toast(`Не удалось сохранить ответ: ${error.message}`, 3600);
@@ -652,11 +681,14 @@ $$('[data-back]').forEach((button) => button.addEventListener('click', () => sho
 $('#openBotBtn').addEventListener('click', openBot);
 $('#quizExit').addEventListener('click', () => {
   if (window.confirm('Выйти из теста? Незавершённый результат не попадёт в рейтинг.')) {
-    stopTimer();
+    invalidateQuizFlow();
     showScreen('home');
   }
 });
-$('#resultHome').addEventListener('click', () => showScreen('home'));
+$('#resultHome').addEventListener('click', () => {
+  invalidateQuizFlow();
+  showScreen('home');
+});
 $('#resultRetry').addEventListener('click', () => startQuiz(state.poolKey, state.mode, state.requestedCount, state.challenge));
 $('#resultReview').addEventListener('click', showReview);
 $('#resultShare').addEventListener('click', async () => {
@@ -688,7 +720,7 @@ if (tg?.BackButton) {
     const active = document.querySelector('.screen.active')?.id;
     if (active === 'screen-quiz') {
       if (window.confirm('Выйти из теста?')) {
-        stopTimer();
+        invalidateQuizFlow();
         showScreen('home');
       }
     } else if (active === 'screen-home') tg.close();
