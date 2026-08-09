@@ -1,4 +1,3 @@
-import pytest
 from pymongo.errors import DuplicateKeyError, ServerSelectionTimeoutError
 
 import database
