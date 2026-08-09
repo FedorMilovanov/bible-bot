@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 from flask import g, jsonify, request
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
 from .auth import get_user_from_request
@@ -131,6 +131,10 @@ def create_app():
     @app.errorhandler(DuplicateKeyError)
     def _duplicate_active_quiz(_error):
         return jsonify({"error": "another active quiz already exists; retry start"}), 409
+
+    @app.errorhandler(PyMongoError)
+    def _database_operation_failed(_error):
+        return jsonify({"error": "database temporarily unavailable"}), 503
 
     return app
 
