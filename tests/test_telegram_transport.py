@@ -6,17 +6,18 @@ from web_api import telegram_transport
 
 
 class FakeBot:
-    def __init__(self):
+    def __init__(self, *, webhook_result=True):
         self.webhook_calls = []
+        self.webhook_result = webhook_result
 
     async def set_webhook(self, **kwargs):
         self.webhook_calls.append(kwargs)
-        return True
+        return self.webhook_result
 
 
 class FakeApplication:
-    def __init__(self):
-        self.bot = FakeBot()
+    def __init__(self, *, webhook_result=True):
+        self.bot = FakeBot(webhook_result=webhook_result)
         self.update_queue = asyncio.Queue()
         self.events = []
 
@@ -110,4 +111,25 @@ def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown
     assert webhook["url"] == "https://example.com/telegram/webhook"
     assert webhook["drop_pending_updates"] is False
     assert webhook["secret_token"] == telegram_transport.telegram_webhook_secret()
+    assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
+
+
+def test_webhook_application_fails_before_start_when_telegram_rejects_registration(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
+    app = FakeApplication(webhook_result=False)
+
+    async def scenario():
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await telegram_transport._run_webhook_application(
+            app,
+            stop_event=stop_event,
+            install_signal_handlers=False,
+        )
+
+    with pytest.raises(RuntimeError, match="did not confirm webhook registration"):
+        asyncio.run(scenario())
+
+    assert app.events == ["initialize", "shutdown"]
     assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
