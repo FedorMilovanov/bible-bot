@@ -21,6 +21,7 @@ _RATE_LIMITS = {
     ("GET", "/api/me"): (60, 60),
     ("GET", "/api/leaderboard"): (60, 60),
 }
+_QUESTION_ENDPOINT_LIMIT = (30, 60)
 _SERIALIZED_QUIZ_PATHS = frozenset({
     "/api/quiz/start",
     "/api/quiz/current",
@@ -46,16 +47,21 @@ def create_app():
 
     @app.before_request
     def _protect_api_boundary():
+        question_catalog_request = request.method == "GET" and request.path.startswith("/api/questions/")
         policy = _RATE_LIMITS.get((request.method, request.path))
+        if policy is None and question_catalog_request:
+            policy = _QUESTION_ENDPOINT_LIMIT
         if policy is None:
             return None
 
         # Authenticate protected API traffic before parsing request bodies.
-        # The route itself still emits the canonical 401 response when auth is
-        # missing/invalid; before_request simply avoids spending parser/lock/DB
-        # work on anonymous traffic.
+        # The route itself still emits the canonical 401 response for its normal
+        # authenticated surfaces. The legacy question compatibility route does
+        # not own auth itself, so enforce it here as well.
         user = get_user_from_request()
         if not user:
+            if question_catalog_request:
+                return jsonify({"error": "telegram authentication required"}), 401
             return None
 
         limit, window_seconds = policy
