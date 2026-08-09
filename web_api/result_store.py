@@ -1,18 +1,20 @@
 """Crash-safe, idempotent persistence for Mini App aggregate results.
 
-A temporary receipt is written into the same MongoDB user document and in the
-same atomic update as points/attempts. If the process dies before the quiz
-session is marked finished, a retry sees the receipt and returns the previously
-applied result instead of incrementing aggregates again.
+A receipt is written into the same MongoDB user document and in the same atomic
+update as points/attempts. If the process dies before the quiz session is marked
+finished, a retry sees the receipt and returns the already-applied result.
+Receipts are retained longer than the Mini App session TTL, then pruned lazily
+on later result writes so the user document cannot grow without bound.
 """
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 _RESULT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_RECEIPT_RETENTION = timedelta(hours=24)
 
 
 def _today_utc() -> str:
@@ -37,29 +39,30 @@ def _user_collection():
     return database.collection
 
 
-def get_result_receipt(user_id: int, result_id: str) -> dict | None:
-    collection = _user_collection()
-    if collection is None:
-        return None
-    _receipt_field(result_id)
-    try:
-        return _receipt_from(collection.find_one({"_id": str(user_id)}), result_id)
-    except Exception:
-        logger.exception("failed to read Mini App result receipt")
-        return None
-
-
-def clear_result_receipt(user_id: int, result_id: str) -> None:
-    """Best-effort cleanup after the quiz session itself is durably finished."""
+def _prune_old_receipts(user_id: int) -> None:
+    """Best-effort cleanup; only receipts much older than the 6h session TTL qualify."""
     collection = _user_collection()
     if collection is None:
         return
-    field = _receipt_field(result_id)
+
     try:
-        collection.update_one({"_id": str(user_id)}, {"$unset": {field: ""}})
+        entry = collection.find_one({"_id": str(user_id)}) or {}
+        receipts = entry.get("miniapp_result_receipts") or {}
+        if not isinstance(receipts, dict):
+            return
+        cutoff = datetime.utcnow() - _RECEIPT_RETENTION
+        stale = []
+        for result_id, receipt in receipts.items():
+            applied_at = receipt.get("applied_at") if isinstance(receipt, dict) else None
+            if isinstance(applied_at, datetime) and applied_at < cutoff:
+                stale.append(result_id)
+        if stale:
+            collection.update_one(
+                {"_id": str(user_id)},
+                {"$unset": {_receipt_field(result_id): "" for result_id in stale}},
+            )
     except Exception:
-        # A leaked receipt is harmless and far safer than deleting it too early.
-        logger.warning("could not clean Mini App result receipt %s", result_id, exc_info=True)
+        logger.warning("could not prune old Mini App result receipts", exc_info=True)
 
 
 def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> dict | None:
@@ -69,7 +72,9 @@ def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> 
 
     uid = str(user_id)
     field = _receipt_field(result_id)
-    update.setdefault("$set", {})[field] = receipt
+    stored_receipt = dict(receipt)
+    stored_receipt["applied_at"] = datetime.utcnow()
+    update.setdefault("$set", {})[field] = stored_receipt
     try:
         result = collection.update_one(
             {"_id": uid, field: {"$exists": False}},
@@ -77,10 +82,13 @@ def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> 
             upsert=False,
         )
         if getattr(result, "modified_count", 0) == 1:
-            return dict(receipt)
+            _prune_old_receipts(user_id)
+            return dict(stored_receipt)
 
-        # A racing/retried finalizer may have won the atomic update.
-        return _receipt_from(collection.find_one({"_id": uid}), result_id)
+        existing = _receipt_from(collection.find_one({"_id": uid}), result_id)
+        if existing is not None:
+            _prune_old_receipts(user_id)
+        return existing
     except Exception:
         logger.exception("failed to persist Mini App result receipt %s", result_id)
         return None
