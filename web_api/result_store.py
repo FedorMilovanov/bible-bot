@@ -49,13 +49,16 @@ def _sync_weekly_challenge_result(
     mode: str,
     score: int,
     time_seconds: float,
+    week_id: str | None = None,
 ) -> None:
-    """Idempotently sync a Challenge result to the current weekly leaderboard.
+    """Idempotently sync a Challenge result to its original weekly leaderboard.
 
     Unlike the legacy helper, database errors intentionally propagate. The main
     user aggregate is already protected by its result receipt, so a failed
     weekly write leaves the quiz recoverable; replaying the last answer retries
-    this sync without incrementing the user's aggregate a second time.
+    this sync without incrementing the user's aggregate a second time. New
+    receipts persist the original week id so a retry after an ISO-week boundary
+    cannot move the result into the next leaderboard.
     """
     import database
 
@@ -65,8 +68,8 @@ def _sync_weekly_challenge_result(
     if weekly is None:
         return
 
-    week_id = database.get_current_week_id()
-    doc_id = f"{week_id}_{mode}_{user_id}"
+    resolved_week_id = str(week_id or database.get_current_week_id())
+    doc_id = f"{resolved_week_id}_{mode}_{user_id}"
     existing = weekly.find_one({"_id": doc_id})
     best_score = int((existing or {}).get("best_score", -1))
     best_time = float((existing or {}).get("best_time", float("inf")))
@@ -80,7 +83,7 @@ def _sync_weekly_challenge_result(
         {"_id": doc_id},
         {
             "$set": {
-                "week_id": week_id,
+                "week_id": resolved_week_id,
                 "mode": mode,
                 "user_id": str(user_id),
                 "username": username or "",
@@ -293,12 +296,14 @@ def apply_challenge_result_once(
             mode=mode,
             score=score,
             time_seconds=time_seconds,
+            week_id=prior_receipt.get("week_id"),
         )
         return prior_receipt
 
     score = max(0, min(int(score), int(total)))
     total = max(1, int(total))
     today = _today_utc()
+    week_id = str(database.get_current_week_id())
     eligible = existing.get(f"{mode}_last_bonus_date", "") != today
     bonus = database.compute_bonus(score, mode, eligible)
     base_points = score * database.POINTS_PER_QUESTION.get(mode, 1)
@@ -349,6 +354,7 @@ def apply_challenge_result_once(
         "new_achievements": new_achievements,
         "kind": "challenge",
         "level_key": mode,
+        "week_id": week_id,
     }
     update = {
         "$inc": {
@@ -374,5 +380,6 @@ def apply_challenge_result_once(
         mode=mode,
         score=score,
         time_seconds=time_seconds,
+        week_id=stored.get("week_id") or week_id,
     )
     return stored
