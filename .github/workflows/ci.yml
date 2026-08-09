@@ -50,8 +50,11 @@ jobs:
         run: pytest -q
       - name: Check Mini App JavaScript syntax
         run: |
+          node --check miniapp/flow_guard.js
           node --check miniapp/app.js
           node --check miniapp/lifecycle.js
+      - name: Run Mini App JavaScript unit tests
+        run: node --test tests/js/*.test.js
       - name: Build production container
         run: docker build --tag bible-bot-ci .
       - name: Smoke test built web container
@@ -62,9 +65,12 @@ jobs:
           trap 'docker stop bible-bot-ci-web >/dev/null 2>&1 || true' EXIT
           for _ in {1..20}; do
             if curl --fail --silent --show-error http://127.0.0.1:18080/live >/tmp/live.json \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html; then
+              && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html \
+              && curl --fail --silent --show-error http://127.0.0.1:18080/flow_guard.js >/tmp/flow_guard.js; then
               grep -q '"status":"ok"' /tmp/live.json
               grep -q '<title>Библейский тест — 1 Петра</title>' /tmp/miniapp.html
+              grep -q '<script src="flow_guard.js"></script>' /tmp/miniapp.html
+              grep -q 'class QuizFlowGuard' /tmp/flow_guard.js
               exit 0
             fi
             sleep 1
