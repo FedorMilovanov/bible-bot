@@ -1,4 +1,5 @@
 import asyncio
+from threading import Thread
 
 import pytest
 
@@ -35,9 +36,32 @@ class FakeApplication:
         self.events.append("stop")
 
 
+class RecordingQueue:
+    def __init__(self):
+        self.items = []
+
+    async def put(self, item):
+        self.items.append(item)
+
+
 def test_transport_defaults_to_polling(monkeypatch):
     monkeypatch.delenv("TELEGRAM_TRANSPORT", raising=False)
     assert telegram_transport.telegram_transport_mode() == "polling"
+
+
+def test_polling_mode_delegates_to_legacy_run_polling(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "polling")
+
+    class PollingApplication:
+        def __init__(self):
+            self.called = False
+
+        def run_polling(self):
+            self.called = True
+
+    app = PollingApplication()
+    telegram_transport.run_telegram_application(app)
+    assert app.called is True
 
 
 def test_invalid_transport_mode_fails_closed(monkeypatch):
@@ -79,6 +103,26 @@ def test_webhook_base_url_requires_https_and_no_query(monkeypatch):
     monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com/?x=1")
     with pytest.raises(telegram_transport.TransportConfigurationError):
         telegram_transport.telegram_webhook_base_url()
+
+
+def test_bridge_parses_real_minimal_update_and_puts_it_on_ptb_queue():
+    loop = asyncio.new_event_loop()
+    thread = Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    queue = RecordingQueue()
+    app = type("BridgeApplication", (), {"bot": FakeBot(), "update_queue": queue})()
+
+    try:
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.configure(app, loop)
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit({"update_id": 42})
+    finally:
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear(app)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
+
+    assert len(queue.items) == 1
+    assert queue.items[0].update_id == 42
 
 
 def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown(monkeypatch):
