@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
 STARTED_AT = datetime.now(UTC)
+_PRIVATE_USER_FIELDS = frozenset({"miniapp_result_receipts"})
 
 
 def _uptime_seconds() -> int:
@@ -41,6 +42,15 @@ def _database_ready() -> bool:
         return bool(check_db_connection())
     except Exception:
         return False
+
+
+def _public_user_document(document: dict | None) -> dict:
+    """Remove Mongo/private implementation state before returning a user document."""
+    return {
+        key: value
+        for key, value in (document or {}).items()
+        if not key.startswith("_") and key not in _PRIVATE_USER_FIELDS
+    }
 
 
 def _history_timestamp(item: dict) -> float:
@@ -241,8 +251,8 @@ def create_app() -> Flask:
                 {
                     "user": user,
                     "position": position,
-                    "entry": {k: v for k, v in (entry or {}).items() if not k.startswith("_")},
-                    "stats": {k: v for k, v in stats_data.items() if not k.startswith("_")},
+                    "entry": _public_user_document(entry),
+                    "stats": _public_user_document(stats_data),
                     "history": _serialize_history(history),
                     "achievements": achievements,
                     "streak": {"count": streak_count, "last": streak_date},
