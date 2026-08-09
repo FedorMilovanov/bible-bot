@@ -139,9 +139,12 @@ def test_leaderboard_requires_telegram_auth(client):
     assert response.status_code == 401
 
 
-def test_public_questions_never_expose_answer_or_explanation(client):
-    http, _ = client
-    response = http.get("/api/questions/easy_p1")
+def test_authenticated_questions_never_expose_answer_or_explanation(client):
+    http, token = client
+    response = http.get(
+        "/api/questions/easy_p1",
+        headers={"X-Telegram-Init-Data": signed_init_data(token)},
+    )
     assert response.status_code == 200
     questions = response.get_json()
     assert questions
