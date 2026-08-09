@@ -94,8 +94,6 @@ def client(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", token)
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "3600")
-    # Unit tests use a fake Mini App session collection and no real MongoDB.
-    # Keep the shared-profile contract explicit instead of depending on Atlas.
     monkeypatch.setattr(database, "init_user_stats", lambda *args, **kwargs: True)
     monkeypatch.setattr(database, "get_user_stats", lambda user_id: {"_id": str(user_id)})
     keep_alive.app.config.update(TESTING=True)
@@ -215,8 +213,6 @@ def test_server_authoritative_quiz_and_idempotent_replay(client, monkeypatch):
     assert result["score"] == 1
     assert result["correct_index"] == correct
 
-    # A delayed retry is idempotent: it returns the stored result and never
-    # advances the second question or awards anything twice.
     replay = http.post(
         "/api/quiz/answer",
         headers=auth,
@@ -263,24 +259,18 @@ def test_client_timeout_is_server_recorded_as_timeout(client, monkeypatch):
     assert result["timed_out"] is True
 
 
-def test_normal_finalization_is_idempotent_and_uses_naive_utc(monkeypatch):
+def test_normal_finalization_uses_receipt_once_and_naive_utc(monkeypatch):
     sessions = FakeCollection()
     monkeypatch.setattr(quiz_module, "miniapp_sessions", lambda: sessions)
     assert quiz_module._now().tzinfo is None
 
-    aggregate = {"total_tests": 0, "easy_p1_attempts": 0}
+    calls = []
 
-    def get_stats(_user_id):
-        return dict(aggregate)
+    def apply_once(**kwargs):
+        calls.append(kwargs["result_id"])
+        return {"points": 7, "daily_bonus": 0, "new_achievements": []}
 
-    def add_result(*args, **kwargs):
-        aggregate["total_tests"] += 1
-        aggregate["easy_p1_attempts"] += 1
-
-    monkeypatch.setattr(database, "get_user_stats", get_stats)
-    monkeypatch.setattr(database, "add_to_leaderboard", add_result)
-    monkeypatch.setattr(database, "update_achievement_stats", lambda *args, **kwargs: None)
-    monkeypatch.setattr(database, "check_daily_bonus", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(quiz_module, "apply_regular_result_once", apply_once)
 
     session = {
         "_id": "finalize-test",
@@ -300,12 +290,12 @@ def test_normal_finalization_is_idempotent_and_uses_naive_utc(monkeypatch):
 
     result = quiz_module._finalize_quiz(copy.deepcopy(session), user)
     assert result["points"] == 7
-    assert aggregate["total_tests"] == 1
+    assert calls == ["finalize-test"]
     assert sessions.docs[session["_id"]]["status"] == "finished"
 
     replay = quiz_module._finalize_quiz(sessions.find_one({"_id": session["_id"]}), user)
     assert replay["points"] == 7
-    assert aggregate["total_tests"] == 1
+    assert calls == ["finalize-test"]
 
 
 def test_invalid_mode_and_count_are_rejected(client, monkeypatch):
