@@ -19,11 +19,14 @@ from .quiz import (
     question_id,
     start_quiz,
 )
+from .ttl_cache import TTLValueCache
 
 logger = logging.getLogger(__name__)
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
 STARTED_AT = datetime.now(UTC)
+_DB_READY_CACHE = TTLValueCache[bool](ttl_seconds=2)
+_TOTAL_USERS_CACHE = TTLValueCache[int](ttl_seconds=15)
 _PUBLIC_USER_FIELDS = frozenset(
     {
         "username",
@@ -66,9 +69,18 @@ def _database_ready() -> bool:
     try:
         from database import check_db_connection
 
-        return bool(check_db_connection())
+        return bool(_DB_READY_CACHE.get(check_db_connection))
     except Exception:
         return False
+
+
+def _total_users() -> int:
+    try:
+        from database import get_total_users
+
+        return int(_TOTAL_USERS_CACHE.get(get_total_users))
+    except Exception:
+        return 0
 
 
 def _public_user_document(document: dict | None) -> dict:
@@ -192,7 +204,6 @@ def create_app() -> Flask:
     @app.get("/api/stats")
     def stats():
         try:
-            from database import get_total_users
             from questions import POOL_REGISTRY
 
             pools = {key: len(value) for key, value in POOL_REGISTRY.items()}
@@ -206,7 +217,7 @@ def create_app() -> Flask:
                 {
                     "status": "ok",
                     "database": "connected" if _database_ready() else "unavailable",
-                    "total_users": get_total_users(),
+                    "total_users": _total_users(),
                     "total_questions": len(unique_ids),
                     "pools": pools,
                     "uptime_seconds": _uptime_seconds(),
