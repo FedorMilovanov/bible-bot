@@ -81,6 +81,17 @@ def telegram_webhook_url() -> str:
     return f"{telegram_webhook_base_url()}{WEBHOOK_PATH}"
 
 
+def telegram_webhook_max_connections() -> int:
+    raw = os.getenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "4").strip() or "4"
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise TransportConfigurationError("TELEGRAM_WEBHOOK_MAX_CONNECTIONS must be an integer from 1 to 100") from exc
+    if value < 1 or value > 100:
+        raise TransportConfigurationError("TELEGRAM_WEBHOOK_MAX_CONNECTIONS must be an integer from 1 to 100")
+    return value
+
+
 class TelegramWebhookBridge:
     """Thread-safe bridge from Waitress threads to PTB's asyncio update queue."""
 
@@ -153,6 +164,7 @@ async def _run_webhook_application(
     """Run PTB lifecycle while Waitress owns the public HTTP socket."""
     webhook_url = telegram_webhook_url()
     secret = telegram_webhook_secret()
+    max_connections = telegram_webhook_max_connections()
     local_stop = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed_signals: list[signal.Signals] = []
@@ -173,13 +185,18 @@ async def _run_webhook_application(
                 url=webhook_url,
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=False,
+                max_connections=max_connections,
                 secret_token=secret,
             )
             if configured is not True:
                 raise RuntimeError("Telegram did not confirm webhook registration")
             await application.start()
             started = True
-            logger.info("Telegram webhook transport active at %s", WEBHOOK_PATH)
+            logger.info(
+                "Telegram webhook transport active at %s (max_connections=%s)",
+                WEBHOOK_PATH,
+                max_connections,
+            )
             await local_stop.wait()
             await _call_shutdown_hook(before_shutdown)
             if started:
