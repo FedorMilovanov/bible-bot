@@ -14,6 +14,7 @@ def test_render_enables_webhook_transport_on_existing_web_service():
     assert "startCommand: python bot.py" in render
     assert "healthCheckPath: /live" in render
     assert "- key: TELEGRAM_TRANSPORT\n        value: webhook" in render
+    assert "- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: \"4\"" in render
     assert "TELEGRAM_WEBHOOK_BASE_URL" not in render
     assert "TELEGRAM_WEBHOOK_SECRET" not in render
 
