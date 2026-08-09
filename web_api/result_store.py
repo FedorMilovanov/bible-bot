@@ -3,8 +3,9 @@
 A receipt is written into the same MongoDB user document and in the same atomic
 update as points/attempts. If the process dies before the quiz session is marked
 finished, a retry sees the receipt and returns the already-applied result.
-Receipts are retained longer than the Mini App session TTL, then pruned lazily
-on later result writes so the user document cannot grow without bound.
+Receipts are retained beyond the normal session TTL and are pruned lazily only
+when their source session is gone or terminal, so recoverable finalizations keep
+an exactly-once receipt for as long as they need it.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 _RESULT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RECEIPT_RETENTION = timedelta(hours=24)
+_TERMINAL_SESSION_STATUSES = frozenset({"finished", "abandoned"})
 
 
 def _today_utc() -> str:
@@ -40,9 +42,12 @@ def _user_collection():
 
 
 def _prune_old_receipts(user_id: int) -> None:
-    """Best-effort cleanup; only receipts much older than the 6h session TTL qualify."""
-    collection = _user_collection()
-    if collection is None:
+    """Remove only old receipts whose source session can no longer be recovered."""
+    import database
+
+    collection = database.collection
+    db = getattr(database, "db", None)
+    if collection is None or db is None:
         return
 
     try:
@@ -50,19 +55,30 @@ def _prune_old_receipts(user_id: int) -> None:
         receipts = entry.get("miniapp_result_receipts") or {}
         if not isinstance(receipts, dict):
             return
+
         cutoff = datetime.utcnow() - _RECEIPT_RETENTION
-        stale = []
+        sessions = db["miniapp_sessions"]
+        stale: list[str] = []
         for result_id, receipt in receipts.items():
             applied_at = receipt.get("applied_at") if isinstance(receipt, dict) else None
-            if isinstance(applied_at, datetime) and applied_at < cutoff:
+            if not isinstance(applied_at, datetime) or applied_at >= cutoff:
+                continue
+
+            session = sessions.find_one(
+                {"_id": result_id, "user_id": str(user_id)},
+                {"status": 1},
+            )
+            if session is None or session.get("status") in _TERMINAL_SESSION_STATUSES:
                 stale.append(result_id)
+
         if stale:
             collection.update_one(
                 {"_id": str(user_id)},
                 {"$unset": {_receipt_field(result_id): "" for result_id in stale}},
             )
     except Exception:
-        logger.warning("could not prune old Mini App result receipts", exc_info=True)
+        # Pruning is maintenance only. On any ambiguity, retain the receipt.
+        logger.warning("could not safely prune old Mini App result receipts", exc_info=True)
 
 
 def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> dict | None:
