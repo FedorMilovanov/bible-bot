@@ -23,6 +23,21 @@ def _today_utc() -> str:
     return datetime.utcnow().strftime("%Y-%m-%d")
 
 
+def _week_id_utc(moment: datetime | None = None) -> str:
+    iso = (moment or datetime.utcnow()).date().isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _receipt_week_id(receipt: dict) -> str:
+    stored = str(receipt.get("week_id") or "").strip()
+    if stored:
+        return stored
+    applied_at = receipt.get("applied_at")
+    if isinstance(applied_at, datetime):
+        return _week_id_utc(applied_at)
+    return _week_id_utc()
+
+
 def _receipt_field(result_id: str) -> str:
     if not _RESULT_ID_RE.fullmatch(result_id or ""):
         raise ValueError("invalid Mini App result id")
@@ -68,7 +83,7 @@ def _sync_weekly_challenge_result(
     if weekly is None:
         return
 
-    resolved_week_id = str(week_id or database.get_current_week_id())
+    resolved_week_id = str(week_id or _week_id_utc())
     doc_id = f"{resolved_week_id}_{mode}_{user_id}"
     existing = weekly.find_one({"_id": doc_id})
     best_score = int((existing or {}).get("best_score", -1))
@@ -296,14 +311,14 @@ def apply_challenge_result_once(
             mode=mode,
             score=score,
             time_seconds=time_seconds,
-            week_id=prior_receipt.get("week_id"),
+            week_id=_receipt_week_id(prior_receipt),
         )
         return prior_receipt
 
     score = max(0, min(int(score), int(total)))
     total = max(1, int(total))
     today = _today_utc()
-    week_id = str(database.get_current_week_id())
+    week_id = _week_id_utc()
     eligible = existing.get(f"{mode}_last_bonus_date", "") != today
     bonus = database.compute_bonus(score, mode, eligible)
     base_points = score * database.POINTS_PER_QUESTION.get(mode, 1)
@@ -380,6 +395,6 @@ def apply_challenge_result_once(
         mode=mode,
         score=score,
         time_seconds=time_seconds,
-        week_id=stored.get("week_id") or week_id,
+        week_id=_receipt_week_id(stored),
     )
     return stored
