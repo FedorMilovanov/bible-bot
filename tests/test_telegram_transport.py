@@ -1,0 +1,113 @@
+import asyncio
+
+import pytest
+
+from web_api import telegram_transport
+
+
+class FakeBot:
+    def __init__(self):
+        self.webhook_calls = []
+
+    async def set_webhook(self, **kwargs):
+        self.webhook_calls.append(kwargs)
+        return True
+
+
+class FakeApplication:
+    def __init__(self):
+        self.bot = FakeBot()
+        self.update_queue = asyncio.Queue()
+        self.events = []
+
+    async def __aenter__(self):
+        self.events.append("initialize")
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.events.append("shutdown")
+
+    async def start(self):
+        self.events.append("start")
+
+    async def stop(self):
+        self.events.append("stop")
+
+
+def test_transport_defaults_to_polling(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_TRANSPORT", raising=False)
+    assert telegram_transport.telegram_transport_mode() == "polling"
+
+
+def test_invalid_transport_mode_fails_closed(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "magic")
+    with pytest.raises(telegram_transport.TransportConfigurationError):
+        telegram_transport.telegram_transport_mode()
+
+
+def test_webhook_secret_is_stable_allowed_hex_when_derived(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
+
+    first = telegram_transport.telegram_webhook_secret()
+    second = telegram_transport.telegram_webhook_secret()
+
+    assert first == second
+    assert len(first) == 64
+    assert first.isalnum()
+
+
+def test_explicit_webhook_secret_rejects_telegram_invalid_characters(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "invalid=base64=secret")
+    with pytest.raises(telegram_transport.TransportConfigurationError):
+        telegram_transport.telegram_webhook_secret()
+
+
+def test_webhook_url_uses_render_external_url(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://bible-bot.onrender.com/")
+
+    assert telegram_transport.telegram_webhook_url() == "https://bible-bot.onrender.com/telegram/webhook"
+
+
+def test_webhook_base_url_requires_https_and_no_query(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "http://example.com")
+    with pytest.raises(telegram_transport.TransportConfigurationError):
+        telegram_transport.telegram_webhook_base_url()
+
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com/?x=1")
+    with pytest.raises(telegram_transport.TransportConfigurationError):
+        telegram_transport.telegram_webhook_base_url()
+
+
+def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    app = FakeApplication()
+    shutdown_events = []
+
+    async def scenario():
+        stop_event = asyncio.Event()
+        stop_event.set()
+
+        async def before_shutdown():
+            shutdown_events.append("saved")
+
+        await telegram_transport._run_webhook_application(
+            app,
+            before_shutdown=before_shutdown,
+            stop_event=stop_event,
+            install_signal_handlers=False,
+        )
+
+    asyncio.run(scenario())
+
+    assert app.events == ["initialize", "start", "stop", "shutdown"]
+    assert shutdown_events == ["saved"]
+    assert len(app.bot.webhook_calls) == 1
+    webhook = app.bot.webhook_calls[0]
+    assert webhook["url"] == "https://example.com/telegram/webhook"
+    assert webhook["drop_pending_updates"] is False
+    assert webhook["secret_token"] == telegram_transport.telegram_webhook_secret()
+    assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
