@@ -24,7 +24,34 @@ logger = logging.getLogger(__name__)
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
 STARTED_AT = datetime.now(UTC)
-_PRIVATE_USER_FIELDS = frozenset({"miniapp_result_receipts"})
+_PUBLIC_USER_FIELDS = frozenset(
+    {
+        "username",
+        "first_name",
+        "first_play_date",
+        "created_at",
+        "last_activity",
+        "total_points",
+        "total_tests",
+        "total_questions_answered",
+        "total_correct_answers",
+        "total_time_spent",
+        "battles_played",
+        "battles_won",
+        "battles_lost",
+        "battles_draw",
+        "perfect_count",
+        "max_streak_ever",
+        "daily_streak",
+        "daily_streak_last",
+        "daily_activity_streak",
+        "daily_activity_last",
+        "challenge_streak_count",
+        "challenge_streak_last_date",
+        "achievements",
+    }
+)
+_PUBLIC_LEVEL_SUFFIXES = ("attempts", "correct", "total", "best_score")
 
 
 def _uptime_seconds() -> int:
@@ -45,12 +72,22 @@ def _database_ready() -> bool:
 
 
 def _public_user_document(document: dict | None) -> dict:
-    """Remove Mongo/private implementation state before returning a user document."""
-    return {
-        key: value
-        for key, value in (document or {}).items()
-        if not key.startswith("_") and key not in _PRIVATE_USER_FIELDS
-    }
+    """Return only the explicitly public aggregate fields used by the Mini App."""
+    allowed = set(_PUBLIC_USER_FIELDS)
+    try:
+        from database import ALL_LEVEL_KEYS
+
+        allowed.update(
+            f"{level_key}_{suffix}"
+            for level_key in ALL_LEVEL_KEYS
+            for suffix in _PUBLIC_LEVEL_SUFFIXES
+        )
+    except Exception:
+        # Base profile fields still have a deterministic public contract even if
+        # the database module is unavailable while rendering an error response.
+        pass
+
+    return {key: value for key, value in (document or {}).items() if key in allowed}
 
 
 def _history_timestamp(item: dict) -> float:
