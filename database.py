@@ -932,7 +932,8 @@ def get_context_leaderboard(limit=10):
 
 def get_current_week_id():
     d = date.today()
-    return f"{d.year}-W{d.isocalendar()[1]:02d}"
+    iso_year, iso_week, _ = d.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
 
 
 def is_bonus_eligible(user_id: int, mode: str) -> bool:
