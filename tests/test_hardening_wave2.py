@@ -149,3 +149,24 @@ def test_css_uses_telegram_theme_safe_area_and_reduced_motion():
     assert "--tg-theme-bg-color" in content
     assert "--tg-content-safe-area-inset-bottom" in content
     assert "prefers-reduced-motion:reduce" in content
+
+
+def test_meta_exposes_only_safe_deployment_identity(http, monkeypatch):
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "bible-bot")
+    monkeypatch.setenv("RENDER_GIT_BRANCH", "main")
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "0123456789abcdef0123456789abcdef01234567EXTRA")
+    monkeypatch.setenv("BOT_TOKEN", "do-not-leak")
+    monkeypatch.setenv("MONGO_URL", "mongodb://do-not-leak")
+
+    response = http.get("/meta")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body == {
+        "service": "bible-bot",
+        "branch": "main",
+        "revision": "0123456789abcdef0123456789abcdef01234567",
+        "environment": "development",
+    }
+    serialized = response.get_data(as_text=True)
+    assert "do-not-leak" not in serialized
+    assert "mongodb://" not in serialized
