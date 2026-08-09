@@ -38,7 +38,10 @@ def verify_init_data(init_data: str) -> dict | None:
             return None
 
         user = json.loads(data.get("user", ""))
-        if not isinstance(user, dict) or not user.get("id"):
+        if not isinstance(user, dict):
+            return None
+        user_id = user.get("id")
+        if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
             return None
         return user
     except (TypeError, ValueError, json.JSONDecodeError):
