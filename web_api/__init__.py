@@ -26,6 +26,18 @@ def create_app():
     app = _create_routes_app()
     app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
 
+    @app.get("/meta")
+    def _deployment_meta():
+        """Non-secret deployment identity for smoke checks and incident triage."""
+        return jsonify(
+            {
+                "service": os.getenv("RENDER_SERVICE_NAME", "local"),
+                "branch": os.getenv("RENDER_GIT_BRANCH", ""),
+                "revision": os.getenv("RENDER_GIT_COMMIT", "")[:40],
+                "environment": os.getenv("APP_ENV", "production"),
+            }
+        )
+
     @app.before_request
     def _protect_api_boundary():
         if request.path.startswith("/api/quiz/") and request.method == "POST" and not request.is_json:
