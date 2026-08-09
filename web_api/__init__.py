@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 from pymongo.errors import DuplicateKeyError
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -11,6 +11,7 @@ from .auth import get_user_from_request
 from .db_hardening import ensure_miniapp_indexes
 from .rate_limit import GLOBAL_API_LIMITER
 from .routes import create_app as _create_routes_app
+from .user_locks import user_operation_lock
 
 # Per authenticated Telegram user. Values are (requests, window seconds).
 _RATE_LIMITS = {
@@ -20,6 +21,11 @@ _RATE_LIMITS = {
     ("GET", "/api/me"): (60, 60),
     ("GET", "/api/leaderboard"): (60, 60),
 }
+_SERIALIZED_QUIZ_PATHS = frozenset({
+    "/api/quiz/start",
+    "/api/quiz/current",
+    "/api/quiz/answer",
+})
 
 
 def create_app():
@@ -64,12 +70,26 @@ def create_app():
             response.headers["Retry-After"] = str(retry_after)
             return response
 
+        if request.path in _SERIALIZED_QUIZ_PATHS:
+            # Waitress is multi-threaded. Hold one bounded lock stripe for the
+            # authenticated user until Flask tears down the request so a new
+            # start cannot race that user's current/answer persistence.
+            lock = user_operation_lock(user["id"])
+            lock.acquire()
+            g.miniapp_user_operation_lock = lock
+
         if request.path == "/api/quiz/start":
-            # DB-level uniqueness complements the application-level abandon guard.
-            # Failure is logged and retried on the next start instead of taking
-            # Telegram polling or the whole Mini App offline.
+            # DB-level uniqueness complements the process-local same-user lock.
+            # Index creation is lazy/retried and must not take Telegram polling
+            # offline if MongoDB is temporarily unavailable.
             ensure_miniapp_indexes()
         return None
+
+    @app.teardown_request
+    def _release_user_operation_lock(_error):
+        lock = getattr(g, "miniapp_user_operation_lock", None)
+        if lock is not None and lock.locked():
+            lock.release()
 
     @app.after_request
     def _security_headers(response):
