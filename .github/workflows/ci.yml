@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           docker run --detach --rm --name bible-bot-ci-web -p 18080:8080 bible-bot-ci python keep_alive.py
           trap 'docker stop bible-bot-ci-web >/dev/null 2>&1 || true' EXIT
-          for attempt in {1..20}; do
+          for _ in {1..20}; do
             if curl --fail --silent --show-error http://127.0.0.1:18080/live >/tmp/live.json \
               && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html; then
               grep -q '"status":"ok"' /tmp/live.json
