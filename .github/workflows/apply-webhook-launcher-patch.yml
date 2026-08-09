@@ -1,0 +1,48 @@
+name: Apply webhook launcher patch
+
+on:
+  push:
+    branches: [agent/bible-bot-webhook-transport]
+    paths: [.github/workflows/apply-webhook-launcher-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-webhook-transport
+          fetch-depth: 1
+      - name: Replace only the legacy polling launch line
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("bot.py")
+          data = path.read_bytes()
+          old = b"    app.run_polling()\r\n"
+          new = (
+              b"    from web_api.telegram_transport import run_telegram_application\r\n"
+              b"    run_telegram_application(app, before_shutdown=_save_all_sessions)\r\n"
+          )
+          if data.count(old) != 1:
+              raise SystemExit(f"expected exactly one polling launch line, found {data.count(old)}")
+          path.write_bytes(data.replace(old, new, 1))
+          PY
+          test "$(git diff --numstat -- bot.py)" = $'2\t1\tbot.py'
+          git diff --check -- bot.py
+      - name: Commit exact launcher patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot.py
+          git commit -m "Route bot startup through configurable Telegram transport"
+          git push origin HEAD:agent/bible-bot-webhook-transport
