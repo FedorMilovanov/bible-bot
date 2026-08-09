@@ -32,5 +32,24 @@ def test_render_uses_current_runtime_field_and_resource_bounds():
     assert "healthCheckPath: /live" in render
 
 
+def test_docker_runtime_is_non_root_and_has_healthcheck():
+    docker = read("Dockerfile")
+    assert "useradd --uid 10001 --gid 10001" in docker
+    assert "COPY --chown=10001:10001 . ." in docker
+    assert "USER 10001:10001" in docker
+    assert "HEALTHCHECK" in docker
+    assert "/live" in docker
+
+
+def test_docker_context_excludes_local_secrets_and_dev_tree():
+    ignored = {line.strip() for line in read(".dockerignore").splitlines() if line.strip() and not line.startswith("#")}
+    assert ".env" in ignored
+    assert ".env.*" in ignored
+    assert ".git" in ignored
+    assert ".github" in ignored
+    assert "tests" in ignored
+    assert "docs" in ignored
+
+
 def test_legacy_render_worker_config_is_gone():
     assert not (ROOT / "render.yaml.txt").exists()
