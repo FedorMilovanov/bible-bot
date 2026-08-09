@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from threading import Lock
-from typing import Callable, Generic, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 _MISSING = object()
