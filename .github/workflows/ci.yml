@@ -25,9 +25,13 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+      - name: Verify dependency graph
+        run: pip check
       - name: Compile Python
         run: python -m compileall -q .
       - name: Run tests
         run: pytest -q
       - name: Check Mini App JavaScript syntax
         run: node --check miniapp/app.js
+      - name: Build production container
+        run: docker build --tag bible-bot-ci .
