@@ -1,7 +1,9 @@
 from pathlib import Path
 
 
-HTML = (Path(__file__).resolve().parents[1] / "miniapp" / "index.html").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+HTML = (ROOT / "miniapp" / "index.html").read_text(encoding="utf-8")
+LIFECYCLE = (ROOT / "miniapp" / "lifecycle.js").read_text(encoding="utf-8")
 
 
 def test_viewport_does_not_disable_user_zoom():
@@ -20,3 +22,10 @@ def test_interactive_static_buttons_have_explicit_type():
     assert '<button id="streakBadge" class="streak hidden" type="button">' in HTML
     assert '<button id="openBotBtn" class="btn btn-outline" type="button">' in HTML
     assert '<button class="btn btn-primary" id="resultReview" type="button">' in HTML
+
+
+def test_closing_confirmation_is_scoped_to_active_quiz():
+    assert '<script src="lifecycle.js"></script>' in HTML
+    assert "screen-quiz" in LIFECYCLE
+    assert "enableClosingConfirmation()" in LIFECYCLE
+    assert "disableClosingConfirmation()" in LIFECYCLE
