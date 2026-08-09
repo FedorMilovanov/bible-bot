@@ -20,6 +20,8 @@ services:
         sync: false
       - key: APP_ENV
         value: production
+      - key: TELEGRAM_TRANSPORT
+        value: webhook
       - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
         value: "86400"
       - key: WEB_THREADS
