@@ -7,7 +7,9 @@ import random
 import time
 import uuid
 from datetime import datetime
-from threading import Lock
+
+from .db_hardening import ensure_miniapp_indexes
+from .result_store import apply_challenge_result_once, apply_regular_result_once
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,6 @@ MODE_CONFIG = {
     "speed": {"time_limit": 15, "multiplier": 2.0},
 }
 TIMEOUT_NETWORK_GRACE_SECONDS = 1.0
-_INDEXES_LOCK = Lock()
-_INDEXES_READY = False
 
 
 def _now() -> datetime:
@@ -72,28 +72,11 @@ def miniapp_sessions():
         db = getattr(database, "db", None)
         if db is None:
             return None
-        collection = db["miniapp_sessions"]
+        ensure_miniapp_indexes()
+        return db["miniapp_sessions"]
     except Exception:
+        logger.exception("Mini App session collection unavailable")
         return None
-
-    global _INDEXES_READY
-    if not _INDEXES_READY:
-        with _INDEXES_LOCK:
-            if not _INDEXES_READY:
-                try:
-                    collection.create_index(
-                        [("updated_at_dt", 1)],
-                        expireAfterSeconds=6 * 60 * 60,
-                        name="ttl_miniapp_updated_at",
-                    )
-                    collection.create_index(
-                        [("user_id", 1), ("status", 1)],
-                        name="idx_miniapp_user_status",
-                    )
-                except Exception as exc:
-                    logger.warning("miniapp session indexes: %s", exc)
-                _INDEXES_READY = True
-    return collection
 
 
 def get_miniapp_history(user_id: int, limit: int = 10) -> list[dict]:
@@ -194,9 +177,6 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     if sessions is None:
         return None, "database unavailable", 503
 
-    # A user can have only one active Mini App quiz. Starting a new quiz
-    # explicitly abandons stale/incomplete ones instead of leaving competing
-    # timers and mutable sessions alive.
     now = _now()
     try:
         sessions.update_many(
@@ -255,17 +235,17 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         "score_multiplier": cfg["multiplier"],
         "started_at_dt": now,
         "updated_at_dt": now,
-        # The first question is being returned now, so its server timer starts now.
         "question_sent_at": time.time(),
         "leaderboard_recorded": False,
     }
-    sessions.insert_one(document)
+    try:
+        sessions.insert_one(document)
+    except Exception:
+        logger.exception("failed to create Mini App quiz session")
+        return None, "could not create quiz session", 409
+
     current = _current_question_payload(document)
-    return {
-        "session_id": session_id,
-        "mode": mode,
-        **current,
-    }, None, 200
+    return {"session_id": session_id, "mode": mode, **current}, None, 200
 
 
 def get_current_question(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
@@ -315,30 +295,29 @@ def _stored_result(session: dict) -> dict:
     }
 
 
-def _confirmed_attempt_increment(before: dict, after: dict, level_key: str) -> bool:
-    attempts_key = f"{level_key}_attempts"
-    return (
-        int(after.get(attempts_key, 0)) >= int(before.get(attempts_key, 0)) + 1
-        and int(after.get("total_tests", 0)) >= int(before.get("total_tests", 0)) + 1
-    )
+def _claim_or_resume_finalization(session: dict, sessions) -> dict | None:
+    """Claim a fresh finalization or resume one interrupted after the claim."""
+    if session.get("status") == "finished":
+        return session
 
+    if session.get("leaderboard_recorded") and session.get("status") in {"finalizing", "score_error"}:
+        try:
+            sessions.update_one(
+                {"_id": session["_id"], "leaderboard_recorded": True},
+                {"$set": {"status": "finalizing", "updated_at_dt": _now()}},
+            )
+        except Exception:
+            logger.exception("failed to resume Mini App finalization")
+            return None
+        return sessions.find_one({"_id": session["_id"]}) or session
 
-def _finalize_quiz(session: dict, user: dict) -> dict | None:
-    sessions = miniapp_sessions()
-    if sessions is None:
-        return None
-
-    if session.get("leaderboard_recorded") and session.get("status") == "finished":
-        return _stored_result(session)
-
-    # Claim finalization before touching aggregate stats. This makes retries
-    # at-most-once and avoids duplicate points if the HTTP response is lost.
     try:
         from pymongo import ReturnDocument
 
         claimed = sessions.find_one_and_update(
             {
                 "_id": session["_id"],
+                "status": "in_progress",
                 "leaderboard_recorded": False,
             },
             {
@@ -354,11 +333,27 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
         logger.exception("failed to claim Mini App finalization")
         return None
 
-    if not claimed:
-        existing = sessions.find_one({"_id": session["_id"]})
-        if existing and existing.get("status") == "finished":
-            return _stored_result(existing)
+    if claimed:
+        return claimed
+
+    latest = sessions.find_one({"_id": session["_id"]})
+    if latest and latest.get("status") == "finished":
+        return latest
+    if latest and latest.get("leaderboard_recorded") and latest.get("status") in {"finalizing", "score_error"}:
+        return latest
+    return None
+
+
+def _finalize_quiz(session: dict, user: dict) -> dict | None:
+    sessions = miniapp_sessions()
+    if sessions is None:
         return None
+
+    claimed = _claim_or_resume_finalization(session, sessions)
+    if not claimed:
+        return None
+    if claimed.get("status") == "finished":
+        return _stored_result(claimed)
 
     total = int(claimed.get("question_count") or len(claimed.get("questions", [])))
     score = int(claimed.get("correct_count", 0))
@@ -366,91 +361,88 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
     uid = int(user["id"])
     username = user.get("username", "")
     first_name = user.get("first_name", "")
-    new_achievements: list[str] = []
-    daily_bonus = 0
+    result_id = str(claimed["_id"])
 
     try:
         if claimed.get("is_challenge"):
-            from database import (
-                get_user_stats,
-                is_bonus_eligible,
-                update_challenge_stats,
-                update_weekly_leaderboard,
-            )
-
             challenge_mode = claimed["stats_level_key"]
-            before_stats = get_user_stats(uid) or {}
-            eligible = is_bonus_eligible(uid, challenge_mode)
-            points, new_achievements = update_challenge_stats(
-                uid, username, first_name, challenge_mode, score, total, elapsed, eligible
+            receipt = apply_challenge_result_once(
+                user_id=uid,
+                result_id=result_id,
+                username=username,
+                first_name=first_name,
+                mode=challenge_mode,
+                score=score,
+                total=total,
+                time_seconds=elapsed,
             )
-            after_stats = get_user_stats(uid) or {}
-            if not _confirmed_attempt_increment(before_stats, after_stats, challenge_mode):
-                raise RuntimeError("challenge aggregate stats update was not confirmed")
-            try:
-                update_weekly_leaderboard(uid, username, first_name, challenge_mode, score, elapsed)
-            except Exception:
-                logger.exception("weekly leaderboard update failed")
-        else:
-            from database import (
-                POINTS_PER_QUESTION,
-                add_to_leaderboard,
-                check_daily_bonus,
-                get_user_stats,
-                update_achievement_stats,
-            )
+            if receipt is None:
+                raise RuntimeError("challenge result receipt was not persisted")
 
-            level_key = claimed["stats_level_key"]
-            multiplier = float(claimed.get("score_multiplier", 1.0))
-            before_stats = get_user_stats(uid) or {}
-            add_to_leaderboard(
-                uid,
-                username,
-                first_name,
-                level_key,
-                score,
-                total,
-                elapsed,
-                score_multiplier=multiplier,
+            from database import update_weekly_leaderboard
+
+            update_weekly_leaderboard(uid, username, first_name, challenge_mode, score, elapsed)
+        else:
+            receipt = apply_regular_result_once(
+                user_id=uid,
+                result_id=result_id,
+                username=username,
+                first_name=first_name,
+                level_key=claimed["stats_level_key"],
+                score=score,
+                total=total,
+                time_seconds=elapsed,
+                score_multiplier=float(claimed.get("score_multiplier", 1.0)),
+                is_perfect=score == total,
+                max_streak=int(claimed.get("max_streak", 0)),
             )
-            after_stats = get_user_stats(uid) or {}
-            if not _confirmed_attempt_increment(before_stats, after_stats, level_key):
-                raise RuntimeError("leaderboard aggregate stats update was not confirmed")
-            try:
-                update_achievement_stats(uid, score == total, int(claimed.get("max_streak", 0)))
-                daily_bonus = check_daily_bonus(uid)
-            except Exception:
-                logger.exception("secondary achievement/bonus update failed")
-            points = round(score * POINTS_PER_QUESTION.get(level_key, 1) * multiplier) + daily_bonus
+            if receipt is None:
+                raise RuntimeError("regular result receipt was not persisted")
     except Exception as exc:
-        logger.exception("failed to persist Mini App result %s", claimed.get("_id"))
+        logger.exception("failed to persist Mini App result %s", result_id)
+        try:
+            sessions.update_one(
+                {"_id": result_id},
+                {
+                    "$set": {
+                        "status": "score_error",
+                        "score_error": type(exc).__name__,
+                        "updated_at_dt": _now(),
+                    }
+                },
+            )
+        except Exception:
+            logger.exception("failed to mark Mini App score error")
+        return None
+
+    result = {
+        "points": int(receipt.get("points", 0)),
+        "daily_bonus": int(receipt.get("daily_bonus", 0)),
+        "new_achievements": list(receipt.get("new_achievements") or []),
+    }
+    finished_at = _now()
+    try:
         sessions.update_one(
-            {"_id": claimed["_id"]},
+            {"_id": result_id, "leaderboard_recorded": True},
             {
                 "$set": {
-                    "status": "score_error",
-                    "score_error": type(exc).__name__,
-                    "updated_at_dt": _now(),
+                    "status": "finished",
+                    "finished_at_dt": finished_at,
+                    "updated_at_dt": finished_at,
+                    "awarded_points": result["points"],
+                    "daily_bonus": result["daily_bonus"],
+                    "new_achievements": result["new_achievements"],
                 }
             },
         )
+        stored = sessions.find_one({"_id": result_id})
+    except Exception:
+        logger.exception("failed to mark Mini App result finished")
         return None
 
-    finished_at = _now()
-    sessions.update_one(
-        {"_id": claimed["_id"]},
-        {
-            "$set": {
-                "status": "finished",
-                "finished_at_dt": finished_at,
-                "updated_at_dt": finished_at,
-                "awarded_points": points,
-                "daily_bonus": daily_bonus,
-                "new_achievements": new_achievements,
-            }
-        },
-    )
-    return {"points": points, "daily_bonus": daily_bonus, "new_achievements": new_achievements}
+    if stored and stored.get("status") == "finished":
+        return _stored_result(stored)
+    return None
 
 
 def _replay_answer_response(session: dict, requested_question_id: str, user: dict) -> dict | None:
@@ -470,7 +462,7 @@ def _replay_answer_response(session: dict, requested_question_id: str, user: dic
         "daily_bonus": 0,
         "new_achievements": [],
     }
-    if completed and session.get("status") == "in_progress":
+    if completed and session.get("status") in {"in_progress", "finalizing", "score_error"}:
         finalized = _finalize_quiz(session, user)
         if finalized is None:
             return None
@@ -513,17 +505,13 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
     if not session:
         return None, "quiz session not found", 409
 
-    if session.get("status") in {"finalizing", "score_error"}:
-        return None, "result finalization is incomplete; retry later or inspect server logs", 503
-
     replay = _replay_answer_response(session, requested_question_id, user)
     if replay is not None:
         return replay, None, 200
 
-    # Re-read after a possible concurrent finalization attempt in replay handling.
     session = sessions.find_one({"_id": session_id, "user_id": user_id}) or session
     if session.get("status") in {"finalizing", "score_error"}:
-        return None, "result finalization is incomplete; retry later or inspect server logs", 503
+        return None, "result finalization is incomplete; retry the last answer", 503
     if session.get("status") != "in_progress":
         return None, "quiz session is not active", 409
 
@@ -570,7 +558,6 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
                     "current_streak": current_streak,
                     "max_streak": max_streak,
                     "updated_at_dt": _now(),
-                    # The next question timer starts only when /api/quiz/current serves it.
                     "question_sent_at": None,
                 },
                 "$push": {
@@ -589,15 +576,14 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
     except Exception:
         logger.exception("failed to advance Mini App session")
         return None, "could not save answer", 503
+
     if not updated:
-        # A concurrent/retried request may have won the atomic update. Return the
-        # stored result instead of forcing a user to restart after a lost response.
         latest = sessions.find_one({"_id": session_id, "user_id": user_id})
-        if latest and latest.get("status") in {"finalizing", "score_error"}:
-            return None, "result finalization is incomplete; retry later or inspect server logs", 503
         replay = _replay_answer_response(latest or {}, requested_question_id, user)
         if replay is not None:
             return replay, None, 200
+        if latest and latest.get("status") in {"finalizing", "score_error"}:
+            return None, "result finalization is incomplete; retry the last answer", 503
         return None, "answer could not be committed", 409
 
     try:
@@ -613,7 +599,7 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
     if finished:
         finalized = _finalize_quiz(updated, user)
         if finalized is None:
-            return None, "result persistence failed", 503
+            return None, "result persistence failed; retry the last answer", 503
         result = finalized
 
     return {
