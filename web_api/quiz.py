@@ -8,6 +8,8 @@ import time
 import uuid
 from datetime import datetime
 
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
 from .db_hardening import ensure_miniapp_indexes
 from .result_store import apply_challenge_result_once, apply_regular_result_once
 
@@ -240,9 +242,15 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     }
     try:
         sessions.insert_one(document)
+    except DuplicateKeyError:
+        logger.info("active Mini App session already exists for user %s", user["id"])
+        return None, "another active quiz already exists; retry start", 409
+    except PyMongoError:
+        logger.exception("database unavailable while creating Mini App quiz session")
+        return None, "database temporarily unavailable", 503
     except Exception:
-        logger.exception("failed to create Mini App quiz session")
-        return None, "could not create quiz session", 409
+        logger.exception("unexpected failure while creating Mini App quiz session")
+        return None, "could not create quiz session", 500
 
     current = _current_question_payload(document)
     return {"session_id": session_id, "mode": mode, **current}, None, 200
@@ -378,10 +386,6 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
             )
             if receipt is None:
                 raise RuntimeError("challenge result receipt was not persisted")
-
-            from database import update_weekly_leaderboard
-
-            update_weekly_leaderboard(uid, username, first_name, challenge_mode, score, elapsed)
         else:
             receipt = apply_regular_result_once(
                 user_id=uid,
