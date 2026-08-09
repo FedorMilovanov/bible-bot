@@ -26,8 +26,26 @@ def run() -> None:
 
     port = int(os.getenv("PORT", "8080"))
     threads = max(2, int(os.getenv("WEB_THREADS", "4")))
-    logger.info("HTTP server listening on 0.0.0.0:%s with %s threads", port, threads)
-    serve(app, host="0.0.0.0", port=port, threads=threads, channel_timeout=120)
+    max_body = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
+    max_headers = int(os.getenv("MAX_REQUEST_HEADER_BYTES", str(64 * 1024)))
+    logger.info(
+        "HTTP server listening on 0.0.0.0:%s with %s threads (body<=%sB headers<=%sB)",
+        port,
+        threads,
+        max_body,
+        max_headers,
+    )
+    serve(
+        app,
+        host="0.0.0.0",
+        port=port,
+        threads=threads,
+        channel_timeout=120,
+        max_request_body_size=max_body,
+        max_request_header_size=max_headers,
+        clear_untrusted_proxy_headers=True,
+        expose_tracebacks=False,
+    )
 
 
 def keep_alive() -> None:
