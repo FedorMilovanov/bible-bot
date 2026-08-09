@@ -4612,7 +4612,8 @@ def main():
 
     logger.info("🤖 Бот запущен! (v4.1 — bugfix)")
     logger.info("🛡 Admin ID: %s", ADMIN_USER_ID)
-    app.run_polling()
+    from web_api.telegram_transport import run_telegram_application
+    run_telegram_application(app, before_shutdown=_save_all_sessions)
 
 
 if __name__ == "__main__":
