@@ -5,7 +5,7 @@ import logging
 import os
 import pathlib
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
@@ -23,11 +23,11 @@ from .quiz import (
 logger = logging.getLogger(__name__)
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
-STARTED_AT = datetime.now(timezone.utc)
+STARTED_AT = datetime.now(UTC)
 
 
 def _uptime_seconds() -> int:
-    return max(0, int((datetime.now(timezone.utc) - STARTED_AT).total_seconds()))
+    return max(0, int((datetime.now(UTC) - STARTED_AT).total_seconds()))
 
 
 def _json_error(message: str, status: int):
@@ -47,13 +47,13 @@ def _history_timestamp(item: dict) -> float:
     value = item.get("end_time") or item.get("finished_at_dt") or item.get("updated_at_dt")
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.replace(tzinfo=UTC)
         return value.timestamp()
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
+                parsed = parsed.replace(tzinfo=UTC)
             return parsed.timestamp()
         except ValueError:
             return 0.0
