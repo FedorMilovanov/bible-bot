@@ -105,6 +105,19 @@ def test_webhook_base_url_requires_https_and_no_query(monkeypatch):
         telegram_transport.telegram_webhook_base_url()
 
 
+def test_webhook_connections_default_to_four_and_validate_bot_api_range(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", raising=False)
+    assert telegram_transport.telegram_webhook_max_connections() == 4
+
+    for invalid in ("0", "101", "many"):
+        monkeypatch.setenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", invalid)
+        with pytest.raises(telegram_transport.TransportConfigurationError):
+            telegram_transport.telegram_webhook_max_connections()
+
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "8")
+    assert telegram_transport.telegram_webhook_max_connections() == 8
+
+
 def test_bridge_parses_real_minimal_update_and_puts_it_on_ptb_queue():
     loop = asyncio.new_event_loop()
     thread = Thread(target=loop.run_forever, daemon=True)
@@ -128,6 +141,7 @@ def test_bridge_parses_real_minimal_update_and_puts_it_on_ptb_queue():
 def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "4")
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
     app = FakeApplication()
     shutdown_events = []
@@ -154,6 +168,7 @@ def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown
     webhook = app.bot.webhook_calls[0]
     assert webhook["url"] == "https://example.com/telegram/webhook"
     assert webhook["drop_pending_updates"] is False
+    assert webhook["max_connections"] == 4
     assert webhook["secret_token"] == telegram_transport.telegram_webhook_secret()
     assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
 
