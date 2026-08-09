@@ -41,6 +41,60 @@ def _user_collection():
     return database.collection
 
 
+def _sync_weekly_challenge_result(
+    *,
+    user_id: int,
+    username: str,
+    first_name: str,
+    mode: str,
+    score: int,
+    time_seconds: float,
+) -> None:
+    """Idempotently sync a Challenge result to the current weekly leaderboard.
+
+    Unlike the legacy helper, database errors intentionally propagate. The main
+    user aggregate is already protected by its result receipt, so a failed
+    weekly write leaves the quiz recoverable; replaying the last answer retries
+    this sync without incrementing the user's aggregate a second time.
+    """
+    import database
+
+    weekly = getattr(database, "weekly_lb_collection", None)
+    # In normal production configuration this collection is created alongside
+    # database.collection. Allow lightweight unit-test database fakes to omit it.
+    if weekly is None:
+        return
+
+    week_id = database.get_current_week_id()
+    doc_id = f"{week_id}_{mode}_{user_id}"
+    existing = weekly.find_one({"_id": doc_id})
+    best_score = int((existing or {}).get("best_score", -1))
+    best_time = float((existing or {}).get("best_time", float("inf")))
+    score = int(score)
+    time_seconds = max(0.0, float(time_seconds))
+    if existing and (score < best_score or (score == best_score and time_seconds >= best_time)):
+        return
+
+    now = datetime.utcnow()
+    weekly.update_one(
+        {"_id": doc_id},
+        {
+            "$set": {
+                "week_id": week_id,
+                "mode": mode,
+                "user_id": str(user_id),
+                "username": username or "",
+                "first_name": first_name or "Пользователь",
+                "best_score": score,
+                "best_time": time_seconds,
+                "updated_at": now.isoformat(),
+                "updated_at_dt": now,
+            }
+        },
+        upsert=True,
+    )
+
+
 def _prune_old_receipts(user_id: int) -> None:
     """Remove only old receipts whose source session can no longer be recovered."""
     import database
@@ -219,7 +273,7 @@ def apply_challenge_result_once(
     total: int,
     time_seconds: float,
 ) -> dict | None:
-    """Atomically apply Challenge 20 aggregates, bonus, streak and achievements."""
+    """Atomically apply Challenge 20 aggregates and ensure weekly sync completes."""
     import database
 
     collection = database.collection
@@ -232,6 +286,14 @@ def apply_challenge_result_once(
         return None
     prior_receipt = _receipt_from(existing, result_id)
     if prior_receipt:
+        _sync_weekly_challenge_result(
+            user_id=user_id,
+            username=username,
+            first_name=first_name,
+            mode=mode,
+            score=score,
+            time_seconds=time_seconds,
+        )
         return prior_receipt
 
     score = max(0, min(int(score), int(total)))
@@ -302,4 +364,15 @@ def apply_challenge_result_once(
         "$set": set_fields,
         "$max": {f"{mode}_best_score": score},
     }
-    return _persist_once(user_id, result_id, update, receipt)
+    stored = _persist_once(user_id, result_id, update, receipt)
+    if stored is None:
+        return None
+    _sync_weekly_challenge_result(
+        user_id=user_id,
+        username=username,
+        first_name=first_name,
+        mode=mode,
+        score=score,
+        time_seconds=time_seconds,
+    )
+    return stored
