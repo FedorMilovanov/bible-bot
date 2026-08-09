@@ -169,12 +169,14 @@ async def _run_webhook_application(
     try:
         async with application:
             TELEGRAM_WEBHOOK_BRIDGE.configure(application, loop)
-            await application.bot.set_webhook(
+            configured = await application.bot.set_webhook(
                 url=webhook_url,
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=False,
                 secret_token=secret,
             )
+            if configured is not True:
+                raise RuntimeError("Telegram did not confirm webhook registration")
             await application.start()
             started = True
             logger.info("Telegram webhook transport active at %s", WEBHOOK_PATH)
