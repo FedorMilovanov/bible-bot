@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import database
@@ -26,11 +27,22 @@ def _set_path(doc, path, value):
     target[parts[-1]] = copy.deepcopy(value)
 
 
+def _unset_path(doc, path):
+    target = doc
+    parts = path.split(".")
+    for part in parts[:-1]:
+        if not isinstance(target, dict) or part not in target:
+            return
+        target = target[part]
+    if isinstance(target, dict):
+        target.pop(parts[-1], None)
+
+
 class FakeUserCollection:
     def __init__(self, doc):
         self.doc = copy.deepcopy(doc)
 
-    def find_one(self, query):
+    def find_one(self, query, *args, **kwargs):
         if self._matches(query):
             return copy.deepcopy(self.doc)
         return None
@@ -58,24 +70,35 @@ class FakeUserCollection:
             current = _get_path(self.doc, field)
             if current is _MISSING or value > current:
                 _set_path(self.doc, field, value)
+        for field in update.get("$unset", {}):
+            _unset_path(self.doc, field)
         return SimpleNamespace(modified_count=1)
 
 
 class FakeSessionCollection:
     def __init__(self, doc):
-        self.doc = copy.deepcopy(doc)
+        self.doc = copy.deepcopy(doc) if doc is not None else None
 
-    def find_one(self, query):
-        if all(self.doc.get(key) == value for key, value in query.items()):
+    def find_one(self, query, *args, **kwargs):
+        if self.doc is not None and all(self.doc.get(key) == value for key, value in query.items()):
             return copy.deepcopy(self.doc)
         return None
 
     def update_one(self, query, update, **kwargs):
-        if not all(self.doc.get(key) == value for key, value in query.items()):
+        if self.doc is None or not all(self.doc.get(key) == value for key, value in query.items()):
             return SimpleNamespace(modified_count=0)
         for field, value in update.get("$set", {}).items():
             self.doc[field] = copy.deepcopy(value)
         return SimpleNamespace(modified_count=1)
+
+
+class FakeDB:
+    def __init__(self, sessions):
+        self.sessions = sessions
+
+    def __getitem__(self, name):
+        assert name == "miniapp_sessions"
+        return self.sessions
 
 
 def base_user(user_id=123):
@@ -188,6 +211,7 @@ def test_finalizer_recovers_after_crash_between_user_update_and_session_finish(m
 
     session = {
         "_id": "session-crash",
+        "user_id": "123",
         "status": "finalizing",
         "leaderboard_recorded": True,
         "question_count": 10,
@@ -229,3 +253,44 @@ def test_finalizer_recovers_after_crash_between_user_update_and_session_finish(m
     assert users.doc["total_tests"] == 1
     assert users.doc["easy_p1_attempts"] == 1
     assert users.doc["total_points"] == 12
+
+
+def test_old_receipt_is_kept_while_session_is_recoverable(monkeypatch):
+    user = base_user()
+    user["miniapp_result_receipts"] = {
+        "session-finalizing": {
+            "points": 12,
+            "daily_bonus": 5,
+            "new_achievements": [],
+            "applied_at": datetime.utcnow() - timedelta(days=2),
+        }
+    }
+    users = FakeUserCollection(user)
+    sessions = FakeSessionCollection(
+        {"_id": "session-finalizing", "user_id": "123", "status": "finalizing"}
+    )
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "db", FakeDB(sessions), raising=False)
+
+    result_store._prune_old_receipts(123)
+
+    assert "session-finalizing" in users.doc["miniapp_result_receipts"]
+
+
+def test_old_receipt_is_pruned_after_source_session_disappears(monkeypatch):
+    user = base_user()
+    user["miniapp_result_receipts"] = {
+        "session-gone": {
+            "points": 12,
+            "daily_bonus": 5,
+            "new_achievements": [],
+            "applied_at": datetime.utcnow() - timedelta(days=2),
+        }
+    }
+    users = FakeUserCollection(user)
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "db", FakeDB(FakeSessionCollection(None)), raising=False)
+
+    result_store._prune_old_receipts(123)
+
+    assert "session-gone" not in users.doc.get("miniapp_result_receipts", {})
