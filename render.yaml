@@ -1,12 +1,13 @@
 services:
   - type: web
     name: bible-bot
-    env: python
+    runtime: python
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     healthCheckPath: /live
+    maxShutdownDelaySeconds: 30
     autoDeploy: false
     envVars:
       - key: BOT_TOKEN
@@ -23,3 +24,7 @@ services:
         value: "86400"
       - key: WEB_THREADS
         value: "4"
+      - key: MAX_REQUEST_BODY_BYTES
+        value: "65536"
+      - key: MAX_REQUEST_HEADER_BYTES
+        value: "65536"
