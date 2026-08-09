@@ -5,7 +5,7 @@ import os
 
 from flask import g, jsonify, request
 from pymongo.errors import DuplicateKeyError
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
 from .auth import get_user_from_request
 from .db_hardening import ensure_miniapp_indexes
@@ -46,8 +46,15 @@ def create_app():
 
     @app.before_request
     def _protect_api_boundary():
-        if request.path.startswith("/api/quiz/") and request.method == "POST" and not request.is_json:
-            return jsonify({"error": "application/json required"}), 415
+        if request.path in _SERIALIZED_QUIZ_PATHS and request.method == "POST":
+            if not request.is_json:
+                return jsonify({"error": "application/json required"}), 415
+            try:
+                payload = request.get_json(silent=False)
+            except BadRequest:
+                return jsonify({"error": "invalid JSON"}), 400
+            if not isinstance(payload, dict):
+                return jsonify({"error": "JSON object required"}), 400
 
         policy = _RATE_LIMITS.get((request.method, request.path))
         if policy is None:
