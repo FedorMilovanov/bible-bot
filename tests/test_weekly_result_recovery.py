@@ -53,12 +53,16 @@ def _receipt():
     }
 
 
+def test_iso_week_id_uses_iso_year_at_calendar_boundary():
+    assert result_store._week_id_utc(datetime(2021, 1, 1, 12, 0, 0)) == "2020-W53"
+    assert result_store._week_id_utc(datetime(2021, 1, 4, 12, 0, 0)) == "2021-W01"
+
+
 def test_existing_challenge_receipt_retries_weekly_sync_after_transient_failure(monkeypatch):
     users = ReceiptUserCollection(_receipt())
     weekly = FakeWeeklyCollection(fail_updates=1)
     monkeypatch.setattr(database, "collection", users)
     monkeypatch.setattr(database, "weekly_lb_collection", weekly)
-    monkeypatch.setattr(database, "get_current_week_id", lambda: "2026-W32")
 
     kwargs = {
         "user_id": 123,
@@ -88,7 +92,7 @@ def test_recovery_after_week_boundary_uses_week_stored_in_receipt(monkeypatch):
     weekly = FakeWeeklyCollection()
     monkeypatch.setattr(database, "collection", users)
     monkeypatch.setattr(database, "weekly_lb_collection", weekly)
-    monkeypatch.setattr(database, "get_current_week_id", lambda: "2026-W33")
+    monkeypatch.setattr(result_store, "_week_id_utc", lambda moment=None: "2026-W33")
 
     recovered = result_store.apply_challenge_result_once(
         user_id=123,
@@ -106,6 +110,30 @@ def test_recovery_after_week_boundary_uses_week_stored_in_receipt(monkeypatch):
     assert "2026-W33_random20_123" not in weekly.docs
 
 
+def test_legacy_receipt_without_week_id_derives_week_from_applied_at(monkeypatch):
+    receipt = _receipt()
+    receipt.pop("week_id")
+    receipt["applied_at"] = datetime(2021, 1, 1, 12, 0, 0)
+    users = ReceiptUserCollection(receipt)
+    weekly = FakeWeeklyCollection()
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "weekly_lb_collection", weekly)
+    monkeypatch.setattr(result_store, "_week_id_utc", result_store._week_id_utc)
+
+    result_store.apply_challenge_result_once(
+        user_id=123,
+        result_id="session-weekly",
+        username="tester",
+        first_name="Test",
+        mode="random20",
+        score=20,
+        total=20,
+        time_seconds=88.5,
+    )
+
+    assert "2020-W53_random20_123" in weekly.docs
+
+
 def test_weekly_sync_keeps_better_existing_result(monkeypatch):
     weekly = FakeWeeklyCollection()
     weekly.docs["2026-W32_random20_123"] = {
@@ -114,7 +142,6 @@ def test_weekly_sync_keeps_better_existing_result(monkeypatch):
         "best_time": 70.0,
     }
     monkeypatch.setattr(database, "weekly_lb_collection", weekly)
-    monkeypatch.setattr(database, "get_current_week_id", lambda: "2026-W32")
 
     result_store._sync_weekly_challenge_result(
         user_id=123,
@@ -123,6 +150,7 @@ def test_weekly_sync_keeps_better_existing_result(monkeypatch):
         mode="random20",
         score=20,
         time_seconds=88.5,
+        week_id="2026-W32",
     )
 
     assert weekly.update_calls == 0
@@ -137,7 +165,6 @@ def test_weekly_sync_replaces_equal_score_with_faster_time(monkeypatch):
         "best_time": 95.0,
     }
     monkeypatch.setattr(database, "weekly_lb_collection", weekly)
-    monkeypatch.setattr(database, "get_current_week_id", lambda: "2026-W32")
 
     result_store._sync_weekly_challenge_result(
         user_id=123,
@@ -146,6 +173,7 @@ def test_weekly_sync_replaces_equal_score_with_faster_time(monkeypatch):
         mode="hardcore20",
         score=18,
         time_seconds=90.0,
+        week_id="2026-W32",
     )
 
     assert weekly.update_calls == 1
