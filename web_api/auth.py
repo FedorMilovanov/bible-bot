@@ -8,14 +8,15 @@ import os
 import time
 from urllib.parse import parse_qsl
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 
 DEFAULT_INIT_DATA_MAX_AGE = 24 * 60 * 60
+MAX_INIT_DATA_LENGTH = 16 * 1024
 
 
 def verify_init_data(init_data: str) -> dict | None:
     token = os.getenv("BOT_TOKEN", "").strip()
-    if not token or not init_data:
+    if not token or not init_data or len(init_data) > MAX_INIT_DATA_LENGTH:
         return None
 
     try:
@@ -45,8 +46,13 @@ def verify_init_data(init_data: str) -> dict | None:
 
 
 def get_user_from_request() -> dict | None:
+    cached = getattr(g, "telegram_user", None)
+    if cached:
+        return cached
+
     user = verify_init_data(request.headers.get("X-Telegram-Init-Data", ""))
     if user:
+        g.telegram_user = user
         return user
 
     # Explicit development-only escape hatch. Query-string user IDs are never accepted.
@@ -55,7 +61,9 @@ def get_user_from_request() -> dict | None:
     ).lower() in {"1", "true", "yes"}:
         debug_uid = request.headers.get("X-Debug-User-Id", "")
         if debug_uid.isdigit():
-            return {"id": int(debug_uid), "first_name": "Local Debug User"}
+            user = {"id": int(debug_uid), "first_name": "Local Debug User"}
+            g.telegram_user = user
+            return user
     return None
 
 
