@@ -8,6 +8,8 @@ from web_api import telegram_transport
 def app(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
+    monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(1024 * 1024))
+    monkeypatch.setenv("MINIAPP_MAX_REQUEST_BODY_BYTES", str(64 * 1024))
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
     telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear()
     flask_app = web_api.create_app()
@@ -96,6 +98,25 @@ def test_valid_webhook_payload_is_forwarded_to_bridge(app, monkeypatch):
     assert response.status_code == 200
     assert response.get_json() == {"ok": True}
     assert captured == [payload]
+
+
+def test_webhook_can_accept_body_larger_than_miniapp_limit(app, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "webhook")
+    captured = []
+    monkeypatch.setattr(telegram_transport.TELEGRAM_WEBHOOK_BRIDGE, "submit", captured.append)
+
+    payload = {"update_id": 43, "padding": "x" * (70 * 1024)}
+    response = app.test_client().post(
+        telegram_transport.WEBHOOK_PATH,
+        json=payload,
+        headers=_secret_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert len(captured) == 1
+    assert captured[0]["update_id"] == 43
+    assert len(captured[0]["padding"]) == 70 * 1024
 
 
 def test_invalid_telegram_update_returns_400(app, monkeypatch):
