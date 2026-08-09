@@ -58,7 +58,7 @@ def telegram_webhook_secret() -> str:
     bot_token = os.getenv("BOT_TOKEN", "").strip()
     if not bot_token:
         raise TransportConfigurationError("BOT_TOKEN is required to derive the webhook secret")
-    return hashlib.sha256(f"bible-bot-webhook:{bot_token}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"bible-bot-webhook:{bot_token}".encode()).hexdigest()
 
 
 def telegram_webhook_base_url() -> str:
