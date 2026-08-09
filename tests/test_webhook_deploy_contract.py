@@ -18,6 +18,14 @@ def test_render_enables_webhook_transport_on_existing_web_service():
     assert "TELEGRAM_WEBHOOK_SECRET" not in render
 
 
+def test_render_separates_webhook_envelope_from_miniapp_body_limit():
+    render = read("render.yaml")
+
+    assert "- key: MAX_REQUEST_BODY_BYTES\n        value: \"1048576\"" in render
+    assert "- key: MINIAPP_MAX_REQUEST_BODY_BYTES\n        value: \"65536\"" in render
+    assert "- key: MAX_REQUEST_HEADER_BYTES\n        value: \"65536\"" in render
+
+
 def test_bot_launcher_uses_configurable_transport_and_shutdown_hook():
     bot = read("bot.py")
 
