@@ -22,6 +22,7 @@ _RATE_LIMITS = {
     ("GET", "/api/leaderboard"): (60, 60),
 }
 _QUESTION_ENDPOINT_LIMIT = (30, 60)
+_QUESTION_RATE_SCOPE = "/api/questions/*"
 _SERIALIZED_QUIZ_PATHS = frozenset({
     "/api/quiz/start",
     "/api/quiz/current",
@@ -65,8 +66,9 @@ def create_app():
             return None
 
         limit, window_seconds = policy
+        rate_scope = _QUESTION_RATE_SCOPE if question_catalog_request else request.path
         allowed, retry_after = GLOBAL_API_LIMITER.allow(
-            f"{user['id']}:{request.method}:{request.path}",
+            f"{user['id']}:{request.method}:{rate_scope}",
             limit=limit,
             window_seconds=window_seconds,
         )
