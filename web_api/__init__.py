@@ -4,9 +4,11 @@ from __future__ import annotations
 import os
 
 from flask import jsonify, request
+from pymongo.errors import DuplicateKeyError
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .auth import get_user_from_request
+from .db_hardening import ensure_miniapp_indexes
 from .rate_limit import GLOBAL_API_LIMITER
 from .routes import create_app as _create_routes_app
 
@@ -44,13 +46,18 @@ def create_app():
             limit=limit,
             window_seconds=window_seconds,
         )
-        if allowed:
-            return None
+        if not allowed:
+            response = jsonify({"error": "rate limit exceeded", "retry_after": retry_after})
+            response.status_code = 429
+            response.headers["Retry-After"] = str(retry_after)
+            return response
 
-        response = jsonify({"error": "rate limit exceeded", "retry_after": retry_after})
-        response.status_code = 429
-        response.headers["Retry-After"] = str(retry_after)
-        return response
+        if request.path == "/api/quiz/start":
+            # DB-level uniqueness complements the application-level abandon guard.
+            # Failure is logged and retried on the next start instead of taking
+            # Telegram polling or the whole Mini App offline.
+            ensure_miniapp_indexes()
+        return None
 
     @app.after_request
     def _security_headers(response):
@@ -68,6 +75,10 @@ def create_app():
     @app.errorhandler(RequestEntityTooLarge)
     def _request_too_large(_error):
         return jsonify({"error": "request body too large"}), 413
+
+    @app.errorhandler(DuplicateKeyError)
+    def _duplicate_active_quiz(_error):
+        return jsonify({"error": "another active quiz already exists; retry start"}), 409
 
     return app
 
