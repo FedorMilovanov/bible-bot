@@ -26,6 +26,9 @@ from .user_locks import user_operation_lock
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_SERVER_BODY_BYTES = 1024 * 1024
+_DEFAULT_MINIAPP_BODY_BYTES = 64 * 1024
+
 # Per authenticated Telegram user. Values are (requests, window seconds).
 _RATE_LIMITS = {
     ("POST", "/api/quiz/start"): (12, 60),
@@ -45,7 +48,12 @@ _SERIALIZED_QUIZ_PATHS = frozenset({
 
 def create_app():
     app = _create_routes_app()
-    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
+    # Waitress and Flask keep a bounded envelope large enough for Telegram
+    # webhook Update objects. Mini App quiz JSON gets a much smaller per-request
+    # cap below, using Flask 3.1's Request.max_content_length override.
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.getenv("MAX_REQUEST_BODY_BYTES", str(_DEFAULT_SERVER_BODY_BYTES))
+    )
 
     @app.get("/meta")
     def _deployment_meta():
@@ -126,6 +134,9 @@ def create_app():
             return response
 
         if request.path in _SERIALIZED_QUIZ_PATHS:
+            request.max_content_length = int(
+                os.getenv("MINIAPP_MAX_REQUEST_BODY_BYTES", str(_DEFAULT_MINIAPP_BODY_BYTES))
+            )
             if not request.is_json:
                 return jsonify({"error": "application/json required"}), 415
             try:
