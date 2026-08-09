@@ -36,7 +36,9 @@ jobs:
       - name: Run tests
         run: pytest -q
       - name: Check Mini App JavaScript syntax
-        run: node --check miniapp/app.js
+        run: |
+          node --check miniapp/app.js
+          node --check miniapp/lifecycle.js
       - name: Build production container
         run: docker build --tag bible-bot-ci .
       - name: Smoke test built web container
