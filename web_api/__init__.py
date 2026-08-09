@@ -88,7 +88,11 @@ def create_app():
     @app.teardown_request
     def _release_user_operation_lock(_error):
         lock = getattr(g, "miniapp_user_operation_lock", None)
-        if lock is not None and lock.locked():
+        if lock is not None:
+            # Clear request-local ownership before releasing the shared stripe.
+            # A repeated teardown cannot later release a lock re-acquired by a
+            # different request that hashes to the same stripe.
+            g.miniapp_user_operation_lock = None
             lock.release()
 
     @app.after_request
