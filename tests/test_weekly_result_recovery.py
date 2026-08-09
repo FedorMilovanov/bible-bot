@@ -48,6 +48,7 @@ def _receipt():
         "new_achievements": ["⭐ Perfect 20 — разблокировано!"],
         "kind": "challenge",
         "level_key": "random20",
+        "week_id": "2026-W32",
         "applied_at": datetime.utcnow(),
     }
 
@@ -80,6 +81,29 @@ def test_existing_challenge_receipt_retries_weekly_sync_after_transient_failure(
     stored = weekly.docs["2026-W32_random20_123"]
     assert stored["best_score"] == 20
     assert stored["best_time"] == 88.5
+
+
+def test_recovery_after_week_boundary_uses_week_stored_in_receipt(monkeypatch):
+    users = ReceiptUserCollection(_receipt())
+    weekly = FakeWeeklyCollection()
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "weekly_lb_collection", weekly)
+    monkeypatch.setattr(database, "get_current_week_id", lambda: "2026-W33")
+
+    recovered = result_store.apply_challenge_result_once(
+        user_id=123,
+        result_id="session-weekly",
+        username="tester",
+        first_name="Test",
+        mode="random20",
+        score=20,
+        total=20,
+        time_seconds=88.5,
+    )
+
+    assert recovered["week_id"] == "2026-W32"
+    assert "2026-W32_random20_123" in weekly.docs
+    assert "2026-W33_random20_123" not in weekly.docs
 
 
 def test_weekly_sync_keeps_better_existing_result(monkeypatch):
