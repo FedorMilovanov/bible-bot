@@ -50,10 +50,12 @@ def test_security_and_cache_headers(http):
     assert public.status_code == 200
     assert public.headers["X-Content-Type-Options"] == "nosniff"
     assert public.headers["Referrer-Policy"] == "no-referrer"
+    assert public.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert "no-cache" in public.headers["Cache-Control"]
 
     api = http.get("/api/me", headers=debug_headers())
     assert api.headers["X-Content-Type-Options"] == "nosniff"
+    assert api.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert api.headers["Cache-Control"] == "no-store"
     assert api.headers["Pragma"] == "no-cache"
 
@@ -143,7 +145,7 @@ def test_waitress_is_given_bounded_request_limits(monkeypatch):
 
 
 def test_css_uses_telegram_theme_safe_area_and_reduced_motion():
-    css = (os.path.dirname(os.path.dirname(__file__)) + "/miniapp/style.css")
+    css = os.path.dirname(os.path.dirname(__file__)) + "/miniapp/style.css"
     with open(css, encoding="utf-8") as handle:
         content = handle.read()
     assert "--tg-theme-bg-color" in content
