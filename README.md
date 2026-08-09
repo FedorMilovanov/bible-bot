@@ -45,17 +45,25 @@ python bot.py
 
 После деплоя укажи `BOT_USERNAME` и HTTPS-адрес сервиса. В `@BotFather` настрой **Menu Button** на этот HTTPS URL — это основной нативный вход в Mini App. Legacy `bot.py` специально не переписывается тысячами строк ради ещё одной inline-кнопки.
 
+Клиент использует официальные Telegram CSS variables для цветов и safe-area, поэтому интерфейс адаптируется к теме Telegram и вырезам/системным панелям устройства. Для `prefers-reduced-motion` отключаются лишние анимации.
+
 ### Безопасность Mini App API
 
 - сервер проверяет HMAC подпись `Telegram.WebApp.initData`;
 - проверяется свежесть `auth_date` (`TELEGRAM_INIT_DATA_MAX_AGE_SECONDS`);
+- размер `initData` ограничен до HMAC/URL parsing, а уже проверенный пользователь кэшируется на время одного HTTP-запроса;
 - production API не принимает `?user_id=...` и другие подмены пользователя;
+- quiz POST endpoints принимают только `application/json`;
+- Flask и Waitress ограничивают тело и суммарные заголовки запроса (по умолчанию 64 KiB);
+- quiz/profile/leaderboard API имеют per-user rate limiting; при превышении возвращается `429` + `Retry-After`;
+- API-ответы получают `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` и `Referrer-Policy: no-referrer`;
 - правильные ответы и explanation не выдаются до ответа пользователя;
 - клиент не отправляет `score`, `total_points` или доверенное время;
 - размер теста задаёт сервер: 10 обычный / 20 Challenge;
 - сервер не начинает тест, если выбранный пул физически меньше требуемого размера;
 - повтор старого ответа идемпотентно возвращает уже сохранённый результат и не двигает сессию;
 - новый тест явно помечает прежнюю незавершённую Mini App-сессию как `abandoned`;
+- MongoDB partial unique index дополнительно гарантирует максимум одну `in_progress` Mini App-сессию на пользователя;
 - leaderboard с именами пользователей доступен только после Telegram-аутентификации;
 - Mini App сессии хранятся отдельно от Telegram-bot quiz sessions и имеют TTL;
 - финальная запись статистики проверяется чтением MongoDB; при неподтверждённой записи сервер не показывает выдуманные баллы.
@@ -68,6 +76,17 @@ ALLOW_DEBUG_AUTH=true
 ```
 
 Не включай это в деплое.
+
+### HTTP resource limits
+
+По умолчанию:
+
+```text
+MAX_REQUEST_BODY_BYTES=65536
+MAX_REQUEST_HEADER_BYTES=65536
+```
+
+Для текущего API этого достаточно с большим запасом. Не увеличивай лимиты без конкретного endpoint, которому действительно нужен большой payload.
 
 ## API
 
@@ -104,7 +123,7 @@ POST /api/quiz/answer
 python bot.py
 ```
 
-Render health check смотрит `/live`; проблемы MongoDB видны отдельно на `/ready` и не вызывают бессмысленный restart всего процесса.
+Blueprint использует актуальное поле `runtime: python`. Render health check смотрит `/live`; проблемы MongoDB видны отдельно на `/ready` и не вызывают бессмысленный restart всего процесса.
 
 > Free Render Web Service подходит для разработки/демо, но не для 24/7 бота: бесплатный instance может засыпать после периода без входящего HTTP/WebSocket-трафика. Для постоянно доступного бота используй always-on тариф/хостинг. Это ограничение платформы, а не задача `keep_alive`.
 
@@ -122,15 +141,21 @@ docker run --env-file .env -p 8080:8080 bible-bot
 - `database.py` — MongoDB, статистика, bot sessions, achievements
 - `questions/` — канонические данные вопросов
 - `keep_alive.py` — загрузка `.env` и lifecycle Waitress внутри процесса бота
-- `web_api/` — auth, HTTP routes и server-authoritative quiz API
+- `web_api/` — auth, HTTP routes, rate limiting, DB invariants и server-authoritative quiz API
 - `miniapp/` — HTML/CSS/JS клиент
 - `utils.py` — PNG/GIF результатов
-- `tests/` — API/auth/session regression tests
-- `.github/workflows/ci.yml` — compile + pytest + JS syntax check
+- `tests/` — API/auth/session/hardening regression tests
+- `.github/workflows/ci.yml` — compile + pytest + JS syntax check; actions pinned by full SHA
+- `.github/dependabot.yml` — контролируемые dependency updates
+- `docs/RESEARCH_WAVE2.md` — решения Wave 2 и 40+ первичных источников
 
 ## Важный принцип данных
 
 `questions/` — единственный источник истины для вопросов. Дублирующий `miniapp/demo_questions.json` удалён: он быстро расходился бы с основной базой и позволял клиенту видеть правильные ответы. Если backend недоступен, Mini App показывает ошибку и не подделывает «офлайн-результат».
+
+## Обновление зависимостей
+
+Dependabot еженедельно проверяет pip и GitHub Actions. Minor/patch Python updates группируются. Major upgrade `python-telegram-bot` намеренно не автоматизирован: переход с 20.7 на текущую major-ветку должен быть отдельной миграционной волной с расширенными compatibility-тестами stateful bot runtime.
 
 ## Проверка перед релизом
 
@@ -140,4 +165,4 @@ pytest -q
 node --check miniapp/app.js
 ```
 
-CI запускает те же проверки на push и pull request.
+CI запускает те же проверки на push и pull request. Полный research trail текущей волны — в `docs/RESEARCH_WAVE2.md`.
