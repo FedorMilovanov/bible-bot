@@ -8,7 +8,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade \
+        pip==26.2.1 setuptools==83.0.0 wheel==0.47.0 \
+    && python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m pip check
 
 COPY . .
 EXPOSE 8080
