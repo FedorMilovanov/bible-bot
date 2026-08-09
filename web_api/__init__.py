@@ -46,21 +46,14 @@ def create_app():
 
     @app.before_request
     def _protect_api_boundary():
-        if request.path in _SERIALIZED_QUIZ_PATHS and request.method == "POST":
-            if not request.is_json:
-                return jsonify({"error": "application/json required"}), 415
-            try:
-                payload = request.get_json(silent=False)
-            except BadRequest:
-                return jsonify({"error": "invalid JSON"}), 400
-            if not isinstance(payload, dict):
-                return jsonify({"error": "JSON object required"}), 400
-
         policy = _RATE_LIMITS.get((request.method, request.path))
         if policy is None:
             return None
 
-        # Let the route return the canonical 401 for invalid/missing Telegram auth.
+        # Authenticate protected API traffic before parsing request bodies.
+        # The route itself still emits the canonical 401 response when auth is
+        # missing/invalid; before_request simply avoids spending parser/lock/DB
+        # work on anonymous traffic.
         user = get_user_from_request()
         if not user:
             return None
@@ -78,6 +71,15 @@ def create_app():
             return response
 
         if request.path in _SERIALIZED_QUIZ_PATHS:
+            if not request.is_json:
+                return jsonify({"error": "application/json required"}), 415
+            try:
+                payload = request.get_json(silent=False)
+            except BadRequest:
+                return jsonify({"error": "invalid JSON"}), 400
+            if not isinstance(payload, dict):
+                return jsonify({"error": "JSON object required"}), 400
+
             # Waitress is multi-threaded. Hold one bounded lock stripe for the
             # authenticated user until Flask tears down the request so a new
             # start cannot race that user's current/answer persistence.
