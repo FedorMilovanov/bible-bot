@@ -27,8 +27,10 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Verify dependency graph
         run: pip check
+      - name: Guard tracked tree against secrets
+        run: python scripts/check_secrets.py
       - name: Lint maintained Python layer
-        run: ruff check web_api keep_alive.py intro.py tests --output-format=github
+        run: ruff check web_api keep_alive.py intro.py scripts tests --output-format=github
       - name: Compile Python
         run: python -m compileall -q .
       - name: Run tests
