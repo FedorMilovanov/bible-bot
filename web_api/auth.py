@@ -45,6 +45,16 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
 
+def _debug_auth_enabled() -> bool:
+    # Render guarantees RENDER=true at runtime. Refuse debug impersonation there
+    # even if APP_ENV / ALLOW_DEBUG_AUTH are accidentally misconfigured.
+    if os.getenv("RENDER", "false").lower() == "true":
+        return False
+    return os.getenv("APP_ENV", "production").lower() == "development" and os.getenv(
+        "ALLOW_DEBUG_AUTH", "false"
+    ).lower() in {"1", "true", "yes"}
+
+
 def get_user_from_request() -> dict | None:
     cached = getattr(g, "telegram_user", None)
     if cached:
@@ -55,10 +65,9 @@ def get_user_from_request() -> dict | None:
         g.telegram_user = user
         return user
 
-    # Explicit development-only escape hatch. Query-string user IDs are never accepted.
-    if os.getenv("APP_ENV", "production").lower() == "development" and os.getenv(
-        "ALLOW_DEBUG_AUTH", "false"
-    ).lower() in {"1", "true", "yes"}:
+    # Explicit local-development escape hatch. Query-string user IDs are never
+    # accepted, and Render deployments refuse this path regardless of APP_ENV.
+    if _debug_auth_enabled():
         debug_uid = request.headers.get("X-Debug-User-Id", "")
         if debug_uid.isdigit():
             user = {"id": int(debug_uid), "first_name": "Local Debug User"}
