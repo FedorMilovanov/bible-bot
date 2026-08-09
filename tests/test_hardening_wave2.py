@@ -91,6 +91,9 @@ class FakeCollection:
     def __init__(self):
         self.indexes = []
 
+    def aggregate(self, _pipeline):
+        return iter(())
+
     def create_index(self, keys, **kwargs):
         self.indexes.append((keys, kwargs))
         return kwargs.get("name", "idx")
