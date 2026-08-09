@@ -1,0 +1,39 @@
+# Source-control and CI metadata
+.git
+.github
+.gitignore
+
+# Local secrets / environments
+.env
+.env.*
+.venv
+venv
+
+# Python/test caches
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Development-only material
+tests
+docs
+scripts
+requirements-dev.txt
+pytest.ini
+ruff.toml
+.python-version
+*.md
+render.yaml
+render.yaml.txt
+
+# Editors / OS / runtime debris
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.log
+*.pid
