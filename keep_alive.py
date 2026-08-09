@@ -26,7 +26,10 @@ def run() -> None:
 
     port = int(os.getenv("PORT", "8080"))
     threads = max(2, int(os.getenv("WEB_THREADS", "4")))
-    max_body = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
+    # This is the bounded server envelope for all HTTP requests, including
+    # Telegram webhook Updates. Mini App quiz POSTs have a separate 64 KiB
+    # per-request Flask limit in web_api.create_app().
+    max_body = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(1024 * 1024)))
     max_headers = int(os.getenv("MAX_REQUEST_HEADER_BYTES", str(64 * 1024)))
     logger.info(
         "HTTP server listening on 0.0.0.0:%s with %s threads (body<=%sB headers<=%sB)",
