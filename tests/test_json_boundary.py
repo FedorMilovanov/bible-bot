@@ -15,6 +15,16 @@ def headers(user_id=990001):
     return {"X-Debug-User-Id": str(user_id)}
 
 
+def test_unauthenticated_malformed_json_gets_canonical_401(http):
+    response = http.post(
+        "/api/quiz/start",
+        data='{"pool_key":',
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "telegram authentication required"}
+
+
 def test_malformed_quiz_json_is_rejected_before_route_logic(http):
     response = http.post(
         "/api/quiz/start",
