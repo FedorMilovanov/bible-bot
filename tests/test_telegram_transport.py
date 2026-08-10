@@ -251,6 +251,7 @@ def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown
     assert len(app.bot.webhook_calls) == 1
     webhook = app.bot.webhook_calls[0]
     assert webhook["url"] == "https://example.com/telegram/webhook"
+    assert webhook["allowed_updates"] == telegram_transport.WEBHOOK_ALLOWED_UPDATES
     assert webhook["drop_pending_updates"] is False
     assert webhook["max_connections"] == 4
     assert webhook["secret_token"] == telegram_transport.telegram_webhook_secret()
