@@ -1,4 +1,5 @@
 import asyncio
+from threading import Event as ThreadEvent
 from threading import Thread
 
 import pytest
@@ -41,6 +42,18 @@ class RecordingQueue:
         self.items = []
 
     async def put(self, item):
+        self.items.append(item)
+
+
+class BlockingQueue:
+    def __init__(self):
+        self.items = []
+        self.entered = ThreadEvent()
+        self.release = ThreadEvent()
+
+    async def put(self, item):
+        self.entered.set()
+        await asyncio.to_thread(self.release.wait)
         self.items.append(item)
 
 
@@ -157,6 +170,51 @@ def test_bridge_rejects_update_without_valid_update_id(payload):
         loop.close()
 
     assert queue.items == []
+
+
+def test_bridge_deactivation_waits_for_inflight_submission_and_rejects_new_ones():
+    loop = asyncio.new_event_loop()
+    loop_thread = Thread(target=loop.run_forever, daemon=True)
+    loop_thread.start()
+    queue = BlockingQueue()
+    app = type("BridgeApplication", (), {"bot": FakeBot(), "update_queue": queue})()
+    errors = []
+
+    telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.configure(app, loop)
+
+    def submit_inflight():
+        try:
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit({"update_id": 100})
+        except Exception as exc:  # pragma: no cover - assertion reports the exception below
+            errors.append(exc)
+
+    submit_thread = Thread(target=submit_inflight, daemon=True)
+    submit_thread.start()
+    assert queue.entered.wait(timeout=1)
+
+    async def scenario():
+        drain = asyncio.create_task(
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.deactivate_and_drain(app, timeout=1)
+        )
+        await asyncio.sleep(0.05)
+        assert drain.done() is False
+        with pytest.raises(telegram_transport.WebhookNotReady):
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit({"update_id": 101})
+        queue.release.set()
+        assert await drain is True
+
+    try:
+        asyncio.run(scenario())
+        submit_thread.join(timeout=2)
+    finally:
+        queue.release.set()
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear(app)
+        loop.call_soon_threadsafe(loop.stop)
+        loop_thread.join(timeout=2)
+        loop.close()
+
+    assert errors == []
+    assert [item.update_id for item in queue.items] == [100]
 
 
 def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown(monkeypatch):
