@@ -1,7 +1,9 @@
+import pytest
+
 import legacy_result_flow as flow
 
 
-def test_stable_result_id_prefers_explicit_attempt_and_is_memoized():
+def test_stable_result_id_is_derived_from_current_persisted_attempt():
     data = {
         "session_id": "container-1",
         "attempt_id": "attempt-2",
@@ -11,11 +13,26 @@ def test_stable_result_id_prefers_explicit_attempt_and_is_memoized():
     }
 
     first = flow.stable_result_id(42, data)
-    data["attempt_id"] = "attempt-3"
     second = flow.stable_result_id(42, data)
 
     assert first == "quiz:attempt-2"
     assert second == first
+    assert data["result_id"] == "quiz:attempt-2"
+
+
+def test_stale_memoized_result_id_is_rejected_after_attempt_changes():
+    data = {
+        "session_id": "container-1",
+        "attempt_id": "attempt-old",
+    }
+    assert flow.stable_result_id(42, data) == "quiz:attempt-old"
+
+    data["attempt_id"] = "attempt-new"
+
+    with pytest.raises(ValueError, match="another quiz attempt"):
+        flow.stable_result_id(42, data)
+
+    assert data["result_id"] == "quiz:attempt-old"
 
 
 def test_stable_result_id_legacy_session_falls_back_to_session_id():
