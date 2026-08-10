@@ -87,12 +87,10 @@ def build_live_answer_callback(
 ) -> str:
     if question_index != _current_index(data):
         raise LegacyLiveAnswerStale("answer callback target is not the current question")
-    _question_at(data, question_index)
+    question = _question_at(data, question_index)
     if isinstance(option_index, bool) or not isinstance(option_index, int) or option_index < 0:
         raise ValueError("option_index must be a non-negative integer")
-    shuffled = data.get("current_options")
-    if not isinstance(shuffled, list) or any(not isinstance(item, str) for item in shuffled):
-        raise LegacyLiveStateInvalid("current_options are invalid")
+    shuffled = _validated_current_options(data, question)
     if option_index >= len(shuffled):
         raise LegacyLiveAnswerStale("answer option is no longer available")
     option_text = shuffled[option_index]
@@ -123,16 +121,50 @@ def _question_at(data: dict, index: int) -> dict:
     return question
 
 
-def _correct_text(question: dict, data: dict) -> str:
+def _canonical_options(question: dict) -> list[str]:
     options = question.get("options")
-    correct = question.get("correct")
     if (
         not isinstance(options, list)
-        or isinstance(correct, bool)
+        or not options
+        or any(not isinstance(option, str) for option in options)
+    ):
+        raise LegacyLiveStateInvalid("question options are invalid")
+    return options
+
+
+def _validated_current_options(data: dict, question: dict) -> list[str]:
+    canonical = _canonical_options(question)
+    shuffled = data.get("current_options")
+    if not isinstance(shuffled, list) or any(not isinstance(item, str) for item in shuffled):
+        raise LegacyLiveStateInvalid("current_options are invalid")
+    if len(shuffled) != len(canonical) or sorted(shuffled) != sorted(canonical):
+        raise LegacyLiveStateInvalid("current_options are not a permutation of question options")
+    return shuffled
+
+
+def _callback_option_text(question: dict, option_index: int, option_token: str) -> str:
+    options = _canonical_options(question)
+    if option_index >= len(options):
+        raise LegacyLiveAnswerStale("answer option is no longer available")
+    matches = {
+        option for option in options
+        if callback_matches_option(option_token, option)
+    }
+    if not matches:
+        raise LegacyLiveAnswerStale("answer option no longer belongs to this question")
+    if len(matches) != 1:
+        raise LegacyLiveStateInvalid("answer option fingerprint is ambiguous")
+    return next(iter(matches))
+
+
+def _correct_text(question: dict, data: dict) -> str:
+    options = _canonical_options(question)
+    correct = question.get("correct")
+    if (
+        isinstance(correct, bool)
         or not isinstance(correct, int)
         or correct < 0
         or correct >= len(options)
-        or not isinstance(options[correct], str)
     ):
         raise LegacyLiveStateInvalid("correct answer definition is invalid")
     expected = options[correct]
@@ -306,15 +338,10 @@ def apply_live_answer_once(
         raise LegacyLiveAnswerStale("answer button belongs to another question")
 
     question = _question_at(data, question_index)
-    shuffled = data.get("current_options")
-    if not isinstance(shuffled, list) or any(not isinstance(item, str) for item in shuffled):
-        raise LegacyLiveStateInvalid("current_options are invalid")
+    shuffled = _validated_current_options(data, question)
     if option_index >= len(shuffled):
         raise LegacyLiveAnswerStale("answer option is no longer available")
-    if not callback_matches_option(option_token, shuffled[option_index]):
-        raise LegacyLiveAnswerStale("answer option mapping changed after button render")
-
-    user_answer = shuffled[option_index]
+    user_answer = _callback_option_text(question, option_index, option_token)
     correct_text = _correct_text(question, data)
     is_correct = user_answer == correct_text
     latency = _elapsed_seconds(data, now)
@@ -378,10 +405,12 @@ def apply_live_timeout_once(
     now: float | None = None,
 ) -> LiveAnswerOutcome:
     """Durably record a timeout for the exact attempt/question captured at send."""
-    if not isinstance(expected_attempt_id, str) or not expected_attempt_id:
-        raise ValueError("expected_attempt_id is required")
-    if isinstance(expected_index, bool) or not isinstance(expected_index, int) or expected_index < 0:
+    if not isinstance(expected_attempt_id, str) or not isinstance(expected_index, int) or isinstance(expected_index, bool) or expected_index < 0:
+        if not isinstance(expected_attempt_id, str) or not expected_attempt_id:
+            raise ValueError("expected_attempt_id is required")
         raise ValueError("expected_index must be a non-negative integer")
+    if not expected_attempt_id:
+        raise ValueError("expected_attempt_id is required")
 
     scope = ensure_callback_scope(data)
     if scope != expected_attempt_id:
