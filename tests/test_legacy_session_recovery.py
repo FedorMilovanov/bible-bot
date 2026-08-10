@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 from legacy_session_recovery import (
@@ -109,7 +109,7 @@ def test_persisted_result_time_stops_at_last_answer_not_recovery_time():
 
 
 def test_offset_aware_answer_timestamp_is_converted_to_utc():
-    started = datetime(2026, 8, 10, 9, 0, 0, tzinfo=timezone.utc).timestamp()
+    started = datetime(2026, 8, 10, 9, 0, 0, tzinfo=UTC).timestamp()
     session = _session(
         start_time=started,
         answered_questions=[
