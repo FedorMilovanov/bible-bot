@@ -138,20 +138,47 @@ def test_bridge_parses_real_minimal_update_and_puts_it_on_ptb_queue():
     assert queue.items[0].update_id == 42
 
 
+@pytest.mark.parametrize("payload", [{}, {"update_id": -1}, {"update_id": True}])
+def test_bridge_rejects_update_without_valid_update_id(payload):
+    loop = asyncio.new_event_loop()
+    thread = Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    queue = RecordingQueue()
+    app = type("BridgeApplication", (), {"bot": FakeBot(), "update_queue": queue})()
+
+    try:
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.configure(app, loop)
+        with pytest.raises(telegram_transport.InvalidWebhookUpdate):
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit(payload)
+    finally:
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear(app)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
+
+    assert queue.items == []
+
+
 def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "4")
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
-    app = FakeApplication()
-    shutdown_events = []
+
+    class StartGuardApplication(FakeApplication):
+        async def start(self):
+            assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
+            await super().start()
+
+    app = StartGuardApplication()
 
     async def scenario():
         stop_event = asyncio.Event()
         stop_event.set()
 
         async def before_shutdown():
-            shutdown_events.append("saved")
+            assert telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.ready() is False
+            app.events.append("saved")
 
         await telegram_transport._run_webhook_application(
             app,
@@ -162,8 +189,7 @@ def test_webhook_application_lifecycle_sets_webhook_and_preserves_it_on_shutdown
 
     asyncio.run(scenario())
 
-    assert app.events == ["initialize", "start", "stop", "shutdown"]
-    assert shutdown_events == ["saved"]
+    assert app.events == ["initialize", "start", "stop", "saved", "shutdown"]
     assert len(app.bot.webhook_calls) == 1
     webhook = app.bot.webhook_calls[0]
     assert webhook["url"] == "https://example.com/telegram/webhook"
