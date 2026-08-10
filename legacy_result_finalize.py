@@ -237,6 +237,7 @@ def finalize_normal_result(
             max_streak=data.get("max_streak", 0),
             quiz_mode=data.get("quiz_mode"),
             fastest_answer=data.get("fastest_answer"),
+            completed_at=data.get("result_completed_at"),
         )
         completed_at = _validated_completed_at(base)
         receipt = _receipt(base)
@@ -304,6 +305,7 @@ def finalize_challenge_result(
             challenge_mode=requested_mode,
             quiz_mode=data.get("quiz_mode"),
             fastest_answer=data.get("fastest_answer"),
+            completed_at=data.get("result_completed_at"),
         )
         completed_at = _validated_completed_at(base)
         durable = _durable_result(base)
