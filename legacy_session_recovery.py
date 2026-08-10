@@ -24,7 +24,10 @@ def session_is_complete(session: dict) -> bool:
         current = max(0, int(session.get("current_index", 0) or 0))
     except (TypeError, ValueError):
         current = 0
-    return total > 0 and current >= total
+    # Only an exact end position is valid completion evidence. An index beyond
+    # the persisted question ledger is contradictory/corrupt state and must not
+    # be normalized into a recoverable completed result.
+    return total > 0 and current == total
 
 
 def _streaks(answered: list[dict]) -> tuple[int, int]:
