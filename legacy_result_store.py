@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 from datetime import UTC, datetime
 
 from pymongo import ReturnDocument
@@ -80,6 +81,20 @@ def _bonus_owner_path(today: str, challenge_mode: str | None) -> str:
     return f"challenge_bonus_result_owners.{challenge_mode}.{day_key}"
 
 
+def _receipt_streak(value, field: str) -> int:
+    if isinstance(value, bool):
+        raise LegacyResultStoreUnavailable(f"base result receipt {field} is invalid")
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError) as exc:
+        raise LegacyResultStoreUnavailable(
+            f"base result receipt {field} is invalid"
+        ) from exc
+    if parsed < 0:
+        raise LegacyResultStoreUnavailable(f"base result receipt {field} is invalid")
+    return parsed
+
+
 def _receipt_snapshot(doc: dict, result_id: str) -> dict:
     """Return the durable per-result snapshot, including older receipt shapes."""
     receipts = doc.get("legacy_result_receipts", {})
@@ -100,8 +115,10 @@ def _receipt_snapshot(doc: dict, result_id: str) -> dict:
         )
         return {
             "completed_at": completed_at,
-            "daily_streak": max(0, int(value.get("daily_streak", 0) or 0)),
-            "challenge_streak": max(0, int(value.get("challenge_streak", 0) or 0)),
+            "daily_streak": _receipt_streak(value.get("daily_streak", 0), "daily_streak"),
+            "challenge_streak": _receipt_streak(
+                value.get("challenge_streak", 0), "challenge_streak"
+            ),
             "result": dict(result),
             "achievement_state": dict(achievement_state),
         }
@@ -151,6 +168,18 @@ def result_day(completed_at: str | datetime | float | int) -> str:
 def result_week_id(completed_at: str | datetime | float | int) -> str:
     iso = _parse_completed_at(completed_at).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
+
+
+def _finite_nonnegative_float(value, field: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a finite non-negative number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite non-negative number") from exc
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"{field} must be a finite non-negative number")
+    return number
 
 
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
@@ -333,21 +362,28 @@ def apply_base_result_once(
     uid = database._uid(user_id)
     level_key = database._safe_level_key(level_key)
     score, total = database._validate_score(score, total)
-    time_seconds = max(0.0, float(time_seconds))
-    score_multiplier = max(0.0, float(score_multiplier))
+    time_seconds = _finite_nonnegative_float(time_seconds, "time_seconds")
+    score_multiplier = _finite_nonnegative_float(score_multiplier, "score_multiplier")
     max_streak = max(0, int(max_streak))
     if challenge_mode is not None and challenge_mode not in _CHALLENGE_MODES:
         raise ValueError(f"unsupported challenge mode: {challenge_mode}")
     if fastest_answer is not None:
-        fastest_answer = max(0.0, float(fastest_answer))
+        fastest_answer = _finite_nonnegative_float(fastest_answer, "fastest_answer")
 
     write_now = _naive_utc(database._now_utc())
     if completed_at is None:
         result_completed = write_now
     else:
-        result_completed = _parse_completed_at(completed_at)
+        try:
+            result_completed = _parse_completed_at(completed_at)
+        except ValueError as exc:
+            raise LegacyResultStoreUnavailable(
+                "authoritative result completion timestamp is invalid"
+            ) from exc
         if result_completed > write_now:
-            raise ValueError("result completion timestamp cannot be in the future")
+            raise LegacyResultStoreUnavailable(
+                "authoritative result completion timestamp is in the future"
+            )
     completed_at_iso = result_completed.isoformat()
     today = result_completed.strftime("%Y-%m-%d")
     receipt_path = _receipt_path(result_id)
@@ -528,12 +564,18 @@ def claim_achievement_once(
 
 
 def _weekly_is_at_least(doc: dict, *, score: int, time_seconds: float) -> bool:
-    current_score = int(doc.get("best_score", 0) or 0)
+    try:
+        current_score = int(doc.get("best_score", 0) or 0)
+        current_time = _finite_nonnegative_float(
+            doc.get("best_time", 999999) or 999999,
+            "weekly best_time",
+        )
+    except (TypeError, ValueError) as exc:
+        raise LegacyResultStoreUnavailable("weekly result document is invalid") from exc
     if current_score > score:
         return True
     if current_score < score:
         return False
-    current_time = float(doc.get("best_time", 999999) or 999999)
     return current_time <= time_seconds
 
 
@@ -551,7 +593,7 @@ def sync_weekly_best(
         raise ValueError(f"unsupported challenge mode: {mode}")
     collection = _weekly()
     score, _ = database._validate_score(score, 20)
-    time_seconds = max(0.0, float(time_seconds))
+    time_seconds = _finite_nonnegative_float(time_seconds, "weekly time_seconds")
     doc_id = f"{week_id}_{mode}_{user_id}"
     now = database._now_utc()
     replacement = {
