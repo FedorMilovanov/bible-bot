@@ -1,10 +1,9 @@
 """Pure live-answer orchestration for the legacy Telegram controller.
 
 This module deliberately contains no Telegram UI calls. It binds answer buttons
-to a session scope + exact question/option index, persists a Mongo-backed answer
-before mutating in-memory runtime state, and rebuilds that RAM state from the
-durable session ledger. The large ``bot.py`` controller can therefore remain a
-thin render/router layer when it is wired to these helpers.
+to a logical attempt scope + exact question/option index, persists a Mongo-backed
+answer before mutating in-memory runtime state, and rebuilds that RAM state from
+the durable session ledger.
 """
 from __future__ import annotations
 
@@ -14,6 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from legacy_attempt_identity import bind_runtime_attempt, runtime_attempt_id
 from legacy_callback_protocol import (
     build_answer_callback,
     callback_matches_session,
@@ -64,12 +64,12 @@ def legacy_question_id(question: dict) -> str:
 
 
 def ensure_callback_scope(data: dict) -> str:
-    """Return persisted session id, or memoize an in-memory retry scope id."""
+    """Return logical attempt id, or memoize an in-memory review scope id."""
     if not isinstance(data, dict):
         raise ValueError("data must be a dict")
-    session_id = data.get("session_id")
-    if isinstance(session_id, str) and session_id:
-        return session_id
+    attempt_id = runtime_attempt_id(data)
+    if attempt_id is not None:
+        return attempt_id
     scope = data.get("callback_scope_id")
     if isinstance(scope, str) and scope:
         return scope
@@ -215,6 +215,7 @@ def _ledger_state(session: dict) -> tuple[int, int, list[dict], int, int, float 
 
 
 def _sync_ram_from_session(data: dict, session: dict) -> tuple[int, int, int, int, float | None]:
+    bind_runtime_attempt(data, session)
     current, correct, ui_answers, streak, max_streak, fastest = _ledger_state(session)
     data["current_question"] = current
     data["correct_answers"] = correct
@@ -286,7 +287,7 @@ def apply_live_answer_once(
     token, question_index, option_index = parse_answer_callback(payload, prefix)
     scope = ensure_callback_scope(data)
     if not callback_matches_session(token, scope):
-        raise LegacyLiveAnswerStale("answer button belongs to another session")
+        raise LegacyLiveAnswerStale("answer button belongs to another attempt")
     if question_index != _current_index(data):
         raise LegacyLiveAnswerStale("answer button belongs to another question")
 
@@ -308,6 +309,7 @@ def apply_live_answer_once(
         result = record_owned_quiz_answer(
             session_id,
             user_id,
+            expected_attempt_id=scope,
             expected_index=question_index,
             question_id=question_id,
             user_answer=user_answer,
@@ -369,11 +371,13 @@ def apply_live_timeout_once(
     latency = _elapsed_seconds(data, now)
     question_id = legacy_question_id(question)
     session_id = data.get("session_id")
+    scope = ensure_callback_scope(data)
 
     if isinstance(session_id, str) and session_id:
         result = record_owned_quiz_answer(
             session_id,
             user_id,
+            expected_attempt_id=scope,
             expected_index=expected_index,
             question_id=question_id,
             user_answer=_TIMEOUT_ANSWER,
