@@ -55,16 +55,32 @@ def _receipt_path(result_id: str) -> str:
     return f"legacy_result_receipts.{_receipt_digest(result_id)}"
 
 
-def _receipt_completed_at(doc: dict, result_id: str) -> str | None:
+def _receipt_snapshot(doc: dict, result_id: str) -> dict:
+    """Return the durable per-result snapshot, including legacy string receipts."""
     receipts = doc.get("legacy_result_receipts", {})
     if not isinstance(receipts, dict):
-        return None
+        return {}
     value = receipts.get(_receipt_digest(result_id))
+    if isinstance(value, dict):
+        completed_at = value.get("completed_at")
+        if isinstance(completed_at, datetime):
+            completed_at = completed_at.isoformat()
+        if not isinstance(completed_at, str) or not completed_at:
+            return {}
+        return {
+            "completed_at": completed_at,
+            "daily_streak": max(0, int(value.get("daily_streak", 0) or 0)),
+            "challenge_streak": max(0, int(value.get("challenge_streak", 0) or 0)),
+        }
     if isinstance(value, datetime):
-        return value.isoformat()
+        return {"completed_at": value.isoformat(), "daily_streak": 0, "challenge_streak": 0}
     if isinstance(value, str) and value:
-        return value
-    return None
+        return {"completed_at": value, "daily_streak": 0, "challenge_streak": 0}
+    return {}
+
+
+def _receipt_completed_at(doc: dict, result_id: str) -> str | None:
+    return _receipt_snapshot(doc, result_id).get("completed_at")
 
 
 def _coerce_completed_at(value: str | datetime | float | int | None) -> datetime:
@@ -201,14 +217,7 @@ def apply_base_result_once(
     max_streak: int = 0,
     challenge_mode: str | None = None,
 ) -> dict:
-    """Apply base quiz counters/points exactly once.
-
-    ``result_id`` is mandatory. The receipt marker and all counters live on the
-    same user document and are written in one atomic Mongo update. The marker
-    stores the first durable completion timestamp; every later stage must derive
-    its day/week from this timestamp so retries across midnight/week boundaries
-    cannot change the result's economics.
-    """
+    """Apply base quiz counters/points exactly once and persist retry snapshots."""
     result_id = _normalize_result_id(result_id)
     collection = _users()
     entry = _ensure_user(user_id, username, first_name)
@@ -239,35 +248,42 @@ def apply_base_result_once(
     if is_perfect:
         inc["perfect_count"] = 1
 
+    daily_fields = _daily_activity_fields(entry, today)
+    challenge_fields = _challenge_streak_fields(entry, today, challenge_mode, score)
+    daily_streak_after = max(0, int(
+        daily_fields.get("daily_activity_streak", entry.get("daily_activity_streak", 0)) or 0
+    ))
+    challenge_streak_after = max(0, int(
+        challenge_fields.get("challenge_streak_count", entry.get("challenge_streak_count", 0)) or 0
+    ))
+    receipt_snapshot = {
+        "completed_at": completed_at,
+        "daily_streak": daily_streak_after,
+        "challenge_streak": challenge_streak_after,
+    }
     receipt_path = _receipt_path(result_id)
     set_fields = {
         "username": username or "",
         "first_name": first_name or "Пользователь",
         "last_activity": now,
-        receipt_path: completed_at,
-        **_daily_activity_fields(entry, today),
-        **_challenge_streak_fields(entry, today, challenge_mode, score),
+        receipt_path: receipt_snapshot,
+        **daily_fields,
+        **challenge_fields,
     }
     if is_perfect:
         set_fields["last_perfect_date"] = today
 
-    update = {
-        "$inc": inc,
-        "$set": set_fields,
-        "$max": {
-            f"{level_key}_best_score": score,
-            "max_streak_ever": max_streak,
-        },
-    }
-    query = {
-        "_id": uid,
-        receipt_path: {"$exists": False},
-    }
-
     try:
         after = collection.find_one_and_update(
-            query,
-            update,
+            {"_id": uid, receipt_path: {"$exists": False}},
+            {
+                "$inc": inc,
+                "$set": set_fields,
+                "$max": {
+                    f"{level_key}_best_score": score,
+                    "max_streak_ever": max_streak,
+                },
+            },
             return_document=ReturnDocument.AFTER,
         )
         if after is not None:
@@ -275,18 +291,21 @@ def apply_base_result_once(
                 "applied": True,
                 "earned_base": earned_base,
                 "completed_at": completed_at,
+                "receipt": receipt_snapshot,
                 "user": after,
             }
 
         existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
         if existing:
-            durable_completed_at = _receipt_completed_at(existing, result_id)
+            durable_receipt = _receipt_snapshot(existing, result_id)
+            durable_completed_at = durable_receipt.get("completed_at")
             if durable_completed_at is None:
                 raise LegacyResultStoreUnavailable("base result receipt timestamp is invalid")
             return {
                 "applied": False,
                 "earned_base": earned_base,
                 "completed_at": durable_completed_at,
+                "receipt": durable_receipt,
                 "user": existing,
             }
         raise LegacyResultStoreUnavailable("base result receipt could not be persisted")
@@ -296,64 +315,65 @@ def apply_base_result_once(
         raise LegacyResultStoreUnavailable("base result write failed") from exc
 
 
-def claim_daily_bonus_once(user_id: int, day: str) -> dict:
-    """Atomically award/replay the normal-test daily bonus for a durable day."""
+def _stored_bonus_amount(value) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def claim_daily_bonus_state(user_id: int, day: str, daily_streak: int) -> dict:
+    """Claim or recover the normal-test bonus for the result's durable day."""
     collection = _users()
     uid = database._uid(user_id)
     day_key = _day_key(day)
     receipt_path = f"daily_bonus_receipts.{day_key}"
+    daily_streak = max(0, int(daily_streak or 0))
+    bonus = 15 if daily_streak >= 7 else 10 if daily_streak >= 3 else 5
     try:
-        entry = collection.find_one(
-            {"_id": uid},
-            {"daily_activity_streak": 1, "last_daily_bonus": 1, receipt_path: 1},
-        )
+        entry = collection.find_one({"_id": uid}, {"last_daily_bonus": 1, receipt_path: 1})
         if not entry:
-            raise LegacyResultStoreUnavailable("daily bonus user document is missing")
-
-        receipts = entry.get("daily_bonus_receipts", {})
-        if isinstance(receipts, dict) and day_key in receipts:
-            return _bonus_stage(receipts[day_key], claimed_now=False)
-
+            return {"bonus": 0, "claimed_now": False}
+        receipt_value = entry.get("daily_bonus_receipts", {}).get(day_key)
+        if receipt_value is not None:
+            return {"bonus": _stored_bonus_amount(receipt_value), "claimed_now": False}
         if entry.get("last_daily_bonus", "") == day:
-            receipt = {"bonus": 0, "eligible": False, "legacy": True}
-            result = collection.update_one(
+            collection.update_one(
                 {"_id": uid, receipt_path: {"$exists": False}},
-                {"$set": {receipt_path: receipt}},
+                {"$set": {receipt_path: 0}},
             )
-            if result.modified_count == 1:
-                return _bonus_stage(receipt, claimed_now=False)
-            refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
-            stored = refreshed.get("daily_bonus_receipts", {}).get(day_key)
-            if stored is not None:
-                return _bonus_stage(stored, claimed_now=False)
-            raise LegacyResultStoreUnavailable("daily bonus migration receipt disappeared")
+            return {"bonus": 0, "claimed_now": False}
 
-        streak = int(entry.get("daily_activity_streak", 0) or 0)
-        bonus = 15 if streak >= 7 else 10 if streak >= 3 else 5
-        receipt = {"bonus": bonus, "eligible": True}
         result = collection.update_one(
             {"_id": uid, receipt_path: {"$exists": False}},
             {
-                "$set": {receipt_path: receipt},
+                "$set": {receipt_path: bonus},
                 "$max": {"last_daily_bonus": day},
                 "$inc": {"total_points": bonus},
             },
         )
         if result.modified_count == 1:
-            return _bonus_stage(receipt, claimed_now=True)
-        refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
-        stored = refreshed.get("daily_bonus_receipts", {}).get(day_key)
-        if stored is not None:
-            return _bonus_stage(stored, claimed_now=False)
-        raise LegacyResultStoreUnavailable("daily bonus receipt could not be persisted")
-    except LegacyResultStoreUnavailable:
-        raise
+            return {"bonus": bonus, "claimed_now": True}
+        raced = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+        raced_value = raced.get("daily_bonus_receipts", {}).get(day_key)
+        return {"bonus": _stored_bonus_amount(raced_value), "claimed_now": False}
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("daily bonus write failed") from exc
 
 
-def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> dict:
-    """Atomically award/replay a challenge bonus for a durable result day."""
+def claim_daily_bonus_once(user_id: int, day: str, daily_streak: int | None = None) -> int:
+    """Backward-compatible wrapper returning points only for the winning claim."""
+    if daily_streak is None:
+        entry = _users().find_one({"_id": database._uid(user_id)}, {"daily_activity_streak": 1}) or {}
+        daily_streak = int(entry.get("daily_activity_streak", 0) or 0)
+    state = claim_daily_bonus_state(user_id, day, daily_streak)
+    return state["bonus"] if state["claimed_now"] else 0
+
+
+def claim_challenge_bonus_state(user_id: int, mode: str, score: int, day: str) -> dict:
+    """Claim or recover a Challenge bonus for the result's durable day."""
     if mode not in _CHALLENGE_MODES:
         raise ValueError(f"unsupported challenge mode: {mode}")
     collection = _users()
@@ -364,39 +384,21 @@ def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) ->
     date_field = f"{mode}_last_bonus_date"
     receipt_path = f"challenge_bonus_receipts.{mode}.{day_key}"
     try:
-        entry = collection.find_one(
-            {"_id": uid},
-            {date_field: 1, receipt_path: 1},
-        )
+        entry = collection.find_one({"_id": uid}, {date_field: 1, receipt_path: 1})
         if not entry:
-            raise LegacyResultStoreUnavailable("challenge bonus user document is missing")
-
-        receipts = entry.get("challenge_bonus_receipts", {})
-        mode_receipts = receipts.get(mode, {}) if isinstance(receipts, dict) else {}
-        if isinstance(mode_receipts, dict) and day_key in mode_receipts:
-            return _bonus_stage(mode_receipts[day_key], claimed_now=False)
-
+            return {"bonus": 0, "claimed_now": False}
+        receipt_value = entry.get("challenge_bonus_receipts", {}).get(mode, {}).get(day_key)
+        if receipt_value is not None:
+            return {"bonus": _stored_bonus_amount(receipt_value), "claimed_now": False}
         if entry.get(date_field, "") == day:
-            receipt = {"bonus": 0, "eligible": False, "legacy": True}
-            result = collection.update_one(
+            collection.update_one(
                 {"_id": uid, receipt_path: {"$exists": False}},
-                {"$set": {receipt_path: receipt}},
+                {"$set": {receipt_path: 0}},
             )
-            if result.modified_count == 1:
-                return _bonus_stage(receipt, claimed_now=False)
-            refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
-            stored = (
-                refreshed.get("challenge_bonus_receipts", {})
-                .get(mode, {})
-                .get(day_key)
-            )
-            if stored is not None:
-                return _bonus_stage(stored, claimed_now=False)
-            raise LegacyResultStoreUnavailable("challenge bonus migration receipt disappeared")
+            return {"bonus": 0, "claimed_now": False}
 
-        receipt = {"bonus": bonus, "eligible": True}
         update: dict = {
-            "$set": {receipt_path: receipt},
+            "$set": {receipt_path: bonus},
             "$max": {date_field: day},
         }
         if bonus:
@@ -406,20 +408,18 @@ def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) ->
             update,
         )
         if result.modified_count == 1:
-            return _bonus_stage(receipt, claimed_now=True)
-        refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
-        stored = (
-            refreshed.get("challenge_bonus_receipts", {})
-            .get(mode, {})
-            .get(day_key)
-        )
-        if stored is not None:
-            return _bonus_stage(stored, claimed_now=False)
-        raise LegacyResultStoreUnavailable("challenge bonus receipt could not be persisted")
-    except LegacyResultStoreUnavailable:
-        raise
+            return {"bonus": bonus, "claimed_now": True}
+        raced = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+        raced_value = raced.get("challenge_bonus_receipts", {}).get(mode, {}).get(day_key)
+        return {"bonus": _stored_bonus_amount(raced_value), "claimed_now": False}
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("challenge bonus write failed") from exc
+
+
+def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> int:
+    """Backward-compatible wrapper returning points only for the winning claim."""
+    state = claim_challenge_bonus_state(user_id, mode, score, day)
+    return state["bonus"] if state["claimed_now"] else 0
 
 
 def claim_achievement_once(
