@@ -15,8 +15,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/bible-bot-legacy-correctness
-          fetch-depth: 2
-      - name: Restore parent database and apply exact persistence fix
+          fetch-depth: 0
+      - name: Restore green checkpoint database and apply exact persistence fix
         run: python .github/scripts/oneshot_restore_database.py
       - name: Guard database diff
         shell: bash
