@@ -90,7 +90,15 @@ def _user():
     }
 
 
-def _apply(*, completed_at, challenge_mode=None, score=8, total=10):
+def _apply(
+    *,
+    completed_at,
+    challenge_mode=None,
+    score=8,
+    total=10,
+    time_seconds=45.0,
+    fastest_answer=None,
+):
     level_key = challenge_mode or "easy"
     return store.apply_base_result_once(
         result_id="recovered-session",
@@ -100,10 +108,11 @@ def _apply(*, completed_at, challenge_mode=None, score=8, total=10):
         level_key=level_key,
         score=score,
         total=total,
-        time_seconds=45.0,
+        time_seconds=time_seconds,
         score_multiplier=1.0,
         max_streak=4,
         challenge_mode=challenge_mode,
+        fastest_answer=fastest_answer,
         completed_at=completed_at,
     )
 
@@ -185,6 +194,68 @@ def test_late_challenge_recovery_cannot_rewind_newer_challenge_streak(monkeypatc
     assert users.doc["total_tests"] == 0
     assert users.doc["challenge_streak_last_date"] == "2026-08-11"
     assert users.doc["challenge_streak_count"] == 3
+
+
+def test_invalid_authoritative_completion_time_is_retryable_before_write(monkeypatch):
+    users = FakeUsers(_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 11, 0, 5, 0))
+
+    with pytest.raises(
+        store.LegacyResultStoreUnavailable,
+        match="completion timestamp is invalid",
+    ):
+        _apply(completed_at="not-a-timestamp")
+
+    assert users.doc["total_tests"] == 0
+
+
+def test_future_authoritative_completion_time_is_retryable_before_write(monkeypatch):
+    users = FakeUsers(_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 10, 12, 0, 0))
+
+    with pytest.raises(
+        store.LegacyResultStoreUnavailable,
+        match="timestamp is in the future",
+    ):
+        _apply(completed_at="2026-08-10T12:00:01")
+
+    assert users.doc["total_tests"] == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "kwargs"),
+    [
+        ("time_seconds", {"time_seconds": float("inf")}),
+        ("fastest_answer", {"fastest_answer": float("nan")}),
+    ],
+)
+def test_nonfinite_result_numbers_are_rejected_before_write(monkeypatch, field, kwargs):
+    users = FakeUsers(_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 10, 12, 0, 0))
+
+    with pytest.raises(ValueError, match=field):
+        _apply(completed_at="2026-08-10T11:59:59", **kwargs)
+
+    assert users.doc["total_tests"] == 0
+
+
+def test_corrupt_existing_receipt_streak_is_retryable(monkeypatch):
+    users = FakeUsers(_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 10, 12, 0, 0))
+
+    _apply(completed_at="2026-08-10T11:59:59")
+    receipt_key = next(iter(users.doc["legacy_result_receipts"]))
+    users.doc["legacy_result_receipts"][receipt_key]["daily_streak"] = "broken"
+
+    with pytest.raises(
+        store.LegacyResultStoreUnavailable,
+        match="receipt daily_streak is invalid",
+    ):
+        _apply(completed_at="2026-08-10T11:59:59")
 
 
 def test_invalid_result_day_never_falls_back_to_current_time():
