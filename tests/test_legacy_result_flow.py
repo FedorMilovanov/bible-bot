@@ -12,22 +12,28 @@ def test_stable_result_id_prefers_persisted_session_and_is_memoized():
     assert second == first
 
 
-def test_stable_result_id_has_deterministic_memory_fallback():
+def test_stable_result_id_uses_unique_memoized_memory_fallback():
     first_data = {
         "session_id": None,
-        "start_time": 123.5,
+        "start_time": None,
         "level_key": "random_all",
         "questions": [{"id": "q1"}, {"id": "q2"}],
     }
     second_data = {
         "session_id": None,
-        "start_time": 123.5,
+        "start_time": None,
         "level_key": "random_all",
         "questions": [{"id": "q1"}, {"id": "q2"}],
     }
 
-    assert flow.stable_result_id(42, first_data) == flow.stable_result_id(42, second_data)
-    assert first_data["result_id"].startswith("memory:")
+    first = flow.stable_result_id(42, first_data)
+    first_retry = flow.stable_result_id(42, first_data)
+    second = flow.stable_result_id(42, second_data)
+
+    assert first.startswith("memory:")
+    assert first_retry == first
+    assert second.startswith("memory:")
+    assert second != first
 
 
 def test_general_achievement_candidates_use_durable_post_result_counters():
