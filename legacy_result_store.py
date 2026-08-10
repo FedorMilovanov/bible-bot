@@ -18,6 +18,7 @@ import database
 logger = logging.getLogger(__name__)
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
+_BASE_CAS_RETRIES = 8
 
 
 class LegacyResultStoreUnavailable(RuntimeError):
@@ -54,7 +55,7 @@ def _receipt_path(result_id: str) -> str:
 
 
 def _receipt_snapshot(doc: dict, result_id: str) -> dict:
-    """Return the durable per-result snapshot, including older string receipts."""
+    """Return the durable per-result snapshot, including older receipt shapes."""
     receipts = doc.get("legacy_result_receipts", {})
     if not isinstance(receipts, dict):
         return {}
@@ -65,15 +66,35 @@ def _receipt_snapshot(doc: dict, result_id: str) -> dict:
             completed_at = completed_at.isoformat()
         if not isinstance(completed_at, str) or not completed_at:
             return {}
+        result = value.get("result") if isinstance(value.get("result"), dict) else {}
+        achievement_state = (
+            value.get("achievement_state")
+            if isinstance(value.get("achievement_state"), dict)
+            else {}
+        )
         return {
             "completed_at": completed_at,
             "daily_streak": max(0, int(value.get("daily_streak", 0) or 0)),
             "challenge_streak": max(0, int(value.get("challenge_streak", 0) or 0)),
+            "result": dict(result),
+            "achievement_state": dict(achievement_state),
         }
     if isinstance(value, datetime):
-        return {"completed_at": value.isoformat(), "daily_streak": 0, "challenge_streak": 0}
+        return {
+            "completed_at": value.isoformat(),
+            "daily_streak": 0,
+            "challenge_streak": 0,
+            "result": {},
+            "achievement_state": {},
+        }
     if isinstance(value, str) and value:
-        return {"completed_at": value, "daily_streak": 0, "challenge_streak": 0}
+        return {
+            "completed_at": value,
+            "daily_streak": 0,
+            "challenge_streak": 0,
+            "result": {},
+            "achievement_state": {},
+        }
     return {}
 
 
@@ -191,6 +212,52 @@ def _challenge_streak_fields(entry: dict, today: str, mode: str | None, score: i
     return {}
 
 
+def _cas_expected(entry: dict, field: str):
+    """Build an exact optimistic-CAS predicate, including legacy missing fields."""
+    if field in entry:
+        return entry[field]
+    return {"$exists": False}
+
+
+def _post_result_achievement_state(
+    entry: dict,
+    *,
+    daily_fields: dict,
+    challenge_fields: dict,
+    is_perfect: bool,
+    max_streak: int,
+) -> dict:
+    return {
+        "total_tests": max(0, int(entry.get("total_tests", 0) or 0)) + 1,
+        "perfect_count": max(0, int(entry.get("perfect_count", 0) or 0))
+        + (1 if is_perfect else 0),
+        "max_streak_ever": max(
+            max(0, int(entry.get("max_streak_ever", 0) or 0)),
+            max_streak,
+        ),
+        "daily_activity_streak": max(
+            0,
+            int(
+                daily_fields.get(
+                    "daily_activity_streak",
+                    entry.get("daily_activity_streak", 0),
+                )
+                or 0
+            ),
+        ),
+        "challenge_streak_count": max(
+            0,
+            int(
+                challenge_fields.get(
+                    "challenge_streak_count",
+                    entry.get("challenge_streak_count", 0),
+                )
+                or 0
+            ),
+        ),
+    }
+
+
 def apply_base_result_once(
     *,
     result_id: str,
@@ -204,91 +271,148 @@ def apply_base_result_once(
     score_multiplier: float = 1.0,
     max_streak: int = 0,
     challenge_mode: str | None = None,
+    quiz_mode: str | None = None,
+    fastest_answer: float | None = None,
 ) -> dict:
-    """Apply counters/points once and persist the retry-critical state snapshot."""
+    """Apply counters once and persist the retry-critical result snapshot.
+
+    Distinct results for the same user are serialized with optimistic CAS on
+    ``total_tests`` plus any streak state read before the update. This avoids
+    stale pre-read streak/date writes while keeping the result counters and
+    receipt in one atomic user-document update.
+    """
     result_id = _normalize_result_id(result_id)
     collection = _users()
-    entry = _ensure_user(user_id, username, first_name)
     uid = database._uid(user_id)
     level_key = database._safe_level_key(level_key)
     score, total = database._validate_score(score, total)
     time_seconds = max(0.0, float(time_seconds))
     score_multiplier = max(0.0, float(score_multiplier))
     max_streak = max(0, int(max_streak))
+    if fastest_answer is not None:
+        fastest_answer = max(0.0, float(fastest_answer))
+
+    # The completion clock is fixed for the whole CAS retry loop. A contention
+    # retry crossing midnight must not silently move this result to a new day.
     now = database._now_utc()
     completed_at = now.isoformat()
     today = now.strftime("%Y-%m-%d")
+    receipt_path = _receipt_path(result_id)
 
     ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
     earned_base = round(score * ppq * score_multiplier)
     is_perfect = total > 0 and score == total
-    inc = {
-        "total_tests": 1,
-        "total_questions_answered": total,
-        "total_correct_answers": score,
-        "total_time_spent": time_seconds,
-        "total_points": earned_base,
-        f"{level_key}_attempts": 1,
-        f"{level_key}_correct": score,
-        f"{level_key}_total": total,
+    durable_result = {
+        "level_key": level_key,
+        "score": score,
+        "total": total,
+        "time_seconds": time_seconds,
+        "score_multiplier": score_multiplier,
+        "max_streak": max_streak,
+        "challenge_mode": challenge_mode,
+        "quiz_mode": quiz_mode,
+        "fastest_answer": fastest_answer,
+        "earned_base": earned_base,
     }
-    if is_perfect:
-        inc["perfect_count"] = 1
-
-    daily_fields = _daily_activity_fields(entry, today)
-    challenge_fields = _challenge_streak_fields(entry, today, challenge_mode, score)
-    receipt_snapshot = {
-        "completed_at": completed_at,
-        "daily_streak": max(0, int(
-            daily_fields.get("daily_activity_streak", entry.get("daily_activity_streak", 0)) or 0
-        )),
-        "challenge_streak": max(0, int(
-            challenge_fields.get("challenge_streak_count", entry.get("challenge_streak_count", 0)) or 0
-        )),
-    }
-    receipt_path = _receipt_path(result_id)
-    set_fields = {
-        "username": username or "",
-        "first_name": first_name or "Пользователь",
-        "last_activity": now,
-        receipt_path: receipt_snapshot,
-        **daily_fields,
-        **challenge_fields,
-    }
-    if is_perfect:
-        set_fields["last_perfect_date"] = today
 
     try:
-        after = collection.find_one_and_update(
-            {"_id": uid, receipt_path: {"$exists": False}},
-            {
-                "$inc": inc,
-                "$set": set_fields,
-                "$max": {f"{level_key}_best_score": score, "max_streak_ever": max_streak},
-            },
-            return_document=ReturnDocument.AFTER,
-        )
-        if after is not None:
-            return {
-                "applied": True,
-                "earned_base": earned_base,
+        entry = _ensure_user(user_id, username, first_name)
+        for _attempt in range(_BASE_CAS_RETRIES):
+            daily_fields = _daily_activity_fields(entry, today)
+            challenge_fields = _challenge_streak_fields(entry, today, challenge_mode, score)
+            achievement_state = _post_result_achievement_state(
+                entry,
+                daily_fields=daily_fields,
+                challenge_fields=challenge_fields,
+                is_perfect=is_perfect,
+                max_streak=max_streak,
+            )
+            receipt_snapshot = {
                 "completed_at": completed_at,
-                "receipt": receipt_snapshot,
-                "user": after,
+                "daily_streak": achievement_state["daily_activity_streak"],
+                "challenge_streak": achievement_state["challenge_streak_count"],
+                "result": durable_result,
+                "achievement_state": achievement_state,
             }
-        existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
-        if existing:
-            durable_receipt = _receipt_snapshot(existing, result_id)
-            if not durable_receipt.get("completed_at"):
-                raise LegacyResultStoreUnavailable("base result receipt timestamp is invalid")
-            return {
-                "applied": False,
-                "earned_base": earned_base,
-                "completed_at": durable_receipt["completed_at"],
-                "receipt": durable_receipt,
-                "user": existing,
+
+            inc = {
+                "total_tests": 1,
+                "total_questions_answered": total,
+                "total_correct_answers": score,
+                "total_time_spent": time_seconds,
+                "total_points": earned_base,
+                f"{level_key}_attempts": 1,
+                f"{level_key}_correct": score,
+                f"{level_key}_total": total,
             }
-        raise LegacyResultStoreUnavailable("base result receipt could not be persisted")
+            if is_perfect:
+                inc["perfect_count"] = 1
+
+            set_fields = {
+                "username": username or "",
+                "first_name": first_name or "Пользователь",
+                "last_activity": now,
+                receipt_path: receipt_snapshot,
+                **daily_fields,
+                **challenge_fields,
+            }
+            if is_perfect:
+                set_fields["last_perfect_date"] = today
+
+            query = {
+                "_id": uid,
+                receipt_path: {"$exists": False},
+                "total_tests": _cas_expected(entry, "total_tests"),
+            }
+            if daily_fields:
+                query["daily_activity_last"] = _cas_expected(entry, "daily_activity_last")
+            if challenge_fields:
+                query["challenge_streak_last_date"] = _cas_expected(
+                    entry, "challenge_streak_last_date"
+                )
+
+            after = collection.find_one_and_update(
+                query,
+                {
+                    "$inc": inc,
+                    "$set": set_fields,
+                    "$max": {
+                        f"{level_key}_best_score": score,
+                        "max_streak_ever": max_streak,
+                    },
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+            if after is not None:
+                return {
+                    "applied": True,
+                    "earned_base": earned_base,
+                    "completed_at": completed_at,
+                    "receipt": receipt_snapshot,
+                    "result": durable_result,
+                    "user": after,
+                }
+
+            existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
+            if existing:
+                durable_receipt = _receipt_snapshot(existing, result_id)
+                if not durable_receipt.get("completed_at"):
+                    raise LegacyResultStoreUnavailable("base result receipt timestamp is invalid")
+                stored_result = durable_receipt.get("result") or durable_result
+                return {
+                    "applied": False,
+                    "earned_base": int(stored_result.get("earned_base", earned_base) or 0),
+                    "completed_at": durable_receipt["completed_at"],
+                    "receipt": durable_receipt,
+                    "result": stored_result,
+                    "user": existing,
+                }
+
+            entry = collection.find_one({"_id": uid})
+            if entry is None:
+                raise LegacyResultStoreUnavailable("user stats document disappeared during result CAS")
+
+        raise LegacyResultStoreUnavailable("base result CAS retry budget exhausted")
     except LegacyResultStoreUnavailable:
         raise
     except PyMongoError as exc:
@@ -423,7 +547,12 @@ def claim_achievement_once(
     reward: int = 0,
     awarded_at: str | None = None,
 ) -> bool:
-    if not achievement_key or "." in achievement_key or achievement_key.startswith("$"):
+    if (
+        not isinstance(achievement_key, str)
+        or not achievement_key
+        or "." in achievement_key
+        or achievement_key.startswith("$")
+    ):
         raise ValueError("unsafe achievement key")
     collection = _users()
     uid = database._uid(user_id)
