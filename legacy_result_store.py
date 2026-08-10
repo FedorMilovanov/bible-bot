@@ -4,9 +4,10 @@ The legacy bot historically wrote one completed result through several independe
 Mongo operations. These helpers provide stable per-session receipts and
 idempotent follow-up claims so a process crash can safely retry finalization.
 
-Daily and Challenge bonus ownership lives in ``legacy_bonus_store``. Keeping the
-old day-only bonus API here would reintroduce an ambiguous recovery path where a
-second result could inherit another result's bonus receipt.
+Daily and Challenge bonus payout lives in ``legacy_bonus_store``. The first
+eligible result owner is reserved here, in the same atomic user-document update
+as the base result, so a later result cannot steal a bonus after an earlier
+result crashes before its bonus stage.
 """
 from __future__ import annotations
 
@@ -56,6 +57,27 @@ def _receipt_digest(result_id: str) -> str:
 
 def _receipt_path(result_id: str) -> str:
     return f"legacy_result_receipts.{_receipt_digest(result_id)}"
+
+
+def _entry_field(entry: dict, path: str) -> tuple[object | None, bool]:
+    current: object = entry
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None, False
+        current = current[part]
+    return current, True
+
+
+def _bonus_owner_path(today: str, challenge_mode: str | None) -> str:
+    try:
+        day_key = datetime.strptime(today, "%Y-%m-%d").strftime("%Y%m%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("result day must be YYYY-MM-DD") from exc
+    if challenge_mode is None:
+        return f"normal_bonus_result_owners.{day_key}"
+    if challenge_mode not in _CHALLENGE_MODES:
+        raise ValueError(f"unsupported challenge mode: {challenge_mode}")
+    return f"challenge_bonus_result_owners.{challenge_mode}.{day_key}"
 
 
 def _receipt_snapshot(doc: dict, result_id: str) -> dict:
@@ -253,12 +275,14 @@ def apply_base_result_once(
     quiz_mode: str | None = None,
     fastest_answer: float | None = None,
 ) -> dict:
-    """Apply counters once and persist the retry-critical result snapshot.
+    """Apply counters once and reserve this result's bonus ownership once.
 
     Distinct results for the same user are serialized with optimistic CAS on
-    ``total_tests`` plus any streak state read before the update. This avoids
-    stale pre-read streak/date writes while keeping the result counters and
-    receipt in one atomic user-document update.
+    ``total_tests`` plus any streak state read before the update. The first
+    normal result of a day, or first Challenge result for a mode/day, also
+    reserves a stable owner marker in this same atomic update. A later result
+    can therefore never win the bonus merely because an earlier process died
+    between base scoring and the bonus stage.
     """
     result_id = _normalize_result_id(result_id)
     collection = _users()
@@ -268,6 +292,8 @@ def apply_base_result_once(
     time_seconds = max(0.0, float(time_seconds))
     score_multiplier = max(0.0, float(score_multiplier))
     max_streak = max(0, int(max_streak))
+    if challenge_mode is not None and challenge_mode not in _CHALLENGE_MODES:
+        raise ValueError(f"unsupported challenge mode: {challenge_mode}")
     if fastest_answer is not None:
         fastest_answer = max(0.0, float(fastest_answer))
 
@@ -275,6 +301,8 @@ def apply_base_result_once(
     completed_at = now.isoformat()
     today = now.strftime("%Y-%m-%d")
     receipt_path = _receipt_path(result_id)
+    result_owner = _receipt_digest(result_id)
+    bonus_owner_path = _bonus_owner_path(today, challenge_mode)
 
     ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
     earned_base = round(score * ppq * score_multiplier)
@@ -347,6 +375,11 @@ def apply_base_result_once(
                 query["challenge_streak_last_date"] = _cas_expected(
                     entry, "challenge_streak_last_date"
                 )
+
+            _owner_value, owner_exists = _entry_field(entry, bonus_owner_path)
+            if not owner_exists:
+                query[bonus_owner_path] = {"$exists": False}
+                set_fields[bonus_owner_path] = result_owner
 
             after = collection.find_one_and_update(
                 query,
