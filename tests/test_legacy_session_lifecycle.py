@@ -1,6 +1,5 @@
 from copy import deepcopy
 from datetime import datetime
-from types import SimpleNamespace
 
 import pytest
 from pymongo.errors import AutoReconnect
