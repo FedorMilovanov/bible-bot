@@ -137,9 +137,13 @@ def accept_report_once(
         except DuplicateKeyError:
             stored = reports.find_one({"_id": report_id})
             if not isinstance(stored, dict):
-                raise ReportStoreUnavailable("existing report receipt cannot be loaded")
+                raise ReportStoreUnavailable(
+                    "existing report receipt cannot be loaded"
+                ) from None
             if _immutable_snapshot(stored) != _immutable_snapshot(doc):
-                raise ReportStoreUnavailable("report id is bound to different immutable content")
+                raise ReportStoreUnavailable(
+                    "report id is bound to different immutable content"
+                ) from None
 
         created_at = stored.get("created_at_dt")
         if not isinstance(created_at, datetime):
