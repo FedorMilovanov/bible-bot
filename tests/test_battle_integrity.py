@@ -69,8 +69,6 @@ class FakeBattleCollection:
         self.find_result = None
         self.delete_filter = None
         self.deleted_count = 0
-        self.final_delete_filter = None
-        self.final_delete_result = None
 
     def find_one_and_update(self, query, update, return_document=None):
         self.claim_filter = query
@@ -80,10 +78,6 @@ class FakeBattleCollection:
     def find_one(self, query, projection=None):
         self.find_filter = query
         return self.find_result
-
-    def find_one_and_delete(self, query):
-        self.final_delete_filter = query
-        return self.final_delete_result
 
     def delete_one(self, query):
         self.delete_filter = query
@@ -127,6 +121,21 @@ def _battle():
         "opponent_finished": True,
         "opponent_points": 10,
     }
+
+
+def _finalized_battle(battle):
+    result = deepcopy(battle)
+    result.update(
+        {
+            "final_claimed": True,
+            "status": "finalized",
+            "result_delivery": {
+                "creator": {"delivered": False, "attempts": 0},
+                "opponent": {"delivered": False, "attempts": 0},
+            },
+        }
+    )
+    return result
 
 
 def test_battle_role_for_user():
@@ -209,23 +218,33 @@ def test_participant_result_retry_returns_existing_snapshot_without_rewrite(monk
     }
 
 
-def test_final_battle_applies_each_user_marker_then_atomically_deletes(monkeypatch):
+def test_final_battle_applies_each_user_marker_then_retains_snapshot(monkeypatch):
     battle_collection = FakeBattleCollection()
     battle = _battle()
+    finalized = _finalized_battle(battle)
     battle_collection.find_result = battle
-    battle_collection.final_delete_result = battle
+    battle_collection.claim_result = finalized
     user_collection = FakeUserCollection()
     user_collection.add_user(10)
     user_collection.add_user(20)
     monkeypatch.setattr(database, "battles_collection", battle_collection)
     monkeypatch.setattr(database, "collection", user_collection)
 
-    assert claim_final_battle("b1") == battle
-    assert battle_collection.final_delete_filter == {
+    assert claim_final_battle("b1") == finalized
+    assert battle_collection.claim_filter == {
         "_id": "b1",
         "creator_finished": True,
         "opponent_finished": True,
+        "final_claimed": {"$ne": True},
     }
+    final_set = battle_collection.claim_update["$set"]
+    assert final_set["final_claimed"] is True
+    assert final_set["status"] == "finalized"
+    assert final_set["result_delivery"] == {
+        "creator": {"delivered": False, "attempts": 0},
+        "opponent": {"delivered": False, "attempts": 0},
+    }
+
     digest = _battle_receipt_digest("b1")
     assert user_collection.docs["10"]["battle_result_receipt_map"][digest] is True
     assert user_collection.docs["20"]["battle_result_receipt_map"][digest] is True
@@ -241,7 +260,7 @@ def test_final_battle_retry_does_not_increment_existing_marker(monkeypatch):
     battle["creator_points"] = 8
     battle["opponent_points"] = 8
     battle_collection.find_result = battle
-    battle_collection.final_delete_result = battle
+    battle_collection.claim_result = _finalized_battle(battle)
     user_collection = FakeUserCollection()
     digest = _battle_receipt_digest("b1")
     user_collection.add_user(10, battle_result_receipt_map={digest: True})
@@ -249,7 +268,7 @@ def test_final_battle_retry_does_not_increment_existing_marker(monkeypatch):
     monkeypatch.setattr(database, "battles_collection", battle_collection)
     monkeypatch.setattr(database, "collection", user_collection)
 
-    assert claim_final_battle("b1") == battle
+    assert claim_final_battle("b1") == battle_collection.claim_result
     assert "battles_played" not in user_collection.docs["10"]
     assert "battles_played" not in user_collection.docs["20"]
 
@@ -258,14 +277,14 @@ def test_legacy_array_receipt_remains_valid_without_new_pushes(monkeypatch):
     battle_collection = FakeBattleCollection()
     battle = _battle()
     battle_collection.find_result = battle
-    battle_collection.final_delete_result = battle
+    battle_collection.claim_result = _finalized_battle(battle)
     user_collection = FakeUserCollection()
     user_collection.add_user(10, battle_result_receipts=["b1"])
     user_collection.add_user(20, battle_result_receipts=["b1"])
     monkeypatch.setattr(database, "battles_collection", battle_collection)
     monkeypatch.setattr(database, "collection", user_collection)
 
-    assert claim_final_battle("b1") == battle
+    assert claim_final_battle("b1") == battle_collection.claim_result
     assert user_collection.docs["10"]["battle_result_receipts"] == ["b1"]
     assert user_collection.docs["20"]["battle_result_receipts"] == ["b1"]
     assert "battle_result_receipt_map" not in user_collection.docs["10"]
@@ -306,7 +325,7 @@ def test_invalid_receipt_marker_is_retryable(monkeypatch):
         _apply_battle_outcome_once("b1", 10, "win", first_name="Player")
 
 
-def test_delete_is_scoped_to_persisted_participant(monkeypatch):
+def test_delete_is_scoped_to_participant_and_cannot_remove_final_outbox(monkeypatch):
     collection = FakeBattleCollection()
     collection.deleted_count = 1
     monkeypatch.setattr(database, "battles_collection", collection)
@@ -315,4 +334,5 @@ def test_delete_is_scoped_to_persisted_participant(monkeypatch):
     assert collection.delete_filter == {
         "_id": "b1",
         "$or": [{"creator_id": 20}, {"opponent_id": 20}],
+        "final_claimed": {"$ne": True},
     }
