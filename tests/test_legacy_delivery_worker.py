@@ -114,7 +114,7 @@ def test_report_delivers_photo_then_text_and_acks_each_stage(monkeypatch):
     ]
 
 
-def test_report_skips_already_acknowledged_photo_and_sends_text(monkeypatch):
+def test_report_skips_durably_acknowledged_photo_and_sends_text(monkeypatch):
     events = []
 
     def claim(_report_id, stage):
@@ -127,6 +127,19 @@ def test_report_skips_already_acknowledged_photo_and_sends_text(monkeypatch):
         }
 
     monkeypatch.setattr(worker, "claim_report_delivery_stage", claim)
+    monkeypatch.setattr(
+        worker,
+        "get_report_delivery_stage_state",
+        lambda _rid, stage: {
+            "report_id": "r1",
+            "stage": stage,
+            "delivered": True,
+            "claim_token": None,
+            "lease_until": None,
+            "attempts": 1,
+            "photo_file_id": "photo",
+        },
+    )
     monkeypatch.setattr(worker, "mark_report_delivery_stage_delivered", lambda *_: True)
 
     async def photo_sender(_report):
@@ -137,6 +150,39 @@ def test_report_skips_already_acknowledged_photo_and_sends_text(monkeypatch):
 
     assert run(worker.deliver_report_once("r1", photo_sender, text_sender)) == (False, True)
     assert events == ["text"]
+
+
+def test_report_does_not_overtake_photo_lease_owned_by_other_worker(monkeypatch):
+    events = []
+
+    def claim(_report_id, stage):
+        if stage == "photo":
+            return None
+        pytest.fail("text stage must not be claimed before photo acknowledgement")
+
+    monkeypatch.setattr(worker, "claim_report_delivery_stage", claim)
+    monkeypatch.setattr(
+        worker,
+        "get_report_delivery_stage_state",
+        lambda _rid, stage: {
+            "report_id": "r1",
+            "stage": stage,
+            "delivered": False,
+            "claim_token": "other-worker",
+            "lease_until": "later",
+            "attempts": 2,
+            "photo_file_id": "photo",
+        },
+    )
+
+    async def photo_sender(_report):
+        events.append("photo")
+
+    async def text_sender(_report):
+        events.append("text")
+
+    assert run(worker.deliver_report_once("r1", photo_sender, text_sender)) == (False, False)
+    assert events == []
 
 
 def test_report_sender_failure_releases_only_failed_stage(monkeypatch):
