@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 from legacy_session_recovery import (
@@ -108,6 +108,40 @@ def test_persisted_result_time_stops_at_last_answer_not_recovery_time():
     assert recovery_fields(session)["persisted_result_time"] == 45.0
 
 
+def test_offset_aware_answer_timestamp_is_converted_to_utc():
+    started = datetime(2026, 8, 10, 9, 0, 0, tzinfo=timezone.utc).timestamp()
+    session = _session(
+        start_time=started,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:05+03:00"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20+03:00"},
+        ],
+    )
+
+    assert persisted_result_time_seconds(session) == 20.0
+
+
+def test_answer_timestamp_before_start_is_rejected():
+    session = _session(
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T11:59:59"},
+        ]
+    )
+
+    assert persisted_result_time_seconds(session) is None
+
+
+def test_non_monotonic_answer_timeline_is_rejected():
+    session = _session(
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:10"},
+        ]
+    )
+
+    assert persisted_result_time_seconds(session) is None
+
+
 def test_fastest_answer_is_unknown_after_restart_without_latency_evidence():
     fields = recovery_fields(_session(time_limit=SPEED_MODE_TIMEOUT))
 
@@ -172,6 +206,20 @@ def test_completed_result_inputs_refuse_correct_counter_mismatch():
         answered_questions=[
             {"is_correct": True, "ts": "2026-08-10T12:00:10"},
             {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    assert completed_result_inputs(session) is None
+
+
+def test_completed_result_inputs_refuse_non_boolean_correctness():
+    session = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": "false", "ts": "2026-08-10T12:00:20"},
             {"is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
