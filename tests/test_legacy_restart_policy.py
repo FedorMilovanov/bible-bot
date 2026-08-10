@@ -51,6 +51,23 @@ def test_partial_session_resumes_but_exact_completion_finalizes():
     assert complete.result_inputs["completed_at"] == datetime.utcfromtimestamp(102).isoformat()
 
 
+def test_partial_session_requires_contiguous_consistent_ledger():
+    missing = session(current=1)
+    missing["answered_questions"] = []
+    with pytest.raises(LegacyRestartStateInvalid, match="ledger is inconsistent"):
+        classify_restart_session(missing)
+
+    wrong_score = session(current=1)
+    wrong_score["correct_count"] = 0
+    with pytest.raises(LegacyRestartStateInvalid, match="correct_count contradicts"):
+        classify_restart_session(wrong_score)
+
+    wrong_qid = session(current=1)
+    wrong_qid["answered_questions"][0]["qid"] = "other"
+    with pytest.raises(LegacyRestartStateInvalid, match="entry is invalid"):
+        classify_restart_session(wrong_qid)
+
+
 def test_incomplete_completion_evidence_is_conflict_not_cancel():
     value = session(current=2)
     value["answered_questions"] = value["answered_questions"][:1]
@@ -77,6 +94,12 @@ def test_normal_timers_route_to_normal_handler():
 def test_challenge_timer_routes_only_to_challenge_handler():
     route = restart_timeout_route(session(mode="random20", time_limit=20))
     assert (route.route, route.time_limit) == ("challenge", 20)
+
+
+def test_malformed_timer_evidence_fails_closed():
+    for value in (0, -1, "30", True):
+        with pytest.raises(LegacyRestartStateInvalid, match="time_limit is invalid"):
+            restart_timeout_route(session(time_limit=value))
 
 
 def test_untimed_session_has_no_restart_timeout():
