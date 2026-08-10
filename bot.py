@@ -69,6 +69,7 @@ from database import (
     # History
     get_user_history,
 )
+from battle_consistency import apply_battle_reward_once, join_battle_atomic
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
 
@@ -2484,26 +2485,13 @@ async def join_battle(update: Update, context):
     user_id   = query.from_user.id
     user_name = query.from_user.first_name
 
-    battle = get_battle(battle_id)
-    if not battle or battle.get("status") != "waiting":
+    battle = join_battle_atomic(battle_id, user_id, user_name)
+    if not battle:
         await query.edit_message_text(
-            "❌ Битва не найдена или уже началась.",
+            "❌ Битва не найдена, уже началась или занята другим игроком.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
         )
         return
-
-    if battle["creator_id"] == user_id:
-        await query.answer("Нельзя присоединиться к своей битве!", show_alert=True)
-        return
-    if battle["opponent_id"] is not None:
-        await query.answer("К этой битве уже присоединился другой игрок!", show_alert=True)
-        return
-
-    update_battle(battle_id, {
-        "opponent_id":   user_id,
-        "opponent_name": user_name,
-        "status":        "in_progress",
-    })
 
     await query.edit_message_text(
         f"⚔️ *БИТВА НАЧАЛАСЬ!*\n\n"
@@ -2724,14 +2712,14 @@ async def show_battle_results(bot, battle_id: str):
         winner, winner_name = "draw", None
 
     if winner == "creator":
-        update_battle_stats(battle["creator_id"], "win")
-        update_battle_stats(battle["opponent_id"], "lose")
+        apply_battle_reward_once(battle["creator_id"], battle_id, "win")
+        apply_battle_reward_once(battle["opponent_id"], battle_id, "lose")
     elif winner == "opponent":
-        update_battle_stats(battle["creator_id"], "lose")
-        update_battle_stats(battle["opponent_id"], "win")
+        apply_battle_reward_once(battle["creator_id"], battle_id, "lose")
+        apply_battle_reward_once(battle["opponent_id"], battle_id, "win")
     else:
-        update_battle_stats(battle["creator_id"], "draw")
-        update_battle_stats(battle["opponent_id"], "draw")
+        apply_battle_reward_once(battle["creator_id"], battle_id, "draw")
+        apply_battle_reward_once(battle["opponent_id"], battle_id, "draw")
 
     text  = "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
     text += f"🏆 *Победитель: {winner_name}!*\n\n" if winner != "draw" else "🤝 *НИЧЬЯ!*\n\n"
