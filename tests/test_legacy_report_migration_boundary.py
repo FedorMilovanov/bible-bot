@@ -25,6 +25,7 @@ def test_durable_report_migration_is_all_or_nothing():
 
     start = async_function("report_start")
     confirm = async_function("report_confirm")
+    inaccuracy = async_function("report_inaccuracy_handler")
 
     assert "new_report_draft(" in start
     assert "accept_report_draft_once(" in confirm
@@ -39,3 +40,12 @@ def test_durable_report_migration_is_all_or_nothing():
     # handler, otherwise a process crash can lose which stage was delivered.
     assert "ADMIN_USER_ID" not in confirm
     assert "drain_pending_deliveries(" in BOT
+
+    # The inline “inaccuracy” button is a second report ingress path. It must not
+    # remain an ephemeral direct Telegram send after the main report path becomes
+    # durable; use the generic store or a dedicated stable-id acceptance helper.
+    assert "ADMIN_USER_ID" not in inaccuracy
+    assert (
+        "accept_report_once(" in inaccuracy
+        or "accept_inaccuracy_report_once(" in inaccuracy
+    )
