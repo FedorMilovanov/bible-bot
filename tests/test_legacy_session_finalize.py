@@ -6,17 +6,20 @@ import legacy_session_finalize as recovery
 
 
 def _session(**overrides):
+    questions = [{"id": "q1"}, {"id": "q2"}]
     session = {
         "_id": "session-1",
+        "attempt_id": "attempt-1",
         "user_id": "42",
         "status": "in_progress",
         "mode": "level",
-        "questions_data": [{"id": "q1"}, {"id": "q2"}],
+        "question_ids": ["q1", "q2"],
+        "questions_data": questions,
         "current_index": 2,
         "correct_count": 1,
         "answered_questions": [
-            {"is_correct": True, "ts": "2026-08-10T12:00:05"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:05"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
         ],
         "level_key": "easy",
         "level_name": "Easy",
@@ -33,7 +36,7 @@ def test_completed_normal_session_uses_persisted_result_inputs(monkeypatch):
 
     def normal(**kwargs):
         captured.update(kwargs)
-        return {"scored": True, "result_id": "quiz:session-1"}
+        return {"scored": True, "result_id": "quiz:attempt-1"}
 
     monkeypatch.setattr(recovery, "finalize_normal_result", normal)
     monkeypatch.setattr(
@@ -55,10 +58,32 @@ def test_completed_normal_session_uses_persisted_result_inputs(monkeypatch):
     assert captured["total"] == 2
     assert captured["time_seconds"] == 20.0
     assert captured["data"]["session_id"] == "session-1"
+    assert captured["data"]["attempt_id"] == "attempt-1"
     assert captured["data"]["username"] == "tester"
     assert captured["data"]["first_name"] == "Test"
     assert captured["data"]["result_pending"] is True
     assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
+
+
+def test_legacy_session_without_attempt_id_recovers_with_container_identity(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        recovery,
+        "finalize_normal_result",
+        lambda **kwargs: captured.update(kwargs) or {"scored": True},
+    )
+    session = _session()
+    session.pop("attempt_id")
+
+    recovery.finalize_completed_session(
+        user_id=42,
+        session=session,
+        username="u",
+        first_name="User",
+        achievement_rewards={},
+    )
+
+    assert captured["data"]["attempt_id"] == "session-1"
 
 
 def test_finished_completed_session_remains_recoverable_for_legacy_crash_boundary(monkeypatch):
@@ -80,6 +105,7 @@ def test_finished_completed_session_remains_recoverable_for_legacy_crash_boundar
 
     assert result["scored"] is True
     assert captured["data"]["session_id"] == "session-1"
+    assert captured["data"]["attempt_id"] == "attempt-1"
 
 
 def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
@@ -93,7 +119,7 @@ def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
 
     def challenge(**kwargs):
         captured.update(kwargs)
-        return {"scored": True, "result_id": "quiz:session-1"}
+        return {"scored": True, "result_id": "quiz:attempt-1"}
 
     monkeypatch.setattr(recovery, "finalize_challenge_result", challenge)
 
@@ -112,6 +138,7 @@ def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
     assert captured["data"]["is_challenge"] is True
     assert captured["data"]["challenge_mode"] == "hardcore20"
     assert captured["data"]["challenge_time_limit"] == 10
+    assert captured["data"]["attempt_id"] == "attempt-1"
     assert captured["data"]["first_name"] == "Игрок"
     assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
 
@@ -179,8 +206,8 @@ def test_completed_session_recovery_rejects_missing_duration_evidence(monkeypatc
     )
     session = _session(
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:05"},
-            {"is_correct": False},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:05"},
+            {"index": 1, "qid": "q2", "is_correct": False},
         ]
     )
 
