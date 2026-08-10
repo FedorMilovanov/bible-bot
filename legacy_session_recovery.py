@@ -130,12 +130,15 @@ def _naive_utc(value: datetime) -> datetime:
 
 
 def _persisted_answer_timeline(session: dict) -> tuple[datetime, list[datetime]] | None:
-    try:
-        started_epoch = float(session.get("start_time"))
-        started = datetime.utcfromtimestamp(started_epoch)
-    except (TypeError, ValueError, OSError, OverflowError):
+    raw_started = session.get("start_time")
+    if isinstance(raw_started, bool) or not isinstance(raw_started, (int, float)):
         return None
-    if started_epoch < 0:
+    started_epoch = float(raw_started)
+    if not math.isfinite(started_epoch) or started_epoch < 0:
+        return None
+    try:
+        started = datetime.utcfromtimestamp(started_epoch)
+    except (OSError, OverflowError, ValueError):
         return None
 
     answered = _answers(session)
