@@ -285,3 +285,29 @@ def test_retry_error_session_is_memory_only_but_still_session_scoped(monkeypatch
     assert data["callback_scope_id"] == scope
     assert data["current_question"] == 1
     assert data["correct_answers"] == 1
+
+
+def test_invalid_memory_only_index_fails_before_answer_list_mutation(monkeypatch):
+    data = _data(session_id=None)
+    payload = live.build_live_answer_callback("qa", data, 0, 1)
+    data["current_question"] = "broken"
+    before = deepcopy(data)
+
+    def should_not_persist(*args, **kwargs):
+        raise AssertionError("memory-only path must not touch Mongo")
+
+    monkeypatch.setattr(live, "record_owned_quiz_answer", should_not_persist)
+
+    with pytest.raises(live.LegacyLiveStateInvalid, match="current_question is invalid"):
+        # Call the internal memory helper directly because callback validation
+        # rejects the broken index before reaching it. This regression proves
+        # the helper itself remains mutation-free on invalid state.
+        live._apply_memory_only(
+            data,
+            question=data["questions"][0],
+            user_answer="Paul",
+            is_correct=True,
+            latency_seconds=5.0,
+        )
+
+    assert data == before
