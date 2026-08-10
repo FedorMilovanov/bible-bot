@@ -63,6 +63,7 @@ jobs:
           intro.py
           battle_integrity.py
           session_integrity.py
+          report_integrity.py
           legacy_*.py
           scripts
           tests
