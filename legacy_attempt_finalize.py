@@ -51,6 +51,14 @@ def _prove_current_attempt(user_id: int, data: dict) -> str:
         raise LegacyAttemptFinalizationPending(
             "runtime result belongs to a different durable quiz attempt"
         )
+
+    memoized_result_id = data.get("result_id")
+    if memoized_result_id is not None:
+        expected_result_id = f"quiz:{expected_attempt_id}"
+        if not isinstance(memoized_result_id, str) or memoized_result_id != expected_result_id:
+            raise LegacyAttemptFinalizationPending(
+                "runtime result receipt identity belongs to another quiz attempt"
+            )
     return expected_attempt_id
 
 
