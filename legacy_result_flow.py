@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import uuid
 
+from legacy_attempt_identity import runtime_attempt_id
+
 
 _GENERAL_THRESHOLDS = (
     ("perfectionist_1", "perfect_count", 1),
@@ -20,14 +22,13 @@ _GENERAL_THRESHOLDS = (
 
 
 def stable_result_id(user_id: int, data: dict) -> str:
-    """Return and memoize an idempotency key for one quiz result.
+    """Return and memoize an idempotency key for one logical quiz attempt.
 
-    Persisted quizzes use their Mongo session id. If session persistence was
-    unavailable at start, recovery across a process crash is impossible anyway;
-    a fresh UUID is therefore safer than a deterministic hash of incomplete
-    runtime fields, which could collapse two distinct attempts into one receipt.
-    Repeated finalization of the same in-memory ``data`` object remains stable
-    because the generated id is memoized immediately.
+    Persisted quizzes use ``attempt_id``. Legacy sessions that predate the field
+    fall back to their Mongo session id, preserving existing receipts. Atomic
+    in-place restart assigns a fresh attempt id, so the new pass cannot collide
+    with a result receipt from the previous pass in the same session container.
+    Memory-only review drills still receive a memoized random UUID.
     """
     del user_id  # kept in the public signature for call-site clarity/backward compatibility
 
@@ -35,9 +36,9 @@ def stable_result_id(user_id: int, data: dict) -> str:
     if existing:
         return existing
 
-    session_id = str(data.get("session_id") or "").strip()
-    if session_id:
-        result_id = f"quiz:{session_id}"
+    attempt_id = runtime_attempt_id(data)
+    if attempt_id:
+        result_id = f"quiz:{attempt_id}"
     else:
         result_id = f"memory:{uuid.uuid4().hex}"
 
