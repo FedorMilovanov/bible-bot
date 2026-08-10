@@ -66,8 +66,6 @@ def _optional_string(value, field: str, *, max_length: int) -> str | None:
 def _immutable_snapshot(doc: dict) -> dict:
     return {
         "user_id": doc.get("user_id"),
-        "username": doc.get("username", ""),
-        "first_name": doc.get("first_name", ""),
         "type": doc.get("type"),
         "text": doc.get("text"),
         "photo_file_id": doc.get("photo_file_id"),
