@@ -226,6 +226,18 @@ def test_daily_bonus_receipt_survives_later_day_claim(monkeypatch):
     assert len(users.doc["daily_bonus_receipts"]) == 2
 
 
+def test_daily_bonus_backfills_legacy_date_without_double_credit(monkeypatch):
+    doc = base_user()
+    doc["daily_activity_streak"] = 3
+    doc["last_daily_bonus"] = "2026-08-10"
+    users = FakeUsers(doc)
+    monkeypatch.setattr(database, "collection", users)
+
+    assert store.claim_daily_bonus_once(42, "2026-08-10") == 0
+    assert users.doc["total_points"] == 0
+    assert users.doc["daily_bonus_receipts"]["20260810"] is True
+
+
 def test_challenge_bonus_receipt_survives_later_day_claim(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
@@ -236,6 +248,17 @@ def test_challenge_bonus_receipt_survives_later_day_claim(monkeypatch):
     assert users.doc["total_points"] == 120
     assert users.doc["random20_last_bonus_date"] == "2026-08-11"
     assert len(users.doc["challenge_bonus_receipts"]["random20"]) == 2
+
+
+def test_challenge_bonus_backfills_legacy_date_without_double_credit(monkeypatch):
+    doc = base_user()
+    doc["random20_last_bonus_date"] = "2026-08-10"
+    users = FakeUsers(doc)
+    monkeypatch.setattr(database, "collection", users)
+
+    assert store.claim_challenge_bonus_once(42, "random20", 18, "2026-08-10") == 0
+    assert users.doc["total_points"] == 0
+    assert users.doc["challenge_bonus_receipts"]["random20"]["20260810"] is True
 
 
 def test_achievement_reward_is_claimed_once(monkeypatch):
