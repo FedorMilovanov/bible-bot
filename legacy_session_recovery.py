@@ -138,3 +138,29 @@ def recovery_fields(session: dict) -> dict:
         "result_pending": session_is_complete(session),
         "persisted_result_time": persisted_result_time_seconds(session),
     }
+
+
+def completed_result_inputs(session: dict) -> dict | None:
+    """Return authoritative scoring inputs for a completed persisted session.
+
+    A completed index alone is not enough: if the legacy document lacks a last
+    answer timestamp, recovery cannot prove the original duration. In that case
+    callers must keep the result pending instead of substituting wall-clock time.
+    """
+    if not session_is_complete(session):
+        return None
+    fields = recovery_fields(session)
+    duration = fields.get("persisted_result_time")
+    if duration is None:
+        return None
+    questions = fields.get("questions", [])
+    total = len(questions) if isinstance(questions, list) else 0
+    if total <= 0:
+        return None
+    score = min(max(0, int(fields.get("correct_answers", 0) or 0)), total)
+    return {
+        "score": score,
+        "total": total,
+        "time_seconds": float(duration),
+        "data": fields,
+    }
