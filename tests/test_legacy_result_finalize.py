@@ -2,7 +2,10 @@ import pytest
 
 import legacy_result_finalize as finalize
 from legacy_result_store import LegacyResultStoreUnavailable
-from session_integrity import QuizSessionStoreUnavailable
+from legacy_session_close import (
+    QuizSessionCompletionInvalid,
+    QuizSessionCompletionStoreUnavailable,
+)
 
 
 def normal_data():
@@ -66,6 +69,15 @@ def base_result(*, daily_streak=3, challenge_streak=0):
     }
 
 
+def _mock_finished(monkeypatch, events=None):
+    def finish(*_args):
+        if events is not None:
+            events.append("finish")
+        return {"status": "finished"}
+
+    monkeypatch.setattr(finalize, "finish_completed_owned_quiz_session", finish)
+
+
 def test_normal_finalization_uses_durable_streak_and_finishes_last(monkeypatch):
     events = []
     captured = {}
@@ -90,11 +102,7 @@ def test_normal_finalization_uses_durable_streak_and_finishes_last(monkeypatch):
         "claim_achievement_once",
         lambda *_, **__: (events.append("achievement") or True),
     )
-    monkeypatch.setattr(
-        finalize,
-        "finish_owned_quiz_session",
-        lambda *_: (events.append("finish") or {"status": "finished"}),
-    )
+    _mock_finished(monkeypatch, events)
 
     result = finalize.finalize_normal_result(
         user_id=42,
@@ -180,7 +188,6 @@ def test_normal_retry_uses_result_time_achievement_policy_inputs(monkeypatch):
         "daily_activity_streak": 7,
         "challenge_streak_count": 0,
     }
-    # Simulate a much later current user document. Policy must not consume it.
     base["user"] = {
         "total_tests": 100,
         "perfect_count": 15,
@@ -203,7 +210,7 @@ def test_normal_retry_uses_result_time_achievement_policy_inputs(monkeypatch):
         return []
 
     monkeypatch.setattr(finalize, "general_achievement_candidates", candidates)
-    monkeypatch.setattr(finalize, "finish_owned_quiz_session", lambda *_: {"status": "finished"})
+    _mock_finished(monkeypatch)
 
     finalize.finalize_normal_result(
         user_id=42,
@@ -267,11 +274,7 @@ def test_challenge_finalization_syncs_weekly_on_every_attempt(monkeypatch):
         "claim_achievement_once",
         lambda *_, **__: (events.append("badge") or True),
     )
-    monkeypatch.setattr(
-        finalize,
-        "finish_owned_quiz_session",
-        lambda *_: (events.append("finish") or {"status": "finished"}),
-    )
+    _mock_finished(monkeypatch, events)
 
     result = finalize.finalize_challenge_result(
         user_id=42,
@@ -325,7 +328,7 @@ def test_challenge_retry_uses_durable_score_and_time(monkeypatch):
     monkeypatch.setattr(finalize, "sync_weekly_best", weekly)
     monkeypatch.setattr(finalize, "general_achievement_candidates", lambda *_: [])
     monkeypatch.setattr(finalize, "challenge_badge_candidates", badges)
-    monkeypatch.setattr(finalize, "finish_owned_quiz_session", lambda *_: {"status": "finished"})
+    _mock_finished(monkeypatch)
 
     finalize.finalize_challenge_result(
         user_id=42,
@@ -344,8 +347,7 @@ def test_challenge_retry_uses_durable_score_and_time(monkeypatch):
     assert captured["badge_state"]["challenge_streak_count"] == 3
 
 
-def test_session_finish_failure_is_retryable_after_durable_scoring(monkeypatch):
-    data = normal_data()
+def _configure_normal_without_achievements(monkeypatch):
     monkeypatch.setattr(finalize, "stable_result_id", lambda *_: "result-1")
     monkeypatch.setattr(finalize, "apply_base_result_once", lambda **_: base_result())
     monkeypatch.setattr(
@@ -354,10 +356,39 @@ def test_session_finish_failure_is_retryable_after_durable_scoring(monkeypatch):
         lambda **_: {"bonus": 10, "eligible": True, "claimed_now": False},
     )
     monkeypatch.setattr(finalize, "general_achievement_candidates", lambda *_: [])
+
+
+def test_session_finish_store_failure_is_retryable_after_durable_scoring(monkeypatch):
+    data = normal_data()
+    _configure_normal_without_achievements(monkeypatch)
     monkeypatch.setattr(
         finalize,
-        "finish_owned_quiz_session",
-        lambda *_: (_ for _ in ()).throw(QuizSessionStoreUnavailable("mongo")),
+        "finish_completed_owned_quiz_session",
+        lambda *_: (_ for _ in ()).throw(
+            QuizSessionCompletionStoreUnavailable("mongo")
+        ),
+    )
+
+    with pytest.raises(finalize.LegacyResultFinalizationPending):
+        finalize.finalize_normal_result(
+            user_id=42,
+            data=data,
+            score=8,
+            total=10,
+            time_seconds=12,
+            achievement_rewards={},
+        )
+
+
+def test_incomplete_session_close_conflict_is_retryable_after_durable_scoring(monkeypatch):
+    data = normal_data()
+    _configure_normal_without_achievements(monkeypatch)
+    monkeypatch.setattr(
+        finalize,
+        "finish_completed_owned_quiz_session",
+        lambda *_: (_ for _ in ()).throw(
+            QuizSessionCompletionInvalid("not complete")
+        ),
     )
 
     with pytest.raises(finalize.LegacyResultFinalizationPending):
