@@ -38,6 +38,24 @@ class FakeQuizSessionCollection:
         return deepcopy(self.claimed_session)
 
 
+def _answer(collection, *, expected_attempt_id="s1", expected_index=0, **overrides):
+    kwargs = {
+        "question_id": "q1",
+        "user_answer": "A",
+        "is_correct": True,
+        "question_obj": {"id": "q1", "question": "Q"},
+        "latency_seconds": 2.5,
+    }
+    kwargs.update(overrides)
+    return record_owned_quiz_answer(
+        "s1",
+        42,
+        expected_attempt_id=expected_attempt_id,
+        expected_index=expected_index,
+        **kwargs,
+    )
+
+
 def test_owned_session_lookup_scopes_by_session_and_canonical_user_id(monkeypatch):
     collection = FakeQuizSessionCollection()
     collection.session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
@@ -47,10 +65,11 @@ def test_owned_session_lookup_scopes_by_session_and_canonical_user_id(monkeypatc
     assert collection.find_filter == {"_id": "s1", "user_id": "42"}
 
 
-def test_owned_answer_first_apply_uses_owner_index_and_question_cas(monkeypatch):
+def test_owned_answer_first_apply_uses_owner_attempt_index_and_question_cas(monkeypatch):
     collection = FakeQuizSessionCollection()
     collection.claimed_session = {
         "_id": "s1",
+        "attempt_id": "s1",
         "user_id": "42",
         "status": "in_progress",
         "current_index": 1,
@@ -58,16 +77,7 @@ def test_owned_answer_first_apply_uses_owner_index_and_question_cas(monkeypatch)
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:03"))
 
-    result = record_owned_quiz_answer(
-        "s1",
-        42,
-        expected_index=0,
-        question_id="q1",
-        user_answer="A",
-        is_correct=True,
-        question_obj={"id": "q1", "question": "Q"},
-        latency_seconds=2.5,
-    )
+    result = _answer(collection)
 
     assert result["applied"] is True
     assert result["session"] == collection.claimed_session
@@ -77,6 +87,10 @@ def test_owned_answer_first_apply_uses_owner_index_and_question_cas(monkeypatch)
         "status": "in_progress",
         "current_index": 0,
         "question_ids.0": "q1",
+        "$or": [
+            {"attempt_id": "s1"},
+            {"attempt_id": {"$exists": False}, "_id": "s1"},
+        ],
     }
     assert collection.claim_update["$inc"] == {
         "current_index": 1,
@@ -89,6 +103,7 @@ def test_owned_answer_first_apply_uses_owner_index_and_question_cas(monkeypatch)
     assert stored["is_correct"] is True
     assert stored["latency_seconds"] == 2.5
     assert stored["ts"] == "2026-08-10T12:00:03"
+    assert collection.claim_update["$set"]["attempt_id"] == "s1"
     assert collection.claim_update["$set"]["question_sent_at"] is None
 
 
@@ -97,6 +112,7 @@ def test_owned_answer_lost_response_retry_returns_exact_ledger_entry(monkeypatch
     collection.claimed_session = None
     collection.session = {
         "_id": "s1",
+        "attempt_id": "s1",
         "user_id": "42",
         "status": "in_progress",
         "current_index": 1,
@@ -114,22 +130,29 @@ def test_owned_answer_lost_response_retry_returns_exact_ledger_entry(monkeypatch
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:10"))
 
-    result = record_owned_quiz_answer(
-        "s1",
-        42,
-        expected_index=0,
-        question_id="q1",
-        user_answer="A",
-        is_correct=True,
-        question_obj={"id": "q1"},
-        latency_seconds=9.0,
-    )
+    result = _answer(collection, latency_seconds=9.0)
 
     assert result["applied"] is False
     assert result["answer"] == collection.session["answered_questions"][0]
-    # The retry attempted only the guarded CAS. It did not issue any blind
-    # second increment/push after discovering that index 0 was already durable.
     assert collection.claim_filter["current_index"] == 0
+
+
+def test_old_attempt_cannot_mutate_restarted_container(monkeypatch):
+    collection = FakeQuizSessionCollection()
+    collection.claimed_session = None
+    collection.session = {
+        "_id": "s1",
+        "attempt_id": "attempt-new",
+        "user_id": "42",
+        "status": "in_progress",
+        "current_index": 0,
+        "answered_questions": [],
+    }
+    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
+    monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:10"))
+
+    with pytest.raises(QuizSessionAnswerConflict, match="another attempt"):
+        _answer(collection, expected_attempt_id="attempt-old")
 
 
 def test_owned_answer_conflicting_replay_is_rejected(monkeypatch):
@@ -137,6 +160,7 @@ def test_owned_answer_conflicting_replay_is_rejected(monkeypatch):
     collection.claimed_session = None
     collection.session = {
         "_id": "s1",
+        "attempt_id": "s1",
         "user_id": "42",
         "status": "in_progress",
         "current_index": 1,
@@ -154,21 +178,14 @@ def test_owned_answer_conflicting_replay_is_rejected(monkeypatch):
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:10"))
 
     with pytest.raises(QuizSessionAnswerConflict, match="conflicting quiz answer"):
-        record_owned_quiz_answer(
-            "s1",
-            42,
-            expected_index=0,
-            question_id="q1",
-            user_answer="B",
-            is_correct=False,
-            question_obj={"id": "q1"},
-        )
+        _answer(collection, user_answer="B", is_correct=False)
 
 
 def test_owned_answer_same_qid_on_next_index_is_not_ambiguous(monkeypatch):
     collection = FakeQuizSessionCollection()
     collection.claimed_session = {
         "_id": "s1",
+        "attempt_id": "s1",
         "user_id": "42",
         "status": "in_progress",
         "current_index": 2,
@@ -176,14 +193,14 @@ def test_owned_answer_same_qid_on_next_index_is_not_ambiguous(monkeypatch):
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:20"))
 
-    result = record_owned_quiz_answer(
-        "s1",
-        42,
+    result = _answer(
+        collection,
         expected_index=1,
         question_id="same-qid",
         user_answer="B",
         is_correct=False,
         question_obj={"id": "same-qid"},
+        latency_seconds=None,
     )
 
     assert result["applied"] is True
@@ -197,6 +214,7 @@ def test_owned_answer_missing_or_wrong_index_is_conflict(monkeypatch):
     collection.claimed_session = None
     collection.session = {
         "_id": "s1",
+        "attempt_id": "s1",
         "user_id": "42",
         "status": "in_progress",
         "current_index": 0,
@@ -209,13 +227,10 @@ def test_owned_answer_missing_or_wrong_index_is_conflict(monkeypatch):
         QuizSessionAnswerConflict,
         match="not the immediately preceding durable transition",
     ):
-        record_owned_quiz_answer(
-            "s1",
-            42,
+        _answer(
+            collection,
             expected_index=1,
             question_id="q2",
-            user_answer="A",
-            is_correct=True,
             question_obj={"id": "q2"},
         )
 
@@ -227,44 +242,23 @@ def test_owned_answer_mongo_failure_is_explicit(monkeypatch):
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:03"))
 
     with pytest.raises(QuizSessionStoreUnavailable, match="quiz answer write failed"):
-        record_owned_quiz_answer(
-            "s1",
-            42,
-            expected_index=0,
-            question_id="q1",
-            user_answer="A",
-            is_correct=True,
-            question_obj={"id": "q1"},
-        )
+        _answer(collection)
 
 
-def test_owned_answer_validates_index_and_latency_before_store(monkeypatch):
+def test_owned_answer_validates_attempt_index_and_latency_before_store(monkeypatch):
     collection = FakeQuizSessionCollection()
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
 
+    with pytest.raises(ValueError, match="expected_attempt_id"):
+        _answer(collection, expected_attempt_id="")
+    assert collection.claim_filter is None
+
     with pytest.raises(ValueError, match="expected_index"):
-        record_owned_quiz_answer(
-            "s1",
-            42,
-            expected_index=-1,
-            question_id="q1",
-            user_answer="A",
-            is_correct=True,
-            question_obj={"id": "q1"},
-        )
+        _answer(collection, expected_index=-1)
     assert collection.claim_filter is None
 
     with pytest.raises(ValueError, match="latency_seconds"):
-        record_owned_quiz_answer(
-            "s1",
-            42,
-            expected_index=0,
-            question_id="q1",
-            user_answer="A",
-            is_correct=True,
-            question_obj={"id": "q1"},
-            latency_seconds=float("inf"),
-        )
+        _answer(collection, latency_seconds=float("inf"))
     assert collection.claim_filter is None
 
 
