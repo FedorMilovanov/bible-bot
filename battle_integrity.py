@@ -13,6 +13,15 @@ class BattleStoreUnavailable(RuntimeError):
     """Raised when the battle collection cannot complete an operation."""
 
 
+def _battle_collection():
+    import database
+
+    collection = getattr(database, "battles_collection", None)
+    if collection is None:
+        raise BattleStoreUnavailable("battle collection is unavailable")
+    return collection
+
+
 def battle_role_for_user(battle: dict | None, user_id: int) -> str | None:
     """Return the persisted participant role for a user, never trusting callback data."""
     if not battle:
@@ -26,12 +35,7 @@ def battle_role_for_user(battle: dict | None, user_id: int) -> str | None:
 
 def claim_battle_opponent(battle_id: str, user_id: int, user_name: str) -> dict | None:
     """Atomically claim the only opponent slot of a waiting battle."""
-    import database
-
-    collection = getattr(database, "battles_collection", None)
-    if collection is None:
-        raise BattleStoreUnavailable("battle collection is unavailable")
-
+    collection = _battle_collection()
     try:
         return collection.find_one_and_update(
             {
@@ -54,14 +58,67 @@ def claim_battle_opponent(battle_id: str, user_id: int, user_name: str) -> dict 
         raise BattleStoreUnavailable("battle claim failed") from exc
 
 
+def record_battle_result(
+    battle_id: str,
+    user_id: int,
+    role: str,
+    *,
+    score: int,
+    time_seconds: float,
+    points: int,
+) -> dict | None:
+    """Persist one participant result once and only for the persisted participant role."""
+    if role not in {"creator", "opponent"}:
+        return None
+
+    collection = _battle_collection()
+    participant_field = f"{role}_id"
+    finished_field = f"{role}_finished"
+    try:
+        return collection.find_one_and_update(
+            {
+                "_id": battle_id,
+                participant_field: user_id,
+                finished_field: {"$ne": True},
+                "status": {"$in": ["waiting", "in_progress"]},
+            },
+            {
+                "$set": {
+                    f"{role}_score": int(score),
+                    f"{role}_time": float(time_seconds),
+                    f"{role}_points": int(points),
+                    finished_field: True,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except PyMongoError as exc:
+        logger.exception("failed to record %s result for battle %s", role, battle_id)
+        raise BattleStoreUnavailable("battle result write failed") from exc
+
+
+def claim_battle_results(battle_id: str) -> dict | None:
+    """Allow exactly one finisher to process the shared battle result."""
+    collection = _battle_collection()
+    try:
+        return collection.find_one_and_update(
+            {
+                "_id": battle_id,
+                "creator_finished": True,
+                "opponent_finished": True,
+                "results_processed": {"$ne": True},
+            },
+            {"$set": {"results_processed": True, "status": "finished"}},
+            return_document=ReturnDocument.AFTER,
+        )
+    except PyMongoError as exc:
+        logger.exception("failed to claim shared results for battle %s", battle_id)
+        raise BattleStoreUnavailable("battle result claim failed") from exc
+
+
 def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
     """Delete a battle only when the requesting user is one of its persisted participants."""
-    import database
-
-    collection = getattr(database, "battles_collection", None)
-    if collection is None:
-        raise BattleStoreUnavailable("battle collection is unavailable")
-
+    collection = _battle_collection()
     try:
         result = collection.delete_one(
             {
