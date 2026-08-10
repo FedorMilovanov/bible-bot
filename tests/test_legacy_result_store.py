@@ -30,8 +30,10 @@ def _matches(doc, query):
             continue
         actual, exists = _get_path(doc, key)
         if isinstance(expected, dict):
-            if "$ne" in expected and actual == expected["$ne"]:
-                return False
+            if "$ne" in expected:
+                forbidden = expected["$ne"]
+                if (isinstance(actual, list) and forbidden in actual) or actual == forbidden:
+                    return False
             if "$exists" in expected and exists != expected["$exists"]:
                 return False
             if "$lt" in expected and not (exists and actual < expected["$lt"]):
@@ -216,9 +218,7 @@ def test_achievement_reward_is_claimed_once(monkeypatch):
 
 
 def test_result_week_id_uses_iso_year_boundary():
-    timestamp = datetime_timestamp = 1609459200  # 2021-01-01 00:00:00 UTC
-    assert datetime_timestamp == timestamp
-    assert store.result_week_id(timestamp) == "2020-W53"
+    assert store.result_week_id(1609459200) == "2020-W53"  # 2021-01-01 UTC
 
 
 def test_weekly_best_is_idempotent_and_only_improves(monkeypatch):
