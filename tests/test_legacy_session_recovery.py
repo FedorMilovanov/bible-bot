@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 from legacy_session_recovery import (
+    LegacyPersistedSessionModeInvalid,
     completed_result_inputs,
     persisted_result_time_seconds,
     recovery_fields,
@@ -47,12 +50,10 @@ def test_speed_session_restores_speed_multiplier():
     assert fields["quiz_time_limit"] == SPEED_MODE_TIMEOUT
 
 
-def test_unknown_legacy_timer_never_invents_bonus_multiplier():
-    fields = recovery_fields(_session(time_limit=17))
-
-    assert fields["quiz_mode"] == "timed"
-    assert fields["score_multiplier"] == 1.0
-    assert fields["quiz_time_limit"] == 17
+def test_unknown_or_malformed_normal_timer_fails_closed():
+    for value in (17, 0, "", str(TIMED_MODE_TIMEOUT), True):
+        with pytest.raises(LegacyPersistedSessionModeInvalid, match="time_limit"):
+            recovery_fields(_session(time_limit=value))
 
 
 def test_hardcore_session_restores_challenge_timer_not_normal_timer():
@@ -66,6 +67,14 @@ def test_hardcore_session_restores_challenge_timer_not_normal_timer():
     assert fields["quiz_mode"] is None
     assert fields["quiz_time_limit"] is None
     assert fields["score_multiplier"] == 1.0
+
+
+def test_malformed_challenge_timer_fails_closed():
+    for value in (0, -1, "20", True):
+        with pytest.raises(LegacyPersistedSessionModeInvalid, match="Challenge time_limit"):
+            recovery_fields(
+                _session(mode="random20", level_key="random20", time_limit=value)
+            )
 
 
 def test_recovery_reconstructs_streaks_from_persisted_answers():
@@ -92,6 +101,10 @@ def test_completed_session_is_result_pending_not_cancel_candidate():
 
     assert session_is_complete(session) is True
     assert recovery_fields(session)["result_pending"] is True
+
+
+def test_string_completed_index_is_not_completion_evidence():
+    assert session_is_complete(_session(current_index="3")) is False
 
 
 def test_overrun_session_is_contradictory_not_completed():
