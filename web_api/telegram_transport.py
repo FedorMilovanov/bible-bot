@@ -130,7 +130,12 @@ class TelegramWebhookBridge:
             update = Update.de_json(data=payload, bot=application.bot)
         except Exception as exc:
             raise InvalidWebhookUpdate("invalid Telegram update") from exc
-        if update is None:
+        if (
+            update is None
+            or isinstance(update.update_id, bool)
+            or not isinstance(update.update_id, int)
+            or update.update_id < 0
+        ):
             raise InvalidWebhookUpdate("invalid Telegram update")
 
         future = asyncio.run_coroutine_threadsafe(application.update_queue.put(update), loop)
@@ -180,7 +185,6 @@ async def _run_webhook_application(
     started = False
     try:
         async with application:
-            TELEGRAM_WEBHOOK_BRIDGE.configure(application, loop)
             configured = await application.bot.set_webhook(
                 url=webhook_url,
                 allowed_updates=Update.ALL_TYPES,
@@ -190,18 +194,24 @@ async def _run_webhook_application(
             )
             if configured is not True:
                 raise RuntimeError("Telegram did not confirm webhook registration")
+
             await application.start()
             started = True
+            TELEGRAM_WEBHOOK_BRIDGE.configure(application, loop)
             logger.info(
                 "Telegram webhook transport active at %s (max_connections=%s)",
                 WEBHOOK_PATH,
                 max_connections,
             )
+
             await local_stop.wait()
+
+            # Stop accepting HTTP updates before stopping PTB, then persist only
+            # after PTB has finished its in-flight work.
+            TELEGRAM_WEBHOOK_BRIDGE.clear(application)
+            await application.stop()
+            started = False
             await _call_shutdown_hook(before_shutdown)
-            if started:
-                await application.stop()
-                started = False
     finally:
         TELEGRAM_WEBHOOK_BRIDGE.clear(application)
         if started:
