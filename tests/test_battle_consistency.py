@@ -14,6 +14,11 @@ class UpdateResult:
         self.modified_count = modified_count
 
 
+class DeleteResult:
+    def __init__(self, deleted_count: int):
+        self.deleted_count = deleted_count
+
+
 class FakeBattleCollection:
     def __init__(self, doc: dict):
         self.doc = deepcopy(doc)
@@ -33,6 +38,21 @@ class FakeBattleCollection:
                 return None
             doc.update(update["$set"])
             return deepcopy(doc)
+
+    def delete_one(self, predicate):
+        with self.lock:
+            doc = self.doc
+            if doc is None or doc.get("_id") != predicate.get("_id"):
+                return DeleteResult(0)
+            allowed = any(
+                doc.get(candidate_key) == candidate_value
+                for clause in predicate.get("$or", [])
+                for candidate_key, candidate_value in clause.items()
+            )
+            if not allowed:
+                return DeleteResult(0)
+            self.doc = None
+            return DeleteResult(1)
 
 
 class FakeUserCollection:
@@ -90,6 +110,14 @@ def _user_doc(uid: str):
     }
 
 
+def test_server_authoritative_battle_role():
+    battle = _battle_doc() | {"opponent_id": 2}
+    assert battle_consistency.battle_role_for_user(battle, 1) == "creator"
+    assert battle_consistency.battle_role_for_user(battle, 2) == "opponent"
+    assert battle_consistency.battle_role_for_user(battle, 3) is None
+    assert battle_consistency.battle_role_for_user(None, 1) is None
+
+
 def test_atomic_join_allows_only_one_opponent(monkeypatch):
     collection = FakeBattleCollection(_battle_doc())
     monkeypatch.setattr(database, "battles_collection", collection)
@@ -122,6 +150,17 @@ def test_atomic_join_rejects_creator(monkeypatch):
     assert battle_consistency.join_battle_atomic("battle_1_123", 1, "Creator") is None
     assert collection.doc["status"] == "waiting"
     assert collection.doc["opponent_id"] is None
+
+
+def test_cancel_battle_requires_participant(monkeypatch):
+    battle = _battle_doc() | {"opponent_id": 2, "status": "in_progress"}
+    collection = FakeBattleCollection(battle)
+    monkeypatch.setattr(database, "battles_collection", collection)
+
+    assert battle_consistency.cancel_battle_for_participant("battle_1_123", 99) is False
+    assert collection.doc is not None
+    assert battle_consistency.cancel_battle_for_participant("battle_1_123", 2) is True
+    assert collection.doc is None
 
 
 def test_battle_reward_is_exactly_once_under_concurrent_finalizers(monkeypatch):
