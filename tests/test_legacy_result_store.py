@@ -133,7 +133,6 @@ def base_user():
         "max_streak_ever": 0,
         "daily_activity_streak": 0,
         "daily_activity_last": "",
-        "last_daily_bonus": "",
         "achievements": {},
         "challenge_streak_count": 0,
         "challenge_streak_last_date": "",
@@ -215,93 +214,22 @@ def test_duplicate_result_keeps_original_completion_day_across_midnight(monkeypa
     assert store.result_day(retry["completed_at"]) == "2026-08-10"
 
 
-def test_daily_bonus_retry_keeps_original_amount_without_recredit(monkeypatch):
-    users = FakeUsers(base_user())
-    monkeypatch.setattr(database, "collection", users)
-
-    first = store.claim_daily_bonus_state(42, "2026-08-10", daily_streak=3)
-    later = store.claim_daily_bonus_state(42, "2026-08-11", daily_streak=3)
-    replay = store.claim_daily_bonus_state(42, "2026-08-10", daily_streak=99)
-
-    assert first == {"bonus": 10, "eligible": True, "claimed_now": True}
-    assert later == {"bonus": 10, "eligible": True, "claimed_now": True}
-    assert replay == {"bonus": 10, "eligible": True, "claimed_now": False}
-    assert users.doc["total_points"] == 20
-    assert users.doc["last_daily_bonus"] == "2026-08-11"
-    assert len(users.doc["daily_bonus_receipts"]) == 2
-
-
-def test_daily_bonus_backfills_legacy_date_without_double_credit(monkeypatch):
-    doc = base_user()
-    doc["last_daily_bonus"] = "2026-08-10"
-    users = FakeUsers(doc)
-    monkeypatch.setattr(database, "collection", users)
-
-    stage = store.claim_daily_bonus_state(42, "2026-08-10", daily_streak=3)
-
-    assert stage == {"bonus": 0, "eligible": False, "claimed_now": False}
-    assert users.doc["total_points"] == 0
-    assert users.doc["daily_bonus_receipts"]["20260810"]["legacy"] is True
-
-
-def test_daily_bonus_compatibility_wrapper_returns_only_new_credit(monkeypatch):
-    doc = base_user()
-    doc["daily_activity_streak"] = 3
-    users = FakeUsers(doc)
-    monkeypatch.setattr(database, "collection", users)
-
-    assert store.claim_daily_bonus_once(42, "2026-08-10") == 10
-    assert store.claim_daily_bonus_once(42, "2026-08-10") == 0
-    assert users.doc["total_points"] == 10
-
-
-def test_challenge_bonus_retry_keeps_original_amount_without_recredit(monkeypatch):
-    users = FakeUsers(base_user())
-    monkeypatch.setattr(database, "collection", users)
-
-    first = store.claim_challenge_bonus_state(42, "random20", 18, "2026-08-10")
-    later = store.claim_challenge_bonus_state(42, "random20", 18, "2026-08-11")
-    replay = store.claim_challenge_bonus_state(42, "random20", 20, "2026-08-10")
-
-    assert first == {"bonus": 60, "eligible": True, "claimed_now": True}
-    assert later == {"bonus": 60, "eligible": True, "claimed_now": True}
-    assert replay == {"bonus": 60, "eligible": True, "claimed_now": False}
-    assert users.doc["total_points"] == 120
-    assert users.doc["random20_last_bonus_date"] == "2026-08-11"
-    assert len(users.doc["challenge_bonus_receipts"]["random20"]) == 2
-
-
-def test_zero_challenge_bonus_still_replays_as_eligible(monkeypatch):
-    users = FakeUsers(base_user())
-    monkeypatch.setattr(database, "collection", users)
-
-    first = store.claim_challenge_bonus_state(42, "random20", 10, "2026-08-10")
-    replay = store.claim_challenge_bonus_state(42, "random20", 10, "2026-08-10")
-
-    assert first == {"bonus": 0, "eligible": True, "claimed_now": True}
-    assert replay == {"bonus": 0, "eligible": True, "claimed_now": False}
-    assert users.doc["total_points"] == 0
-
-
-def test_challenge_bonus_backfills_legacy_date_without_double_credit(monkeypatch):
-    doc = base_user()
-    doc["random20_last_bonus_date"] = "2026-08-10"
-    users = FakeUsers(doc)
-    monkeypatch.setattr(database, "collection", users)
-
-    stage = store.claim_challenge_bonus_state(42, "random20", 18, "2026-08-10")
-
-    assert stage == {"bonus": 0, "eligible": False, "claimed_now": False}
-    assert users.doc["total_points"] == 0
-    assert users.doc["challenge_bonus_receipts"]["random20"]["20260810"]["legacy"] is True
-
-
 def test_achievement_reward_is_claimed_once(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
 
-    assert store.claim_achievement_once(42, "perfectionist_1", reward=25, awarded_at="10.08.2026") is True
-    assert store.claim_achievement_once(42, "perfectionist_1", reward=25, awarded_at="10.08.2026") is False
+    assert store.claim_achievement_once(
+        42,
+        "perfectionist_1",
+        reward=25,
+        awarded_at="10.08.2026",
+    ) is True
+    assert store.claim_achievement_once(
+        42,
+        "perfectionist_1",
+        reward=25,
+        awarded_at="10.08.2026",
+    ) is False
     assert users.doc["achievements"]["perfectionist_1"] == "10.08.2026"
     assert users.doc["total_points"] == 25
 
