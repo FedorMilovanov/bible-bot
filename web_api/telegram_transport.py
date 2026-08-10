@@ -24,6 +24,7 @@ from telegram import Update
 logger = logging.getLogger(__name__)
 
 WEBHOOK_PATH = "/telegram/webhook"
+WEBHOOK_ALLOWED_UPDATES = ("message", "callback_query", "inline_query")
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 _BRIDGE_ENQUEUE_TIMEOUT_SECONDS = 2.0
 _BRIDGE_DRAIN_TIMEOUT_SECONDS = 3.0
@@ -222,7 +223,7 @@ async def _run_webhook_application(
         async with application:
             configured = await application.bot.set_webhook(
                 url=webhook_url,
-                allowed_updates=Update.ALL_TYPES,
+                allowed_updates=WEBHOOK_ALLOWED_UPDATES,
                 drop_pending_updates=False,
                 max_connections=max_connections,
                 secret_token=secret,
