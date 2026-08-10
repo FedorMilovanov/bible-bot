@@ -82,14 +82,15 @@ def accept_report_once(
     text: str,
     photo_file_id: str | None = None,
     context: dict | None = None,
+    update_cooldown: bool = True,
 ) -> dict:
     """Persist one report and its attachment exactly once by stable report id.
 
-    Acceptance spans the reports and user-stat collections, so it cannot be one
-    Mongo single-document transaction on every deployment topology. The report
-    document is therefore the durable source of truth and is written first.
-    Cooldown is a recoverable monotonic follow-up (`$max`), so a crash between
-    the two writes cannot lose the report or rewind a newer cooldown.
+    The report document is always the durable source of truth and is written
+    first. Normal report flows keep ``update_cooldown=True`` so the user-level
+    cooldown is a recoverable monotonic follow-up (`$max`). Other durable report
+    ingress paths may opt out when they historically did not consume that
+    cooldown; their acceptance then finishes after the report insert/replay.
     """
     report_id = _required_string(report_id, "report_id", max_length=128)
     if report_type not in _REPORT_TYPES:
@@ -100,6 +101,8 @@ def accept_report_once(
         context = {}
     if not isinstance(context, dict):
         raise ValueError("context must be a dict")
+    if not isinstance(update_cooldown, bool):
+        raise ValueError("update_cooldown must be a boolean")
 
     database, reports, users = _collections()
     now = database._now_utc()
@@ -145,6 +148,8 @@ def accept_report_once(
         created_at = stored.get("created_at_dt")
         if not isinstance(created_at, datetime):
             raise ReportStoreUnavailable("durable report creation time is invalid")
+        if not update_cooldown:
+            return stored
 
         cooldown = users.update_one(
             {"_id": uid},
