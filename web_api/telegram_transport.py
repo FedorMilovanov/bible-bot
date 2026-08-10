@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 WEBHOOK_PATH = "/telegram/webhook"
 WEBHOOK_ALLOWED_UPDATES = ("message", "callback_query", "inline_query")
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
+_SUPPORTED_WEBHOOK_PORTS = frozenset({80, 88, 443, 8443})
 _BRIDGE_ENQUEUE_TIMEOUT_SECONDS = 2.0
 _BRIDGE_DRAIN_TIMEOUT_SECONDS = 3.0
 
@@ -75,8 +76,28 @@ def telegram_webhook_base_url() -> str:
         )
 
     parsed = urlsplit(raw)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
-        raise TransportConfigurationError("Telegram webhook base URL must be an HTTPS origin/path without query or fragment")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise TransportConfigurationError("Telegram webhook base URL contains an invalid port") from exc
+
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise TransportConfigurationError(
+            "Telegram webhook base URL must be an HTTPS origin without userinfo, path, query or fragment"
+        )
+    if port is not None and port not in _SUPPORTED_WEBHOOK_PORTS:
+        raise TransportConfigurationError(
+            "Telegram webhook base URL port must be one of 80, 88, 443 or 8443"
+        )
     return raw.rstrip("/")
 
 
