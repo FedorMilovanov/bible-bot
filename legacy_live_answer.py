@@ -405,12 +405,10 @@ def apply_live_timeout_once(
     now: float | None = None,
 ) -> LiveAnswerOutcome:
     """Durably record a timeout for the exact attempt/question captured at send."""
-    if not isinstance(expected_attempt_id, str) or not isinstance(expected_index, int) or isinstance(expected_index, bool) or expected_index < 0:
-        if not isinstance(expected_attempt_id, str) or not expected_attempt_id:
-            raise ValueError("expected_attempt_id is required")
-        raise ValueError("expected_index must be a non-negative integer")
-    if not expected_attempt_id:
+    if not isinstance(expected_attempt_id, str) or not expected_attempt_id:
         raise ValueError("expected_attempt_id is required")
+    if isinstance(expected_index, bool) or not isinstance(expected_index, int) or expected_index < 0:
+        raise ValueError("expected_index must be a non-negative integer")
 
     scope = ensure_callback_scope(data)
     if scope != expected_attempt_id:
