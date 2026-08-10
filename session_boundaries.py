@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from threading import Lock
 
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
@@ -10,10 +9,6 @@ from pymongo.errors import PyMongoError
 import database
 
 logger = logging.getLogger(__name__)
-
-# Process-local lock only narrows duplicate callback work before Mongo. The
-# authoritative ownership/one-shot predicates remain in MongoDB.
-_RESTART_LOCK = Lock()
 
 
 def get_owned_quiz_session(
@@ -67,14 +62,11 @@ def claim_owned_quiz_session_restart(session_id: str, user_id: int) -> dict | No
     }
 
     try:
-        # The lock is intentionally not relied on for correctness; it simply
-        # avoids duplicate local round-trips under a double-click.
-        with _RESTART_LOCK:
-            return collection.find_one_and_update(
-                predicate,
-                update,
-                return_document=ReturnDocument.BEFORE,
-            )
+        return collection.find_one_and_update(
+            predicate,
+            update,
+            return_document=ReturnDocument.BEFORE,
+        )
     except PyMongoError:
         logger.exception("claim_owned_quiz_session_restart failed for user=%s", user_id)
         return None
