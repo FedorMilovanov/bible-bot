@@ -1,0 +1,37 @@
+name: One-shot bonus wrapper compatibility
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+      - name: Apply guarded compatibility patch
+        run: python .github/scripts/oneshot_bonus_wrapper_compat.py
+      - name: Verify narrow diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "legacy_result_store.py"
+          git diff --check
+          grep -q 'claim_daily_bonus_once.*-> int' legacy_result_store.py
+          grep -q 'claim_challenge_bonus_once.*-> int' legacy_result_store.py
+          grep -q 'def claim_daily_bonus_state' legacy_result_store.py
+          grep -q 'def claim_challenge_bonus_state' legacy_result_store.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add legacy_result_store.py
+          git commit -m 'fix: preserve legacy bonus wrapper compatibility'
+          git push origin HEAD:agent/bible-bot-legacy-correctness
