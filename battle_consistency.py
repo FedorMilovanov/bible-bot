@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
@@ -17,6 +18,7 @@ import database
 logger = logging.getLogger(__name__)
 
 _BATTLE_REWARD_RECEIPT_LIMIT = 100
+_FINALIZATION_LEASE_SECONDS = 30
 _VALID_RESULTS = frozenset({"win", "lose", "draw"})
 _VALID_ROLES = frozenset({"creator", "opponent"})
 
@@ -24,7 +26,9 @@ _VALID_ROLES = frozenset({"creator", "opponent"})
 @dataclass(frozen=True)
 class BattleRewardResult:
     applied: bool
+    already_applied: bool = False
     missing_user: bool = False
+    retryable_error: bool = False
 
 
 def battle_role_for_user(battle: dict | None, user_id: int) -> str | None:
@@ -76,13 +80,7 @@ def record_battle_finish_atomic(
     time_taken: float,
     points: int,
 ) -> dict | None:
-    """Record a participant finish once and return the post-update battle.
-
-    The participant identity, role and unfinished flag are all part of the
-    Mongo predicate. Across two concurrent finishers, only the second document
-    update can return a battle with both ``*_finished`` flags set, which gives
-    the caller a natural single-finalizer handoff without a read/write race.
-    """
+    """Record a participant finish once and return the post-update battle."""
     if role not in _VALID_ROLES:
         return None
     collection = database.battles_collection
@@ -111,6 +109,64 @@ def record_battle_finish_atomic(
     except (PyMongoError, TypeError, ValueError, OverflowError):
         logger.exception("record_battle_finish_atomic failed for battle=%s user=%s", battle_id, user_id)
         return None
+
+
+def _finalization_filter(now):
+    cutoff = now - timedelta(seconds=_FINALIZATION_LEASE_SECONDS)
+    return {
+        "creator_finished": True,
+        "opponent_finished": True,
+        "$or": [
+            {"result_state": {"$exists": False}},
+            {"result_state": "pending"},
+            {
+                "result_state": "finalizing",
+                "result_claimed_at_dt": {"$lt": cutoff},
+            },
+            {
+                "result_state": "finalizing",
+                "result_claimed_at_dt": {"$exists": False},
+            },
+        ],
+    }
+
+
+def claim_battle_finalization(battle_id: str) -> dict | None:
+    """Acquire or recover a bounded finalization lease for a finished battle."""
+    collection = database.battles_collection
+    if collection is None:
+        return None
+    now = database._now_utc()
+    predicate = {"_id": battle_id, **_finalization_filter(now)}
+    try:
+        return collection.find_one_and_update(
+            predicate,
+            {
+                "$set": {
+                    "result_state": "finalizing",
+                    "result_claimed_at_dt": now,
+                    "updated_at": now.isoformat(),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except PyMongoError:
+        logger.exception("claim_battle_finalization failed for %s", battle_id)
+        return None
+
+
+def get_battles_needing_finalization(limit: int = 20) -> list[str]:
+    """Return finished battle IDs with no active finalization lease."""
+    collection = database.battles_collection
+    if collection is None:
+        return []
+    predicate = _finalization_filter(database._now_utc())
+    try:
+        cursor = collection.find(predicate, {"_id": 1}).limit(max(1, int(limit)))
+        return [doc["_id"] for doc in cursor if doc.get("_id")]
+    except (PyMongoError, TypeError, ValueError):
+        logger.exception("get_battles_needing_finalization failed")
+        return []
 
 
 def cancel_battle_for_participant(battle_id: str, user_id: int) -> bool:
@@ -149,15 +205,10 @@ def _battle_result_increment(result: str) -> dict[str, int]:
 
 
 def apply_battle_reward_once(user_id: int, battle_id: str, result: str) -> BattleRewardResult:
-    """Atomically apply one user's battle stats/reward at most once.
-
-    The bounded receipt list is mutated in the same MongoDB user document as
-    the counters, so the receipt and ``$inc`` are indivisible. Concurrent
-    finalizers can safely retry the same battle without double-awarding it.
-    """
+    """Atomically apply one user's battle stats/reward at most once."""
     collection = database.collection
     if collection is None:
-        return BattleRewardResult(applied=False)
+        return BattleRewardResult(applied=False, retryable_error=True)
 
     uid = database._uid(user_id)
     receipt = str(battle_id)
@@ -182,13 +233,19 @@ def apply_battle_reward_once(user_id: int, battle_id: str, result: str) -> Battl
         )
     except PyMongoError:
         logger.exception("apply_battle_reward_once failed for battle=%s user=%s", battle_id, uid)
-        return BattleRewardResult(applied=False)
+        return BattleRewardResult(applied=False, retryable_error=True)
 
     if outcome.modified_count == 1:
         return BattleRewardResult(applied=True)
 
     try:
-        exists = collection.count_documents({"_id": uid}, limit=1) > 0
+        entry = collection.find_one({"_id": uid}, {"battle_reward_receipts": 1})
     except PyMongoError:
-        exists = True
-    return BattleRewardResult(applied=False, missing_user=not exists)
+        logger.exception("could not verify battle reward receipt for battle=%s user=%s", battle_id, uid)
+        return BattleRewardResult(applied=False, retryable_error=True)
+
+    if entry is None:
+        return BattleRewardResult(applied=False, missing_user=True)
+    if receipt in entry.get("battle_reward_receipts", []):
+        return BattleRewardResult(applied=False, already_applied=True)
+    return BattleRewardResult(applied=False, retryable_error=True)
