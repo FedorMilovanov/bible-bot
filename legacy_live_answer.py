@@ -13,7 +13,11 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from legacy_attempt_identity import bind_runtime_attempt, runtime_attempt_id
+from legacy_attempt_identity import (
+    bind_runtime_attempt,
+    persisted_attempt_id,
+    runtime_attempt_id,
+)
 from legacy_callback_protocol import (
     build_answer_callback,
     callback_matches_option,
@@ -272,6 +276,51 @@ def _sync_ram_from_session(data: dict, session: dict) -> tuple[int, int, int, in
     return current, correct, streak, max_streak, fastest
 
 
+def _validated_store_transition(
+    result: dict,
+    *,
+    session_id: str,
+    expected_attempt_id: str,
+    expected_index: int,
+    question_id: str,
+    user_answer: str,
+    is_correct: bool,
+) -> tuple[bool, dict]:
+    if not isinstance(result, dict) or not isinstance(result.get("applied"), bool):
+        raise LegacyLiveStateInvalid("answer store returned invalid applied state")
+    session = result.get("session")
+    if not isinstance(session, dict) or session.get("_id") != session_id:
+        raise LegacyLiveStateInvalid("answer store returned invalid durable session")
+    try:
+        durable_attempt_id = persisted_attempt_id(session)
+    except ValueError as exc:
+        raise LegacyLiveStateInvalid("answer store returned invalid attempt identity") from exc
+    if durable_attempt_id != expected_attempt_id:
+        raise LegacyLiveStateInvalid("answer store returned another quiz attempt")
+
+    current = session.get("current_index")
+    ledger = session.get("answered_questions")
+    if (
+        isinstance(current, bool)
+        or not isinstance(current, int)
+        or current != expected_index + 1
+        or not isinstance(ledger, list)
+        or len(ledger) != current
+    ):
+        raise LegacyLiveStateInvalid("answer store returned invalid transition index")
+    stored = ledger[expected_index]
+    if not isinstance(stored, dict):
+        raise LegacyLiveStateInvalid("answer store returned invalid transition record")
+    if (
+        stored.get("index") != expected_index
+        or stored.get("qid") != question_id
+        or stored.get("user_answer") != user_answer
+        or stored.get("is_correct") is not is_correct
+    ):
+        raise LegacyLiveStateInvalid("answer store returned conflicting transition record")
+    return result["applied"], session
+
+
 def _apply_memory_only(
     data: dict,
     *,
@@ -360,12 +409,18 @@ def apply_live_answer_once(
             question_obj=question,
             latency_seconds=latency,
         )
-        if not isinstance(result, dict) or not isinstance(result.get("session"), dict):
-            raise LegacyLiveStateInvalid("answer store returned an invalid durable snapshot")
-        current, correct, streak, max_streak, fastest = _sync_ram_from_session(
-            data, result["session"]
+        applied, durable_session = _validated_store_transition(
+            result,
+            session_id=session_id,
+            expected_attempt_id=scope,
+            expected_index=question_index,
+            question_id=question_id,
+            user_answer=user_answer,
+            is_correct=is_correct,
         )
-        applied = result.get("applied") is True
+        current, correct, streak, max_streak, fastest = _sync_ram_from_session(
+            data, durable_session
+        )
         persisted = True
     else:
         current, correct, streak, max_streak, fastest = _apply_memory_only(
@@ -434,12 +489,18 @@ def apply_live_timeout_once(
             question_obj=question,
             latency_seconds=latency,
         )
-        if not isinstance(result, dict) or not isinstance(result.get("session"), dict):
-            raise LegacyLiveStateInvalid("timeout store returned an invalid durable snapshot")
-        current, correct, streak, max_streak, fastest = _sync_ram_from_session(
-            data, result["session"]
+        applied, durable_session = _validated_store_transition(
+            result,
+            session_id=session_id,
+            expected_attempt_id=expected_attempt_id,
+            expected_index=expected_index,
+            question_id=question_id,
+            user_answer=_TIMEOUT_ANSWER,
+            is_correct=False,
         )
-        applied = result.get("applied") is True
+        current, correct, streak, max_streak, fastest = _sync_ram_from_session(
+            data, durable_session
+        )
         persisted = True
     else:
         current, correct, streak, max_streak, fastest = _apply_memory_only(
