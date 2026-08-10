@@ -23,7 +23,7 @@ services:
       - key: TELEGRAM_TRANSPORT
         value: webhook
       - key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS
-        value: "4"
+        value: "2"
       - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
         value: "86400"
       - key: WEB_THREADS
