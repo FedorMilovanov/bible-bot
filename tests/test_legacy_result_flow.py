@@ -1,15 +1,35 @@
 import legacy_result_flow as flow
 
 
-def test_stable_result_id_prefers_persisted_session_and_is_memoized():
-    data = {"session_id": "abc-123", "start_time": 10, "level_key": "easy", "questions": []}
+def test_stable_result_id_prefers_explicit_attempt_and_is_memoized():
+    data = {
+        "session_id": "container-1",
+        "attempt_id": "attempt-2",
+        "start_time": 10,
+        "level_key": "easy",
+        "questions": [],
+    }
 
     first = flow.stable_result_id(42, data)
-    data["session_id"] = "changed"
+    data["attempt_id"] = "attempt-3"
     second = flow.stable_result_id(42, data)
 
-    assert first == "quiz:abc-123"
+    assert first == "quiz:attempt-2"
     assert second == first
+
+
+def test_stable_result_id_legacy_session_falls_back_to_session_id():
+    data = {"session_id": "legacy-session", "level_key": "easy", "questions": []}
+
+    assert flow.stable_result_id(42, data) == "quiz:legacy-session"
+
+
+def test_restarted_attempt_does_not_reuse_previous_result_id():
+    old = {"session_id": "container-1", "attempt_id": "attempt-old"}
+    new = {"session_id": "container-1", "attempt_id": "attempt-new"}
+
+    assert flow.stable_result_id(42, old) == "quiz:attempt-old"
+    assert flow.stable_result_id(42, new) == "quiz:attempt-new"
 
 
 def test_stable_result_id_uses_unique_memoized_memory_fallback():
