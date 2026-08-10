@@ -73,6 +73,24 @@ def _latency_seconds(value) -> float | None:
     return latency
 
 
+def _ledger_length_filter(expected_index: int) -> dict:
+    """Require exactly ``expected_index`` durable answer rows before the write.
+
+    Legacy answer rows did not always carry an explicit ``index`` field, so use
+    Mongo array-slot existence rather than row schema. Slot N absent plus slot
+    N-1 present proves exact length N without a separate read.
+    """
+    result = {
+        "answered_questions": {"$type": "array"},
+        f"answered_questions.{expected_index}": {"$exists": False},
+    }
+    if expected_index == 0:
+        result["correct_count"] = 0
+    else:
+        result[f"answered_questions.{expected_index - 1}"] = {"$exists": True}
+    return result
+
+
 def get_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
     collection = _quiz_session_collection()
     try:
@@ -146,6 +164,7 @@ def record_owned_quiz_answer(
         "status": "in_progress",
         "current_index": expected_index,
         f"question_ids.{expected_index}": question_id,
+        **_ledger_length_filter(expected_index),
         **attempt_filter,
     }
 
