@@ -1,0 +1,37 @@
+name: One-shot bonus wrappers v4
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+      - name: Apply guarded wrapper patch
+        run: python .github/scripts/oneshot_bonus_wrappers_v4.py
+      - name: Verify narrow diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only)
+          test "$changed" = "legacy_result_store.py"
+          git diff --check
+          grep -q 'claim_daily_bonus_once.*-> dict' legacy_result_store.py
+          grep -q 'claim_challenge_bonus_once.*-> dict' legacy_result_store.py
+          ! grep -q 'return stage\["bonus"\] if stage\["claimed_now"\] else 0' legacy_result_store.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add legacy_result_store.py
+          git commit -m 'fix: keep bonus replay metadata in public store API'
+          git push origin HEAD:agent/bible-bot-legacy-correctness
