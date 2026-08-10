@@ -215,8 +215,8 @@ def _ledger_state(session: dict) -> tuple[int, int, list[dict], int, int, float 
 
 
 def _sync_ram_from_session(data: dict, session: dict) -> tuple[int, int, int, int, float | None]:
-    bind_runtime_attempt(data, session)
     current, correct, ui_answers, streak, max_streak, fastest = _ledger_state(session)
+    bind_runtime_attempt(data, session)
     data["current_question"] = current
     data["correct_answers"] = correct
     data["answered_questions"] = ui_answers
