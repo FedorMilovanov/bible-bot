@@ -5,7 +5,7 @@ runtime/scoring fields from persisted data without importing Telegram handlers.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 
@@ -31,11 +31,11 @@ def _streaks(answered: list[dict]) -> tuple[int, int]:
     current = 0
     maximum = 0
     for item in answered:
-        if bool(item.get("is_correct")):
-            current += 1
-            maximum = max(maximum, current)
-        else:
+        if not isinstance(item, dict) or item.get("is_correct") is not True:
             current = 0
+            continue
+        current += 1
+        maximum = max(maximum, current)
     return current, maximum
 
 
@@ -54,14 +54,17 @@ def _normal_mode(time_limit) -> tuple[str, float, int | None]:
     return "timed", 1.0, limit
 
 
-def persisted_result_time_seconds(session: dict) -> float | None:
-    """Return result duration capped at the last persisted answer timestamp.
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
-    This avoids counting process downtime between the last answer and recovery.
-    """
+
+def _persisted_answer_timeline(session: dict) -> tuple[datetime, list[datetime]] | None:
     try:
         started_epoch = float(session.get("start_time"))
-    except (TypeError, ValueError):
+        started = datetime.utcfromtimestamp(started_epoch)
+    except (TypeError, ValueError, OSError, OverflowError):
         return None
     if started_epoch < 0:
         return None
@@ -69,20 +72,39 @@ def persisted_result_time_seconds(session: dict) -> float | None:
     answered = _answers(session)
     if not answered:
         return None
-    last_ts = answered[-1].get("ts")
-    if not isinstance(last_ts, str) or not last_ts:
-        return None
-    try:
-        completed = datetime.fromisoformat(last_ts)
-    except ValueError:
-        return None
 
-    # database._now_utc() stores naive UTC ISO timestamps, so compare with a
-    # naive UTC epoch conversion instead of local-time datetime.fromtimestamp.
-    if completed.tzinfo is not None:
-        completed = completed.replace(tzinfo=None)
-    started = datetime.utcfromtimestamp(started_epoch)
-    return max(0.0, (completed - started).total_seconds())
+    timeline: list[datetime] = []
+    previous = started
+    for item in answered:
+        if not isinstance(item, dict):
+            return None
+        raw_ts = item.get("ts")
+        if not isinstance(raw_ts, str) or not raw_ts:
+            return None
+        try:
+            answer_time = _naive_utc(datetime.fromisoformat(raw_ts))
+        except ValueError:
+            return None
+        if answer_time < started or answer_time < previous:
+            return None
+        timeline.append(answer_time)
+        previous = answer_time
+    return started, timeline
+
+
+def persisted_result_time_seconds(session: dict) -> float | None:
+    """Return duration bounded by the persisted answer chronology.
+
+    All answer timestamps must be parseable, non-decreasing and not precede the
+    persisted start time. Offset-aware timestamps are converted to UTC instead
+    of having their offset discarded. This prevents contradictory evidence from
+    becoming an artificial zero-second or multi-hour result after restart.
+    """
+    timeline = _persisted_answer_timeline(session)
+    if timeline is None:
+        return None
+    started, answer_times = timeline
+    return (answer_times[-1] - started).total_seconds()
 
 
 def recovery_fields(session: dict) -> dict:
@@ -144,9 +166,10 @@ def completed_result_inputs(session: dict) -> dict | None:
     """Return authoritative scoring inputs for a completed persisted session.
 
     Recovery is intentionally strict. The completed index, answer ledger and
-    aggregate correct counter must agree, and the last answer must provide the
-    original duration boundary. Any inconsistent legacy/corrupt document stays
-    pending for manual/newer recovery rather than receiving guessed statistics.
+    aggregate correct counter must agree, every answer must carry a boolean
+    correctness flag, and the full timestamp chronology must prove the original
+    duration boundary. Any inconsistent legacy/corrupt document stays pending
+    rather than receiving guessed statistics.
     """
     if not session_is_complete(session):
         return None
@@ -162,7 +185,12 @@ def completed_result_inputs(session: dict) -> dict | None:
     answered = fields.get("answered_questions", [])
     if not isinstance(answered, list) or len(answered) != total:
         return None
-    score_from_answers = sum(1 for item in answered if bool(item.get("is_correct")))
+    if any(
+        not isinstance(item, dict) or not isinstance(item.get("is_correct"), bool)
+        for item in answered
+    ):
+        return None
+    score_from_answers = sum(1 for item in answered if item["is_correct"] is True)
     try:
         stored_score = int(session.get("correct_count", 0) or 0)
     except (TypeError, ValueError):
