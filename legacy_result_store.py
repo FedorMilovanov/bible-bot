@@ -38,10 +38,62 @@ def _weekly():
     return collection
 
 
+def _normalize_result_id(result_id: str) -> str:
+    value = str(result_id or "").strip()
+    if not value:
+        raise ValueError("result_id is required for idempotent legacy scoring")
+    return value
+
+
+def _receipt_digest(result_id: str) -> str:
+    value = _normalize_result_id(result_id)
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _receipt_path(result_id: str) -> str:
     """Return a Mongo-safe, non-evicting field path for one result identity."""
-    digest = hashlib.sha256(str(result_id).encode("utf-8")).hexdigest()
-    return f"legacy_result_receipts.{digest}"
+    return f"legacy_result_receipts.{_receipt_digest(result_id)}"
+
+
+def _receipt_completed_at(doc: dict, result_id: str) -> str | None:
+    receipts = doc.get("legacy_result_receipts", {})
+    if not isinstance(receipts, dict):
+        return None
+    value = receipts.get(_receipt_digest(result_id))
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _coerce_completed_at(value: str | datetime | float | int | None) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    if value is not None:
+        try:
+            return datetime.utcfromtimestamp(float(value))
+        except (TypeError, ValueError, OSError, OverflowError):
+            pass
+    return datetime.utcnow()
+
+
+def result_day(completed_at: str | datetime | float | int | None) -> str:
+    """Return the UTC calendar day of the first durable base-result write."""
+    return _coerce_completed_at(completed_at).strftime("%Y-%m-%d")
+
+
+def _day_key(day: str) -> str:
+    try:
+        parsed = datetime.strptime(day, "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("result day must be YYYY-MM-DD") from exc
+    return parsed.strftime("%Y%m%d")
 
 
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
@@ -122,7 +174,7 @@ def _challenge_streak_fields(entry: dict, today: str, mode: str | None, score: i
 
 def apply_base_result_once(
     *,
-    result_id: str | None,
+    result_id: str,
     user_id: int,
     username: str,
     first_name: str,
@@ -134,17 +186,15 @@ def apply_base_result_once(
     max_streak: int = 0,
     challenge_mode: str | None = None,
 ) -> dict:
-    """Apply base quiz counters/points once and return the durable user snapshot.
+    """Apply base quiz counters/points exactly once.
 
-    A persisted quiz uses its session id as ``result_id``. Result markers are
-    stored as hashed subdocument fields on the same user document as the
-    counters, so the receipt and all ``$inc`` operations commit atomically and
-    old receipts are never evicted by newer quiz results.
-
-    If no result id exists, the current in-memory result can still be credited,
-    but it has no cross-process retry identity. Callers should provide a stable
-    in-memory fallback id whenever possible.
+    ``result_id`` is mandatory. The receipt marker and all counters live on the
+    same user document and are written in one atomic Mongo update. The marker
+    stores the first durable completion timestamp; every later stage must derive
+    its day/week from this timestamp so retries across midnight/week boundaries
+    cannot change the result's economics.
     """
+    result_id = _normalize_result_id(result_id)
     collection = _users()
     entry = _ensure_user(user_id, username, first_name)
     uid = database._uid(user_id)
@@ -153,8 +203,9 @@ def apply_base_result_once(
     time_seconds = max(0.0, float(time_seconds))
     score_multiplier = max(0.0, float(score_multiplier))
     max_streak = max(0, int(max_streak))
-    today = database._today_utc()
     now = database._now_utc()
+    completed_at = now.isoformat()
+    today = now.strftime("%Y-%m-%d")
 
     ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
     earned_base = round(score * ppq * score_multiplier)
@@ -173,10 +224,12 @@ def apply_base_result_once(
     if is_perfect:
         inc["perfect_count"] = 1
 
+    receipt_path = _receipt_path(result_id)
     set_fields = {
         "username": username or "",
         "first_name": first_name or "Пользователь",
         "last_activity": now,
+        receipt_path: completed_at,
         **_daily_activity_fields(entry, today),
         **_challenge_streak_fields(entry, today, challenge_mode, score),
     }
@@ -191,12 +244,10 @@ def apply_base_result_once(
             "max_streak_ever": max_streak,
         },
     }
-    query = {"_id": uid}
-    receipt_path = None
-    if result_id:
-        receipt_path = _receipt_path(result_id)
-        query[receipt_path] = {"$exists": False}
-        update["$set"][receipt_path] = now
+    query = {
+        "_id": uid,
+        receipt_path: {"$exists": False},
+    }
 
     try:
         after = collection.find_one_and_update(
@@ -208,17 +259,21 @@ def apply_base_result_once(
             return {
                 "applied": True,
                 "earned_base": earned_base,
+                "completed_at": completed_at,
                 "user": after,
             }
 
-        if receipt_path:
-            existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
-            if existing:
-                return {
-                    "applied": False,
-                    "earned_base": earned_base,
-                    "user": existing,
-                }
+        existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
+        if existing:
+            durable_completed_at = _receipt_completed_at(existing, result_id)
+            if durable_completed_at is None:
+                raise LegacyResultStoreUnavailable("base result receipt timestamp is invalid")
+            return {
+                "applied": False,
+                "earned_base": earned_base,
+                "completed_at": durable_completed_at,
+                "user": existing,
+            }
         raise LegacyResultStoreUnavailable("base result receipt could not be persisted")
     except LegacyResultStoreUnavailable:
         raise
@@ -226,45 +281,57 @@ def apply_base_result_once(
         raise LegacyResultStoreUnavailable("base result write failed") from exc
 
 
-def claim_daily_bonus_once(user_id: int) -> int:
-    """Atomically award the first normal-test daily bonus of the UTC day."""
+def claim_daily_bonus_once(user_id: int, day: str) -> int:
+    """Atomically award the normal-test daily bonus for the result's durable day."""
     collection = _users()
     uid = database._uid(user_id)
-    today = database._today_utc()
+    day_key = _day_key(day)
+    receipt_path = f"daily_bonus_receipts.{day_key}"
     try:
         entry = collection.find_one(
             {"_id": uid},
-            {"daily_activity_streak": 1, "last_daily_bonus": 1},
+            {"daily_activity_streak": 1, receipt_path: 1},
         )
-        if not entry or entry.get("last_daily_bonus", "") == today:
+        if not entry:
+            return 0
+        receipt_value = entry.get("daily_bonus_receipts", {}).get(day_key)
+        if receipt_value:
             return 0
         streak = int(entry.get("daily_activity_streak", 0) or 0)
         bonus = 15 if streak >= 7 else 10 if streak >= 3 else 5
         result = collection.update_one(
-            {"_id": uid, "last_daily_bonus": {"$ne": today}},
-            {"$set": {"last_daily_bonus": today}, "$inc": {"total_points": bonus}},
+            {"_id": uid, receipt_path: {"$exists": False}},
+            {
+                "$set": {receipt_path: True},
+                "$max": {"last_daily_bonus": day},
+                "$inc": {"total_points": bonus},
+            },
         )
         return bonus if result.modified_count == 1 else 0
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("daily bonus write failed") from exc
 
 
-def claim_challenge_bonus_once(user_id: int, mode: str, score: int) -> int:
-    """Atomically consume and award the mode's once-per-day challenge bonus."""
+def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> int:
+    """Atomically award a challenge bonus for the base result's durable day."""
     if mode not in _CHALLENGE_MODES:
         raise ValueError(f"unsupported challenge mode: {mode}")
     collection = _users()
     uid = database._uid(user_id)
-    today = database._today_utc()
+    day_key = _day_key(day)
     score, _ = database._validate_score(score, 20)
     bonus = database.compute_bonus(score, mode, True)
     date_field = f"{mode}_last_bonus_date"
-    update: dict = {"$set": {date_field: today}}
+    receipt_path = f"challenge_bonus_receipts.{mode}.{day_key}"
+    update: dict = {
+        "$set": {receipt_path: True},
+        "$max": {date_field: day},
+    }
     if bonus:
         update["$inc"] = {"total_points": bonus}
     try:
         result = collection.update_one(
-            {"_id": uid, date_field: {"$ne": today}},
+            {"_id": uid, receipt_path: {"$exists": False}},
             update,
         )
         return bonus if result.modified_count == 1 else 0
@@ -299,13 +366,9 @@ def claim_achievement_once(
         raise LegacyResultStoreUnavailable("achievement claim failed") from exc
 
 
-def result_week_id(start_time: float | int | None) -> str:
-    """Return the UTC ISO week of the original quiz start for retry-stable weekly sync."""
-    try:
-        dt = datetime.utcfromtimestamp(float(start_time)) if start_time is not None else datetime.utcnow()
-    except (TypeError, ValueError, OSError, OverflowError):
-        dt = datetime.utcnow()
-    iso = dt.isocalendar()
+def result_week_id(completed_at: str | datetime | float | int | None) -> str:
+    """Return the UTC ISO week of the first durable base-result write."""
+    iso = _coerce_completed_at(completed_at).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
 
