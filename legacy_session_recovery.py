@@ -110,6 +110,20 @@ def persisted_result_time_seconds(session: dict) -> float | None:
     return (answer_times[-1] - started).total_seconds()
 
 
+def persisted_completed_at(session: dict) -> str | None:
+    """Return the final persisted answer timestamp normalized to naive UTC ISO.
+
+    A recovered result must keep the day/week when the quiz actually finished,
+    not the later process-restart time. The same validated answer chronology used
+    for elapsed time is therefore also the authority for result completion time.
+    """
+    timeline = _persisted_answer_timeline(session)
+    if timeline is None:
+        return None
+    _started, answer_times = timeline
+    return answer_times[-1].isoformat()
+
+
 def recovery_fields(session: dict) -> dict:
     """Build non-Telegram runtime fields from one persisted quiz session."""
     mode = str(session.get("mode") or "level")
@@ -162,6 +176,7 @@ def recovery_fields(session: dict) -> dict:
         "fastest_answer": None,
         "result_pending": session_is_complete(session),
         "persisted_result_time": persisted_result_time_seconds(session),
+        "persisted_completed_at": persisted_completed_at(session),
     }
 
 
@@ -171,14 +186,15 @@ def completed_result_inputs(session: dict) -> dict | None:
     Recovery is intentionally strict. The completed index, answer ledger and
     aggregate correct counter must agree, every answer must carry a boolean
     correctness flag, and the full timestamp chronology must prove the original
-    duration boundary. Any inconsistent legacy/corrupt document stays pending
-    rather than receiving guessed statistics.
+    duration and completion-time boundary. Any inconsistent legacy/corrupt
+    document stays pending rather than receiving guessed statistics.
     """
     if not session_is_complete(session):
         return None
     fields = recovery_fields(session)
     duration = fields.get("persisted_result_time")
-    if duration is None:
+    completed_at = fields.get("persisted_completed_at")
+    if duration is None or not isinstance(completed_at, str) or not completed_at:
         return None
     questions = fields.get("questions", [])
     total = len(questions) if isinstance(questions, list) else 0
@@ -205,5 +221,6 @@ def completed_result_inputs(session: dict) -> dict | None:
         "score": score_from_answers,
         "total": total,
         "time_seconds": float(duration),
+        "completed_at": completed_at,
         "data": fields,
     }
