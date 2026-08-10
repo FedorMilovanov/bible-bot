@@ -5,7 +5,7 @@ import time
 import uuid
 
 from pymongo import ASCENDING
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
 
 _ACTIVE_INDEX = "uniq_active_quiz_user"
 _ACTIVE_FILTER = {"status": "in_progress"}
@@ -37,6 +37,30 @@ def _collection():
     return collection
 
 
+def find_duplicate_active_session_users(limit: int = 50) -> list[dict]:
+    """Read-only preflight for legacy users with multiple active sessions."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+    try:
+        rows = _collection().aggregate(
+            [
+                {"$match": {"status": "in_progress"}},
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$match": {"count": {"$gt": 1}}},
+                {"$sort": {"count": -1, "_id": 1}},
+                {"$limit": limit},
+            ]
+        )
+        return [
+            {"user_id": row.get("_id"), "count": row.get("count")}
+            for row in rows
+        ]
+    except PyMongoError as exc:
+        raise QuizSessionAccessUnavailable(
+            "active-session duplicate preflight failed"
+        ) from exc
+
+
 def ensure_active_session_unique_index() -> bool:
     """Ensure at most one ``in_progress`` session exists per user."""
     collection = _collection()
@@ -65,6 +89,14 @@ def ensure_active_session_unique_index() -> bool:
     except DuplicateKeyError as exc:
         raise QuizSessionAccessSchemaInvalid(
             "duplicate active sessions prevent unique-index creation"
+        ) from exc
+    except OperationFailure as exc:
+        if exc.code == 11000:
+            raise QuizSessionAccessSchemaInvalid(
+                "duplicate active sessions prevent unique-index creation"
+            ) from exc
+        raise QuizSessionAccessUnavailable(
+            "active-session unique-index preparation failed"
         ) from exc
     except PyMongoError as exc:
         raise QuizSessionAccessUnavailable(
