@@ -100,7 +100,7 @@ def _assert_normal_pending_before_bonus(monkeypatch, base):
     )
     monkeypatch.setattr(
         finalize,
-        "finish_owned_quiz_session",
+        "finish_completed_owned_quiz_session",
         lambda *_: pytest.fail("invalid durable snapshot must stop before finish"),
     )
 
@@ -130,7 +130,7 @@ def _assert_challenge_pending_before_bonus(monkeypatch, base):
     )
     monkeypatch.setattr(
         finalize,
-        "finish_owned_quiz_session",
+        "finish_completed_owned_quiz_session",
         lambda *_: pytest.fail("invalid Challenge snapshot must stop before finish"),
     )
 
