@@ -271,8 +271,6 @@ def apply_base_result_once(
     if fastest_answer is not None:
         fastest_answer = max(0.0, float(fastest_answer))
 
-    # The completion clock is fixed for the whole CAS retry loop. A contention
-    # retry crossing midnight must not silently move this result to a new day.
     now = database._now_utc()
     completed_at = now.isoformat()
     today = now.strftime("%Y-%m-%d")
@@ -414,17 +412,33 @@ def claim_achievement_once(
         raise ValueError("unsafe achievement key")
     collection = _users()
     uid = database._uid(user_id)
+    achievement_path = f"achievements.{achievement_key}"
     awarded_at = awarded_at or datetime.now().strftime("%d.%m.%Y")
-    update: dict = {"$set": {f"achievements.{achievement_key}": awarded_at}}
+    update: dict = {"$set": {achievement_path: awarded_at}}
     reward = max(0, int(reward))
     if reward:
         update["$inc"] = {"total_points": reward}
     try:
         result = collection.update_one(
-            {"_id": uid, f"achievements.{achievement_key}": {"$exists": False}},
+            {"_id": uid, achievement_path: {"$exists": False}},
             update,
         )
-        return result.modified_count == 1
+        if result.modified_count == 1:
+            return True
+
+        existing = collection.find_one({"_id": uid}, {achievement_path: 1})
+        if existing is None:
+            raise LegacyResultStoreUnavailable(
+                "achievement user document disappeared before claim confirmation"
+            )
+        achievements = existing.get("achievements", {})
+        if isinstance(achievements, dict) and achievement_key in achievements:
+            return False
+        raise LegacyResultStoreUnavailable(
+            "achievement claim was not persisted and no prior claim exists"
+        )
+    except LegacyResultStoreUnavailable:
+        raise
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("achievement claim failed") from exc
 
