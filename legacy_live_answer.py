@@ -1,9 +1,9 @@
 """Pure live-answer orchestration for the legacy Telegram controller.
 
 This module deliberately contains no Telegram UI calls. It binds answer buttons
-to a logical attempt scope + exact question/option index, persists a Mongo-backed
-answer before mutating in-memory runtime state, and rebuilds that RAM state from
-the durable session ledger.
+to a logical attempt scope + exact question/rendered-option slot, persists a
+Mongo-backed answer before mutating in-memory runtime state, and rebuilds that
+RAM state from the durable session ledger.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from legacy_attempt_identity import bind_runtime_attempt, runtime_attempt_id
 from legacy_callback_protocol import (
     build_answer_callback,
+    callback_matches_option,
     callback_matches_session,
     parse_answer_callback,
 )
@@ -84,11 +85,24 @@ def build_live_answer_callback(
     question_index: int,
     option_index: int,
 ) -> str:
+    if question_index != _current_index(data):
+        raise LegacyLiveAnswerStale("answer callback target is not the current question")
+    _question_at(data, question_index)
+    if isinstance(option_index, bool) or not isinstance(option_index, int) or option_index < 0:
+        raise ValueError("option_index must be a non-negative integer")
+    shuffled = data.get("current_options")
+    if not isinstance(shuffled, list) or any(not isinstance(item, str) for item in shuffled):
+        raise LegacyLiveStateInvalid("current_options are invalid")
+    if option_index >= len(shuffled):
+        raise LegacyLiveAnswerStale("answer option is no longer available")
+    option_text = shuffled[option_index]
+    scope = ensure_callback_scope(data)
     return build_answer_callback(
         prefix,
-        ensure_callback_scope(data),
+        scope,
         question_index,
         option_index,
+        option_text,
     )
 
 
@@ -284,7 +298,7 @@ def apply_live_answer_once(
     now: float | None = None,
 ) -> LiveAnswerOutcome:
     """Validate one button and durably advance before touching RAM counters."""
-    token, question_index, option_index = parse_answer_callback(payload, prefix)
+    token, question_index, option_index, option_token = parse_answer_callback(payload, prefix)
     scope = ensure_callback_scope(data)
     if not callback_matches_session(token, scope):
         raise LegacyLiveAnswerStale("answer button belongs to another attempt")
@@ -297,6 +311,8 @@ def apply_live_answer_once(
         raise LegacyLiveStateInvalid("current_options are invalid")
     if option_index >= len(shuffled):
         raise LegacyLiveAnswerStale("answer option is no longer available")
+    if not callback_matches_option(option_token, shuffled[option_index]):
+        raise LegacyLiveAnswerStale("answer option mapping changed after button render")
 
     user_answer = shuffled[option_index]
     correct_text = _correct_text(question, data)
