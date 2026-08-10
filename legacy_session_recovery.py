@@ -5,7 +5,7 @@ runtime/scoring fields from persisted data without importing Telegram handlers.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 
@@ -57,7 +57,7 @@ def _normal_mode(time_limit) -> tuple[str, float, int | None]:
 def _naive_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _persisted_answer_timeline(session: dict) -> tuple[datetime, list[datetime]] | None:
