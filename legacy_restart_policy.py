@@ -1,11 +1,13 @@
 """Pure restart policy for persisted legacy quiz sessions."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from legacy_session_recovery import (
     LegacyPersistedSessionModeInvalid,
     completed_result_inputs,
+    persisted_result_time_seconds,
     recovery_fields,
 )
 
@@ -66,6 +68,17 @@ def _validate_partial_ledger(session: dict, current: int, total: int) -> None:
         )
 
 
+def _validate_partial_timing(session: dict, current: int) -> None:
+    start_time = session.get("start_time")
+    if isinstance(start_time, bool) or not isinstance(start_time, (int, float)):
+        raise LegacyRestartStateInvalid("partial restart start_time is invalid")
+    started = float(start_time)
+    if not math.isfinite(started) or started < 0:
+        raise LegacyRestartStateInvalid("partial restart start_time is invalid")
+    if current > 0 and persisted_result_time_seconds(session) is None:
+        raise LegacyRestartStateInvalid("partial restart answer chronology is invalid")
+
+
 def classify_restart_session(session: dict) -> RestartDecision:
     """Classify one owned active session as resume/finalize/conflict."""
     if not isinstance(session, dict) or session.get("status") != "in_progress":
@@ -81,6 +94,7 @@ def classify_restart_session(session: dict) -> RestartDecision:
 
     if current < total:
         _validate_partial_ledger(session, current, total)
+        _validate_partial_timing(session, current)
         try:
             recovery_fields(session)
         except LegacyPersistedSessionModeInvalid as exc:
