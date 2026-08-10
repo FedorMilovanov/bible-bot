@@ -83,6 +83,36 @@ def test_missing_or_unowned_session_is_stale(monkeypatch):
         actions.resolve_session_action(payload, "rst", 42)
 
 
+def test_known_restart_state_error_becomes_stale_button(monkeypatch):
+    session = _session()
+    payload = actions.session_action_payloads(session)["res"]
+    monkeypatch.setattr(actions, "get_quiz_session_strict", lambda *_args, **_kwargs: session)
+    monkeypatch.setattr(
+        actions,
+        "classify_restart_session",
+        lambda _session: (_ for _ in ()).throw(
+            actions.LegacyRestartStateInvalid("contradictory durable state")
+        ),
+    )
+
+    with pytest.raises(actions.LegacySessionActionStale, match="contradictory durable state"):
+        actions.resolve_session_action(payload, "res", 42)
+
+
+def test_unexpected_classifier_runtime_error_is_not_masked_as_stale(monkeypatch):
+    session = _session()
+    payload = actions.session_action_payloads(session)["res"]
+    monkeypatch.setattr(actions, "get_quiz_session_strict", lambda *_args, **_kwargs: session)
+    monkeypatch.setattr(
+        actions,
+        "classify_restart_session",
+        lambda _session: (_ for _ in ()).throw(RuntimeError("classifier bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="classifier bug"):
+        actions.resolve_session_action(payload, "res", 42)
+
+
 def test_completed_button_resolves_to_finalize_not_cancel(monkeypatch):
     session = {
         "_id": _SESSION,
