@@ -66,7 +66,7 @@ def test_malformed_normal_receipt_stays_retryable_before_bonus_or_finish(monkeyp
     )
     monkeypatch.setattr(
         finalize,
-        "finish_owned_quiz_session",
+        "finish_completed_owned_quiz_session",
         lambda *_: pytest.fail("invalid timestamp must stop before session finish"),
     )
 
