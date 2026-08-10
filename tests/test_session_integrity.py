@@ -87,6 +87,9 @@ def test_owned_answer_first_apply_uses_owner_attempt_index_and_question_cas(monk
         "status": "in_progress",
         "current_index": 0,
         "question_ids.0": "q1",
+        "answered_questions": {"$type": "array"},
+        "answered_questions.0": {"$exists": False},
+        "correct_count": 0,
         "$or": [
             {"attempt_id": "s1"},
             {"attempt_id": {"$exists": False}, "_id": "s1"},
@@ -206,6 +209,9 @@ def test_owned_answer_same_qid_on_next_index_is_not_ambiguous(monkeypatch):
     assert result["applied"] is True
     assert collection.claim_filter["current_index"] == 1
     assert collection.claim_filter["question_ids.1"] == "same-qid"
+    assert collection.claim_filter["answered_questions"] == {"$type": "array"}
+    assert collection.claim_filter["answered_questions.0"] == {"$exists": True}
+    assert collection.claim_filter["answered_questions.1"] == {"$exists": False}
     assert collection.claim_update["$push"]["answered_questions"]["index"] == 1
 
 
