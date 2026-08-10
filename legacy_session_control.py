@@ -43,6 +43,38 @@ class CurrentSessionCancellation:
     attempt_id: str | None = None
 
 
+def _validated_cancel_result(
+    result: dict,
+    *,
+    session_id: str,
+    attempt_id: str,
+) -> tuple[bool, dict]:
+    if not isinstance(result, dict) or not isinstance(result.get("applied"), bool):
+        raise LegacySessionControlConflict(
+            "session cancellation returned invalid applied state"
+        )
+    session = result.get("session")
+    if not isinstance(session, dict) or session.get("_id") != session_id:
+        raise LegacySessionControlConflict(
+            "session cancellation returned invalid durable session"
+        )
+    try:
+        durable_attempt_id = persisted_attempt_id(session)
+    except ValueError as exc:
+        raise LegacySessionControlConflict(
+            "session cancellation returned invalid attempt identity"
+        ) from exc
+    if durable_attempt_id != attempt_id:
+        raise LegacySessionControlConflict(
+            "session cancellation returned another quiz attempt"
+        )
+    if session.get("status") != "cancelled":
+        raise LegacySessionControlConflict(
+            "session cancellation did not return cancelled durable state"
+        )
+    return result["applied"], session
+
+
 def cancel_current_incomplete_session(user_id: int | str) -> CurrentSessionCancellation:
     """Cancel only a proven incomplete current attempt; never erase result evidence."""
     try:
@@ -85,11 +117,14 @@ def cancel_current_incomplete_session(user_id: int | str) -> CurrentSessionCance
     except QuizSessionLifecycleConflict as exc:
         raise LegacySessionControlConflict("session changed during cancellation") from exc
 
-    if not isinstance(result, dict) or not isinstance(result.get("session"), dict):
-        raise LegacySessionControlConflict("session cancellation returned invalid state")
+    cancelled_now, _cancelled_session = _validated_cancel_result(
+        result,
+        session_id=session_id,
+        attempt_id=attempt_id,
+    )
     return CurrentSessionCancellation(
         True,
-        result.get("applied") is True,
+        cancelled_now,
         session_id=session_id,
         attempt_id=attempt_id,
     )
