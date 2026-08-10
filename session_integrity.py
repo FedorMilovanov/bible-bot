@@ -7,15 +7,17 @@ import math
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from legacy_delivery_retention import ensure_state_aware_delivery_ttl
 from legacy_session_retention import ensure_state_aware_session_ttl
 
 logger = logging.getLogger(__name__)
 
-# database._ensure_indexes() historically installs the unsafe generic six-hour
-# TTL before bot.py imports this integrity layer. Migrate it immediately during
-# normal runtime import so pending in-progress result evidence is protected
-# before any callback/recovery operation begins.
+# database._ensure_indexes() historically installs generic TTL indexes before
+# bot.py imports this integrity layer. Migrate them immediately during normal
+# runtime import so pending quiz results and undelivered outbox evidence are not
+# eligible for age-only deletion.
 SESSION_RETENTION_READY = ensure_state_aware_session_ttl()
+DELIVERY_RETENTION_READY = ensure_state_aware_delivery_ttl()
 
 
 class QuizSessionStoreUnavailable(RuntimeError):
