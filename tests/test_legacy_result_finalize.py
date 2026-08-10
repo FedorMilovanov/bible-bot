@@ -164,7 +164,11 @@ def test_challenge_finalization_syncs_weekly_on_every_attempt(monkeypatch):
 
     monkeypatch.setattr(finalize, "sync_weekly_best", weekly)
     monkeypatch.setattr(finalize, "general_achievement_candidates", lambda *_: [])
-    monkeypatch.setattr(finalize, "challenge_badge_candidates", lambda *_: ["streak_3"])
+    monkeypatch.setattr(
+        finalize,
+        "challenge_badge_candidates",
+        lambda *_: [("streak_3", "🔥 3-дневная серия 18+ — разблокировано!")],
+    )
     monkeypatch.setattr(
         finalize,
         "claim_achievement_once",
@@ -186,7 +190,9 @@ def test_challenge_finalization_syncs_weekly_on_every_attempt(monkeypatch):
     )
 
     assert result["bonus"] == {"bonus": 60, "eligible": True, "claimed_now": False}
-    assert result["new_challenge_badges"] == ["streak_3"]
+    assert result["new_challenge_badges"] == [
+        "🔥 3-дневная серия 18+ — разблокировано!"
+    ]
     assert captured_weekly["week_id"] == "2026-W33"
     assert captured_weekly["score"] == 18
     assert events == ["base", "bonus", "weekly", "badge", "finish"]
