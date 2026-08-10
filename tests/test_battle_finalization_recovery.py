@@ -52,7 +52,9 @@ class LeaseCollection:
 
 
 class Result:
-    modified_count = 0
+    def __init__(self, *, modified_count=0, deleted_count=0):
+        self.modified_count = modified_count
+        self.deleted_count = deleted_count
 
 
 class RewardCollection:
@@ -72,6 +74,44 @@ class RewardCollection:
         if "battle_reward_receipts" in predicate:
             return int(self.receipt_exists)
         return int(self.user_exists)
+
+
+class DeliveryCollection:
+    def __init__(self, doc):
+        self.doc = deepcopy(doc)
+
+    def update_one(self, predicate, update):
+        doc = self.doc
+        if doc is None or doc.get("_id") != predicate.get("_id"):
+            return Result()
+        role = "creator" if "creator_id" in predicate else "opponent"
+        if doc.get(f"{role}_id") != predicate.get(f"{role}_id"):
+            return Result()
+        key = f"{role}_result_delivered"
+        if doc.get(key) is True:
+            return Result()
+        doc.update(update["$set"])
+        return Result(modified_count=1)
+
+    def count_documents(self, predicate, limit=0):
+        doc = self.doc
+        if doc is None or doc.get("_id") != predicate.get("_id"):
+            return 0
+        for key, value in predicate.items():
+            if key == "_id":
+                continue
+            if doc.get(key) != value:
+                return 0
+        return 1
+
+    def delete_one(self, predicate):
+        doc = self.doc
+        if doc is None or doc.get("_id") != predicate.get("_id"):
+            return Result()
+        if not all(doc.get(key) is value for key, value in predicate.items() if key != "_id"):
+            return Result()
+        self.doc = None
+        return Result(deleted_count=1)
 
 
 def _finished(battle_id):
@@ -139,3 +179,38 @@ def test_reward_missing_user_is_terminally_classified(monkeypatch):
     result = battle_consistency.apply_battle_reward_once(99, "battle_a", "lose")
     assert result.missing_user is True
     assert result.retryable_error is False
+
+
+def test_result_delivery_receipts_are_idempotent_and_participant_bound(monkeypatch):
+    clock = datetime(2026, 8, 10, 2, 0, tzinfo=UTC)
+    collection = DeliveryCollection({
+        "_id": "battle_a",
+        "creator_id": 1,
+        "opponent_id": 2,
+    })
+    monkeypatch.setattr(database, "battles_collection", collection)
+    monkeypatch.setattr(database, "_now_utc", lambda: clock)
+
+    assert battle_consistency.mark_battle_result_delivered("battle_a", 99, "creator") is False
+    assert battle_consistency.mark_battle_result_delivered("battle_a", 1, "creator") is True
+    assert battle_consistency.mark_battle_result_delivered("battle_a", 1, "creator") is True
+    assert collection.doc["creator_result_delivered"] is True
+    assert collection.doc["creator_result_delivered_at"] == clock
+
+
+def test_battle_delete_requires_both_result_delivery_receipts(monkeypatch):
+    collection = DeliveryCollection({
+        "_id": "battle_a",
+        "creator_id": 1,
+        "opponent_id": 2,
+        "creator_result_delivered": True,
+        "opponent_result_delivered": False,
+    })
+    monkeypatch.setattr(database, "battles_collection", collection)
+
+    assert battle_consistency.delete_battle_if_fully_delivered("battle_a") is False
+    assert collection.doc is not None
+
+    collection.doc["opponent_result_delivered"] = True
+    assert battle_consistency.delete_battle_if_fully_delivered("battle_a") is True
+    assert collection.doc is None
