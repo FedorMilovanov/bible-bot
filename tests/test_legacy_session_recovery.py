@@ -15,13 +15,15 @@ from legacy_session_recovery import (
 def _session(**overrides):
     base = {
         "_id": "session-1",
+        "attempt_id": "attempt-1",
         "mode": "level",
+        "question_ids": ["q1", "q2", "q3"],
         "questions_data": [{"id": "q1"}, {"id": "q2"}, {"id": "q3"}],
         "current_index": 2,
         "correct_count": 1,
         "answered_questions": [
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
         ],
         "level_key": "easy",
         "level_name": "Easy",
@@ -31,6 +33,16 @@ def _session(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def test_recovery_preserves_explicit_attempt_identity():
+    assert recovery_fields(_session())["attempt_id"] == "attempt-1"
+
+
+def test_legacy_recovery_falls_back_to_session_container_id():
+    session = _session()
+    session.pop("attempt_id")
+    assert recovery_fields(session)["attempt_id"] == "session-1"
 
 
 def test_timed_session_restores_timer_mode_and_multiplier():
@@ -77,17 +89,24 @@ def test_malformed_challenge_timer_fails_closed():
             )
 
 
+def test_recovery_rejects_string_or_boolean_persisted_counters():
+    for field, value in (("current_index", "2"), ("correct_count", "1"), ("current_index", True)):
+        with pytest.raises(LegacyPersistedSessionModeInvalid, match=field):
+            recovery_fields(_session(**{field: value}))
+
+
 def test_recovery_reconstructs_streaks_from_persisted_answers():
     fields = recovery_fields(
         _session(
             current_index=5,
+            question_ids=[str(i) for i in range(6)],
             questions_data=[{"id": str(i)} for i in range(6)],
             answered_questions=[
-                {"is_correct": True, "ts": "2026-08-10T12:00:05"},
-                {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-                {"is_correct": False, "ts": "2026-08-10T12:00:15"},
-                {"is_correct": True, "ts": "2026-08-10T12:00:20"},
-                {"is_correct": True, "ts": "2026-08-10T12:00:25"},
+                {"index": 0, "qid": "0", "is_correct": True, "ts": "2026-08-10T12:00:05"},
+                {"index": 1, "qid": "1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+                {"index": 2, "qid": "2", "is_correct": False, "ts": "2026-08-10T12:00:15"},
+                {"index": 3, "qid": "3", "is_correct": True, "ts": "2026-08-10T12:00:20"},
+                {"index": 4, "qid": "4", "is_correct": True, "ts": "2026-08-10T12:00:25"},
             ],
         )
     )
@@ -112,9 +131,9 @@ def test_overrun_session_is_contradictory_not_completed():
         current_index=4,
         correct_count=2,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
 
@@ -127,9 +146,9 @@ def test_persisted_result_time_stops_at_last_answer_not_recovery_time():
     session = _session(
         current_index=3,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": True, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
 
@@ -142,8 +161,8 @@ def test_offset_aware_answer_timestamp_is_converted_to_utc():
     session = _session(
         start_time=started,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:05+03:00"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20+03:00"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:05+03:00"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20+03:00"},
         ],
     )
 
@@ -153,7 +172,7 @@ def test_offset_aware_answer_timestamp_is_converted_to_utc():
 def test_answer_timestamp_before_start_is_rejected():
     session = _session(
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T11:59:59"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T11:59:59"},
         ]
     )
 
@@ -163,8 +182,8 @@ def test_answer_timestamp_before_start_is_rejected():
 def test_non_monotonic_answer_timeline_is_rejected():
     session = _session(
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:10"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:20"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:10"},
         ]
     )
 
@@ -177,14 +196,14 @@ def test_fastest_answer_is_unknown_after_restart_without_latency_evidence():
     assert fields["fastest_answer"] is None
 
 
-def test_completed_result_inputs_use_only_persisted_score_total_and_duration():
+def test_completed_result_inputs_use_only_persisted_score_total_duration_and_attempt():
     session = _session(
         current_index=3,
         correct_count=2,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
 
@@ -194,7 +213,32 @@ def test_completed_result_inputs_use_only_persisted_score_total_and_duration():
     assert result["score"] == 2
     assert result["total"] == 3
     assert result["time_seconds"] == 45.0
+    assert result["data"]["attempt_id"] == "attempt-1"
     assert result["data"]["result_pending"] is True
+
+
+def test_completed_result_inputs_refuse_qid_or_index_mismatch():
+    bad_qid = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"index": 0, "qid": "q2", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q1", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+    bad_index = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"index": 1, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 0, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    assert completed_result_inputs(bad_qid) is None
+    assert completed_result_inputs(bad_index) is None
 
 
 def test_completed_result_inputs_refuse_missing_last_answer_timestamp():
@@ -202,9 +246,9 @@ def test_completed_result_inputs_refuse_missing_last_answer_timestamp():
         current_index=3,
         correct_count=2,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True},
         ],
     )
 
@@ -220,8 +264,8 @@ def test_completed_result_inputs_refuse_missing_answer_record():
         current_index=3,
         correct_count=1,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
         ],
     )
 
@@ -233,9 +277,9 @@ def test_completed_result_inputs_refuse_correct_counter_mismatch():
         current_index=3,
         correct_count=3,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
 
@@ -247,9 +291,9 @@ def test_completed_result_inputs_refuse_non_boolean_correctness():
         current_index=3,
         correct_count=2,
         answered_questions=[
-            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
-            {"is_correct": "false", "ts": "2026-08-10T12:00:20"},
-            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": "false", "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
         ],
     )
 
