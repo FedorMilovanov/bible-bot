@@ -234,6 +234,15 @@ def _validate_result_semantics(
         raise ValueError("Challenge result multiplier must be 1.0")
 
 
+def _persisted_nonnegative_int(entry: dict, field: str) -> int:
+    if field not in entry:
+        return 0
+    value = entry[field]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise LegacyResultStoreUnavailable(f"{field} has invalid persisted counter")
+    return value
+
+
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
     collection = _users()
     uid = database._uid(user_id)
@@ -290,18 +299,15 @@ def _daily_activity_fields(entry: dict, today: str) -> dict:
     last_activity = entry.get("daily_activity_last", "")
     if last_activity == today:
         return {}
-    previous = int(entry.get("daily_activity_streak", 0) or 0)
+    previous = _persisted_nonnegative_int(entry, "daily_activity_streak")
     if not last_activity:
         streak = 1
     else:
-        try:
-            delta = (
-                datetime.strptime(today, "%Y-%m-%d")
-                - datetime.strptime(last_activity, "%Y-%m-%d")
-            ).days
-            streak = previous + 1 if delta == 1 else 1
-        except (TypeError, ValueError):
-            streak = 1
+        delta = (
+            datetime.strptime(today, "%Y-%m-%d")
+            - datetime.strptime(last_activity, "%Y-%m-%d")
+        ).days
+        streak = previous + 1 if delta == 1 else 1
     return {"daily_activity_streak": streak, "daily_activity_last": today}
 
 
@@ -309,23 +315,20 @@ def _challenge_streak_fields(entry: dict, today: str, mode: str | None, score: i
     if mode not in _CHALLENGE_MODES:
         return {}
     last = entry.get("challenge_streak_last_date", "")
-    current = int(entry.get("challenge_streak_count", 0) or 0)
+    current = _persisted_nonnegative_int(entry, "challenge_streak_count")
     if score >= 18:
         if not last:
             streak = 1
         else:
-            try:
-                delta = (
-                    datetime.strptime(today, "%Y-%m-%d")
-                    - datetime.strptime(last, "%Y-%m-%d")
-                ).days
-                if delta == 1:
-                    streak = current + 1
-                elif delta == 0:
-                    streak = current
-                else:
-                    streak = 1
-            except (TypeError, ValueError):
+            delta = (
+                datetime.strptime(today, "%Y-%m-%d")
+                - datetime.strptime(last, "%Y-%m-%d")
+            ).days
+            if delta == 1:
+                streak = current + 1
+            elif delta == 0:
+                streak = current
+            else:
                 streak = 1
         return {"challenge_streak_count": streak, "challenge_streak_last_date": today}
     if last != today:
@@ -348,33 +351,22 @@ def _post_result_achievement_state(
     is_perfect: bool,
     max_streak: int,
 ) -> dict:
+    total_tests = _persisted_nonnegative_int(entry, "total_tests")
+    perfect_count = _persisted_nonnegative_int(entry, "perfect_count")
+    max_streak_ever = _persisted_nonnegative_int(entry, "max_streak_ever")
+    daily_streak = _persisted_nonnegative_int(entry, "daily_activity_streak")
+    challenge_streak = _persisted_nonnegative_int(entry, "challenge_streak_count")
     return {
-        "total_tests": max(0, int(entry.get("total_tests", 0) or 0)) + 1,
-        "perfect_count": max(0, int(entry.get("perfect_count", 0) or 0))
-        + (1 if is_perfect else 0),
-        "max_streak_ever": max(
-            max(0, int(entry.get("max_streak_ever", 0) or 0)),
-            max_streak,
-        ),
+        "total_tests": total_tests + 1,
+        "perfect_count": perfect_count + (1 if is_perfect else 0),
+        "max_streak_ever": max(max_streak_ever, max_streak),
         "daily_activity_streak": max(
             0,
-            int(
-                daily_fields.get(
-                    "daily_activity_streak",
-                    entry.get("daily_activity_streak", 0),
-                )
-                or 0
-            ),
+            int(daily_fields.get("daily_activity_streak", daily_streak) or 0),
         ),
         "challenge_streak_count": max(
             0,
-            int(
-                challenge_fields.get(
-                    "challenge_streak_count",
-                    entry.get("challenge_streak_count", 0),
-                )
-                or 0
-            ),
+            int(challenge_fields.get("challenge_streak_count", challenge_streak) or 0),
         ),
     }
 
