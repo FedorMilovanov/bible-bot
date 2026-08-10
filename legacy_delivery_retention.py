@@ -51,6 +51,7 @@ def _ensure_partial_ttl(
 
     target_matches = (
         target is not None
+        and target.get("key") == [("created_at_dt", ASCENDING)]
         and target.get("expireAfterSeconds") == expire_after
         and target.get("partialFilterExpression") == partial_filter
     )
