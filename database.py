@@ -231,7 +231,7 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
                         time_limit: int = None,
                         chat_id: int = None) -> str | None:
     if quiz_sessions_collection is None:
-        return ""
+        return None
     session_id = str(uuid.uuid4())
     now = _now_utc()
     doc = {
