@@ -94,6 +94,22 @@ def test_completed_session_is_result_pending_not_cancel_candidate():
     assert recovery_fields(session)["result_pending"] is True
 
 
+def test_overrun_session_is_contradictory_not_completed():
+    session = _session(
+        current_index=4,
+        correct_count=2,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    assert session_is_complete(session) is False
+    assert recovery_fields(session)["result_pending"] is False
+    assert completed_result_inputs(session) is None
+
+
 def test_persisted_result_time_stops_at_last_answer_not_recovery_time():
     session = _session(
         current_index=3,
