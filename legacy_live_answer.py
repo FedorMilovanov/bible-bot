@@ -236,6 +236,7 @@ def _apply_memory_only(
     answered = data.get("answered_questions")
     if not isinstance(answered, list):
         raise LegacyLiveStateInvalid("answered_questions is invalid")
+    current = _current_index(data)
     correct = data.get("correct_answers", 0)
     current_streak = data.get("current_streak", 0)
     max_streak = data.get("max_streak", 0)
@@ -248,7 +249,7 @@ def _apply_memory_only(
             raise LegacyLiveStateInvalid(f"{name} is invalid")
 
     answered.append({"question_obj": question, "user_answer": user_answer})
-    data["current_question"] = _current_index(data) + 1
+    data["current_question"] = current + 1
     if is_correct:
         correct += 1
         current_streak += 1
