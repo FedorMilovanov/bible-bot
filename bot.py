@@ -882,29 +882,16 @@ async def relaxed_mode_handler(update: Update, context):
 
 
 async def random_all_start_handler(update: Update, context):
-    """Случайный режим: 10 вопросов из всех доступных пулов, без таймера."""
+    """Случайный режим: 10 вопросов из канонического random_all пула."""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     _touch(user_id)
 
-    # Собираем все доступные вопросы из всех пулов
-    all_pool_keys = [
-        "easy", "easy_p1", "easy_p2",
-        "medium", "medium_p1", "medium_p2",
-        "hard", "hard_p1", "hard_p2",
-        "practical_ch1", "practical_p1", "practical_p2",
-        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
-        "intro1", "intro2", "intro3",
-    ]
-    all_questions = []
-    seen = set()
-    for key in all_pool_keys:
-        for q in get_pool_by_key(key):
-            qid = get_qid(q)
-            if qid not in seen:
-                seen.add(qid)
-                all_questions.append(q)
+    all_questions = get_pool_by_key("random_all")
+    if not all_questions:
+        await query.edit_message_text("⚠️ Вопросы не найдены.")
+        return
 
     questions = random.sample(all_questions, min(10, len(all_questions)))
     level_name = "🎲 Случайный режим (все темы)"
@@ -912,9 +899,13 @@ async def random_all_start_handler(update: Update, context):
     cancel_active_quiz_session(user_id)
     question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
-        user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key="random_all",
-        level_name=level_name, time_limit=None,
+        user_id=user_id,
+        mode="level",
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key="random_all",
+        level_name=level_name,
+        time_limit=None,
         chat_id=query.message.chat_id,
     )
 
@@ -941,8 +932,7 @@ async def random_all_start_handler(update: Update, context):
         f"*{level_name}*\n\n📝 Вопросов: {len(questions)} · 🧘 Без таймера\nНачинаем!",
         parse_mode="Markdown",
     )
-    await send_question(query.message.get_bot(), user_id, time_limit=None)
-
+    await send_question(context.bot, user_id, time_limit=None)
 
 async def timed_mode_handler(update: Update, context):
     """Режим с таймером TIMED_MODE_TIMEOUT сек, баллы ×1.5."""
@@ -2979,46 +2969,55 @@ async def stats_command(update: Update, context):
 
 
 async def random_command(update: Update, context):
-    """Команда /random — сразу запускает случайный тест из всех тем."""
+    """Команда /random — запускает тот же канонический random_all режим."""
     user_id = update.effective_user.id
     _touch(user_id)
-    all_pool_keys = [
-        "easy", "easy_p1", "easy_p2",
-        "medium", "medium_p1", "medium_p2",
-        "hard", "hard_p1", "hard_p2",
-        "practical_ch1", "practical_p1", "practical_p2",
-        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
-        "nero", "geography",
-        "intro1", "intro2", "intro3",
-    ]
-    all_questions = []
-    seen = set()
-    for key in all_pool_keys:
-        for q in get_pool_by_key(key):
-            qid = get_qid(q)
-            if qid not in seen:
-                seen.add(qid)
-                all_questions.append(q)
+
+    all_questions = get_pool_by_key("random_all")
     if not all_questions:
         await update.message.reply_text("⚠️ Вопросы не найдены.", reply_markup=_main_keyboard())
         return
+
     questions = random.sample(all_questions, min(10, len(all_questions)))
     level_name = "🎲 Случайный режим (все темы)"
     cancel_active_quiz_session(user_id)
+
     question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
-        user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key="random_all",
-        level_name=level_name, time_limit=None,
+        user_id=user_id,
+        mode="level",
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key="random_all",
+        level_name=level_name,
+        time_limit=None,
         chat_id=update.effective_chat.id,
     )
-    context.user_data["session_id"] = str(session_id)
+
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=level_name,
+        chat_id=update.effective_chat.id,
+        level_key="random_all",
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+        quiz_mode="relaxed",
+        score_multiplier=1.0,
+        quiz_time_limit=None,
+    )
+
     await update.message.reply_text(
-        f"🎲 *Случайный тест*\n10 вопросов из всех тем\n\nНачинаем!",
+        f"🎲 *Случайный тест*\n{len(questions)} вопросов из всех тем\n\nНачинаем!",
         parse_mode="Markdown",
     )
-    await send_question(update, context, questions, 0, user_id, update.effective_chat.id, time_limit=None)
-
+    await send_question(context.bot, user_id, time_limit=None)
 
 async def admin_command(update: Update, context):
     """Команда /admin — только для администратора."""
