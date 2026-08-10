@@ -21,13 +21,13 @@ class LiveQuestionTarget:
 def capture_live_question_target(data: dict) -> LiveQuestionTarget:
     if not isinstance(data, dict):
         raise ValueError("data must be a dict")
-    attempt_id = ensure_callback_scope(data)
     index = data.get("current_question")
     if isinstance(index, bool) or not isinstance(index, int) or index < 0:
         raise LegacyLiveQuestionStateInvalid("current_question is invalid")
     questions = data.get("questions")
     if not isinstance(questions, list) or index >= len(questions):
         raise LegacyLiveQuestionStateInvalid("current question is not renderable")
+    attempt_id = ensure_callback_scope(data)
     return LiveQuestionTarget(attempt_id=attempt_id, question_index=index)
 
 
