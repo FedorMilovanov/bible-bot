@@ -28,14 +28,46 @@ class RestartTimeoutRoute:
     time_limit: int | None
 
 
-def classify_restart_session(session: dict) -> RestartDecision:
-    """Classify one owned active session as resume/finalize/conflict.
+def _validate_partial_ledger(session: dict, current: int, total: int) -> None:
+    question_ids = session.get("question_ids")
+    answered = session.get("answered_questions")
+    correct_count = session.get("correct_count")
+    if (
+        not isinstance(question_ids, list)
+        or len(question_ids) != total
+        or any(not isinstance(qid, str) or not qid for qid in question_ids)
+        or not isinstance(answered, list)
+        or len(answered) != current
+        or isinstance(correct_count, bool)
+        or not isinstance(correct_count, int)
+        or correct_count < 0
+        or correct_count > current
+    ):
+        raise LegacyRestartStateInvalid("partial restart answer ledger is inconsistent")
 
-    Exact completion is never treated as a stale session to cancel. It may be
-    finalized only when the strict persisted-result validator accepts the full
-    question/answer/timestamp/score evidence. Index overrun and malformed state
-    are explicit conflicts rather than guessed completion.
-    """
+    durable_correct = 0
+    for index, item in enumerate(answered):
+        if not isinstance(item, dict) or not isinstance(item.get("is_correct"), bool):
+            raise LegacyRestartStateInvalid("partial restart answer entry is invalid")
+        stored_index = item.get("index", index)
+        if (
+            isinstance(stored_index, bool)
+            or not isinstance(stored_index, int)
+            or stored_index != index
+            or item.get("qid") != question_ids[index]
+            or not isinstance(item.get("user_answer"), str)
+            or not isinstance(item.get("question_obj"), dict)
+        ):
+            raise LegacyRestartStateInvalid("partial restart answer entry is invalid")
+        durable_correct += int(item["is_correct"])
+    if durable_correct != correct_count:
+        raise LegacyRestartStateInvalid(
+            "partial restart correct_count contradicts answer ledger"
+        )
+
+
+def classify_restart_session(session: dict) -> RestartDecision:
+    """Classify one owned active session as resume/finalize/conflict."""
     if not isinstance(session, dict) or session.get("status") != "in_progress":
         raise LegacyRestartStateInvalid("restart session is not in progress")
 
@@ -48,6 +80,7 @@ def classify_restart_session(session: dict) -> RestartDecision:
         raise LegacyRestartStateInvalid("restart current_index is invalid")
 
     if current < total:
+        _validate_partial_ledger(session, current, total)
         try:
             recovery_fields(session)
         except LegacyPersistedSessionModeInvalid as exc:
@@ -70,6 +103,14 @@ def classify_restart_session(session: dict) -> RestartDecision:
 
 def restart_timeout_route(session: dict) -> RestartTimeoutRoute:
     """Route recovered timers through normal vs Challenge semantics correctly."""
+    raw_limit = session.get("time_limit") if isinstance(session, dict) else None
+    if raw_limit is not None and (
+        isinstance(raw_limit, bool)
+        or not isinstance(raw_limit, int)
+        or raw_limit <= 0
+    ):
+        raise LegacyRestartStateInvalid("restart time_limit is invalid")
+
     try:
         fields = recovery_fields(session)
     except LegacyPersistedSessionModeInvalid as exc:
