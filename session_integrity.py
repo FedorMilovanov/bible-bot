@@ -80,10 +80,10 @@ def record_owned_quiz_answer(
 
     The live handler must supply the question index it believes it is answering.
     First application is a single owner/status/index/question compare-and-set.
-    If that write committed but its response was lost, retrying the same
-    transition reloads the ledger entry at ``expected_index`` and returns it
-    without another increment. A different answer for an already-consumed index
-    is a conflict, never a second write.
+    If that write committed but its response was lost, retrying exactly the same
+    immediately preceding transition reloads the ledger entry and returns it
+    without another increment. A different answer, an older stale callback, a
+    terminal session, or a contradictory ledger is a conflict, never a replay.
 
     The handler must mutate RAM counters/index only after this function returns
     either ``applied=True`` or an exact ``applied=False`` replay.
@@ -147,12 +147,22 @@ def record_owned_quiz_answer(
         existing = collection.find_one(owner_filter)
         if existing is None:
             raise QuizSessionAnswerConflict("quiz answer session is missing or not owned")
+        if existing.get("status") != "in_progress":
+            raise QuizSessionAnswerConflict("quiz answer session is not in progress")
+
+        durable_index = existing.get("current_index")
+        if (
+            isinstance(durable_index, bool)
+            or not isinstance(durable_index, int)
+            or durable_index != expected_index + 1
+        ):
+            raise QuizSessionAnswerConflict(
+                "quiz answer is not the immediately preceding durable transition"
+            )
 
         ledger = existing.get("answered_questions", [])
-        if not isinstance(ledger, list) or expected_index >= len(ledger):
-            raise QuizSessionAnswerConflict(
-                "quiz answer index does not match durable session state"
-            )
+        if not isinstance(ledger, list) or len(ledger) != durable_index:
+            raise QuizSessionAnswerConflict("durable quiz answer ledger is inconsistent")
         stored = ledger[expected_index]
         if not isinstance(stored, dict):
             raise QuizSessionAnswerConflict("durable quiz answer ledger is invalid")
