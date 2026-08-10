@@ -212,6 +212,45 @@ def claim_report_delivery_stage(
         raise ReportStoreUnavailable("report delivery claim failed") from exc
 
 
+def get_report_delivery_stage_state(report_id: str, stage: str) -> dict | None:
+    """Read one durable delivery stage without taking or changing its lease."""
+    report_id = _required_string(report_id, "report_id", max_length=128)
+    if stage not in _DELIVERY_STAGES:
+        raise ValueError("unsupported report delivery stage")
+    _database_obj, reports, _users = _collections()
+    try:
+        report = reports.find_one(
+            {"_id": report_id},
+            {f"delivery.{stage}": 1, "photo_file_id": 1, "report_id": 1},
+        )
+        if report is None:
+            return None
+        delivery = report.get("delivery")
+        state = delivery.get(stage) if isinstance(delivery, dict) else None
+        if not isinstance(state, dict):
+            raise ReportStoreUnavailable("report delivery stage state is missing")
+        delivered = state.get("delivered")
+        attempts = state.get("attempts", 0)
+        if not isinstance(delivered, bool):
+            raise ReportStoreUnavailable("report delivery stage delivered flag is invalid")
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 0:
+            raise ReportStoreUnavailable("report delivery stage attempts value is invalid")
+        return {
+            "report_id": report.get("report_id") or report.get("_id"),
+            "stage": stage,
+            "delivered": delivered,
+            "claim_token": state.get("claim_token"),
+            "lease_until": state.get("lease_until"),
+            "attempts": attempts,
+            "photo_file_id": report.get("photo_file_id"),
+        }
+    except ReportStoreUnavailable:
+        raise
+    except PyMongoError as exc:
+        logger.exception("failed to read report %s stage %s", report_id, stage)
+        raise ReportStoreUnavailable("report delivery state lookup failed") from exc
+
+
 def _sync_admin_delivered(reports, report_id: str, now: datetime) -> None:
     """Promote the legacy aggregate flag only after both durable stages are done."""
     current = reports.find_one(
