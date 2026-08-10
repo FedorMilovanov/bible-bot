@@ -114,7 +114,6 @@ def test_store_outage_does_not_advance_any_ram_counter(monkeypatch):
 
 
 def test_wrong_attempt_token_is_rejected_before_store(monkeypatch):
-    # Same durable container after an atomic restart, but a different attempt.
     current = _data(session_id="container", attempt_id="attempt-new")
     old = _data(session_id="container", attempt_id="attempt-old")
     payload = live.build_live_answer_callback("qa", old, 0, 1)
@@ -283,7 +282,13 @@ def test_timeout_uses_same_attempt_and_index_cas(monkeypatch):
 
     monkeypatch.setattr(live, "record_owned_quiz_answer", record)
 
-    outcome = live.apply_live_timeout_once(42, data, 0, now=130.0)
+    outcome = live.apply_live_timeout_once(
+        42,
+        data,
+        0,
+        expected_attempt_id="attempt-1",
+        now=130.0,
+    )
 
     assert captured["expected_attempt_id"] == "attempt-1"
     assert captured["expected_index"] == 0
@@ -293,6 +298,31 @@ def test_timeout_uses_same_attempt_and_index_cas(monkeypatch):
     assert outcome.current_index == 1
     assert outcome.correct_count == 0
     assert outcome.current_streak == 0
+
+
+def test_timeout_from_old_attempt_after_restart_is_rejected_before_store(monkeypatch):
+    data = _data(session_id="container", attempt_id="attempt-new", current=0)
+    called = False
+
+    def record(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("store must not be called")
+
+    monkeypatch.setattr(live, "record_owned_quiz_answer", record)
+
+    with pytest.raises(live.LegacyLiveAnswerStale, match="another attempt"):
+        live.apply_live_timeout_once(
+            42,
+            data,
+            0,
+            expected_attempt_id="attempt-old",
+            now=130.0,
+        )
+
+    assert called is False
+    assert data["current_question"] == 0
+    assert data["answered_questions"] == []
 
 
 def test_timeout_store_outage_leaves_ram_unchanged(monkeypatch):
@@ -308,7 +338,13 @@ def test_timeout_store_outage_leaves_ram_unchanged(monkeypatch):
     )
 
     with pytest.raises(QuizSessionStoreUnavailable):
-        live.apply_live_timeout_once(42, data, 0, now=130.0)
+        live.apply_live_timeout_once(
+            42,
+            data,
+            0,
+            expected_attempt_id="attempt-1",
+            now=130.0,
+        )
 
     assert data == before
 
