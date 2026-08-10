@@ -69,6 +69,10 @@ from database import (
     # History
     get_user_history,
 )
+from session_boundaries import (
+    cancel_owned_quiz_session, claim_owned_quiz_session_restart,
+    get_owned_quiz_session,
+)
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
 
@@ -2197,18 +2201,27 @@ async def review_errors_handler(update: Update, context):
     user_id = query.from_user.id
     data_cb = query.data
 
-    if data_cb.startswith("review_errors_"):
-        # Первый вход: review_errors_{uid}_{idx}
-        parts     = data_cb.split("_")
-        target_id = int(parts[2])
-        index     = int(parts[3])
-    elif data_cb.startswith("review_nav_"):
-        suffix = data_cb.replace("review_nav_", "")
-        if suffix == "noop":
+    try:
+        if data_cb.startswith("review_errors_"):
+            # Первый вход: review_errors_{uid}_{idx}
+            parts = data_cb.split("_")
+            if len(parts) != 4:
+                raise ValueError("invalid review callback")
+            target_id = int(parts[2])
+            index = int(parts[3])
+            if target_id != user_id:
+                await query.edit_message_text("❌ Нет доступа к данным другого пользователя.")
+                return
+        elif data_cb.startswith("review_nav_"):
+            suffix = data_cb.replace("review_nav_", "")
+            if suffix == "noop":
+                return
+            index = int(suffix)
+            target_id = user_id
+        else:
             return
-        index     = int(suffix)
-        target_id = user_id
-    else:
+    except (TypeError, ValueError):
+        await query.edit_message_text("⚠️ Некорректная кнопка просмотра ошибок.")
         return
 
     if target_id not in user_data:
@@ -2301,9 +2314,9 @@ async def resume_session_handler(update: Update, context):
     user_id = query.from_user.id
     _touch(user_id)
 
-    db_session = get_quiz_session(session_id)
-    if not db_session or db_session.get("status") != "in_progress":
-        await query.edit_message_text("⚠️ Сессия не найдена или уже завершена.")
+    db_session = get_owned_quiz_session(session_id, user_id)
+    if not db_session:
+        await query.edit_message_text("⚠️ Сессия не найдена, завершена или принадлежит другому пользователю.")
         return
 
     await _restore_session_to_memory(user_id, db_session)
@@ -2340,11 +2353,11 @@ async def restart_session_handler(update: Update, context):
     user_id = query.from_user.id
     _touch(user_id)
 
-    db_session = get_quiz_session(session_id)
-    cancel_quiz_session(session_id)
-
+    db_session = claim_owned_quiz_session_restart(session_id, user_id)
     if not db_session:
-        await query.edit_message_text("⚠️ Сессия не найдена.")
+        await query.edit_message_text(
+            "⚠️ Сессия не найдена, уже обработана или принадлежит другому пользователю."
+        )
         return
 
     mode = db_session.get("mode", "level")
@@ -2422,7 +2435,15 @@ async def cancel_session_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
     session_id = query.data.replace("cancel_session_", "")
-    cancel_quiz_session(session_id)
+    user_id = query.from_user.id
+    if not cancel_owned_quiz_session(session_id, user_id):
+        await query.edit_message_text(
+            "⚠️ Сессия не найдена, уже завершена или принадлежит другому пользователю."
+        )
+        return
+    active = user_data.get(user_id)
+    if active and active.get("session_id") == session_id:
+        user_data.pop(user_id, None)
     await query.edit_message_text("❌ Тест отменён.", reply_markup=_main_keyboard())
 
 
