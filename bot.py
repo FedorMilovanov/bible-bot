@@ -1298,23 +1298,13 @@ async def report_inaccuracy_handler(update: Update, context):
     options = q.get("options", [])
     correct_idx = q.get("correct", 0)
     correct_ans = options[correct_idx] if isinstance(correct_idx, int) and 0 <= correct_idx < len(options) else "—"
-    options_str = "
-".join(f"  {i + 1}. {opt}" for i, opt in enumerate(options))
+    options_str = "\n".join(f"  {i + 1}. {opt}" for i, opt in enumerate(options))
     msg = (
-        "⚠️ СООБЩЕНИЕ О НЕТОЧНОСТИ
-
-"
-        f"👤 От: {username}
-"
-        f"📚 Тест: {level_name}
-"
-        f"❓ Вопрос {q_num + 1}: {q_text}
-
-"
-        f"📋 Варианты:
-{options_str}
-
-"
+        "⚠️ СООБЩЕНИЕ О НЕТОЧНОСТИ\n\n"
+        f"👤 От: {username}\n"
+        f"📚 Тест: {level_name}\n"
+        f"❓ Вопрос {q_num + 1}: {q_text}\n\n"
+        f"📋 Варианты:\n{options_str}\n\n"
         f"✅ Правильный ответ в базе: {correct_ans}"
     )
 
@@ -2098,10 +2088,7 @@ async def retry_errors(update: Update, context):
     )
 
     await query.edit_message_text(
-        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*
-
-Вопросов: {len(wrong_questions)}
-Поехали! 💪",
+        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong_questions)}\nПоехали! 💪",
         parse_mode="Markdown",
     )
     await send_question(context.bot, user_id)
@@ -2184,15 +2171,9 @@ async def review_test_handler(update: Update, context):
     status = "✅" if is_correct else "❌"
 
     text = (
-        f"📖 *Просмотр теста* ({q_index + 1}/{total})
-
-"
-        f"*Вопрос:*
-{q.get('question', '—')}
-
-"
-        "*Варианты:*
-"
+        f"📖 *Просмотр теста* ({q_index + 1}/{total})\n\n"
+        f"*Вопрос:*\n{q.get('question', '—')}\n\n"
+        "*Варианты:*\n"
     )
     for i, opt in enumerate(q.get("options", [])):
         if i == q.get("correct"):
@@ -2202,17 +2183,12 @@ async def review_test_handler(update: Update, context):
         else:
             marker = "⬜"
         arrow = " ← твой ответ" if opt == user_answer and not is_correct else ""
-        text += f"{marker} {i + 1}. {opt}{arrow}
-"
+        text += f"{marker} {i + 1}. {opt}{arrow}\n"
 
-    text += f"
-*Твой ответ:* {user_answer} {status}"
+    text += f"\n*Твой ответ:* {user_answer} {status}"
     explanation = q.get("explanation") or q.get("fun_fact")
     if explanation:
-        text += f"
-
-💡 *Пояснение:*
-_{explanation}_"
+        text += f"\n\n💡 *Пояснение:*\n_{explanation}_"
 
     nav_row = []
     if q_index > 0:
@@ -4233,11 +4209,7 @@ async def report_start(update: Update, context):
     await query.answer()
     report_drafts[user_id] = {"type": report_type, "text": None, "photo_file_id": None}
     label = REPORT_TYPE_LABELS[report_type]
-    await safe_edit(query, f"{label}
-
-✏️ Напиши своё сообщение.
-
-Для отмены: /cancelreport")
+    await safe_edit(query, f"{label}\n\n✏️ Напиши своё сообщение.\n\nДля отмены: /cancelreport")
     return REPORT_TEXT
 
 async def report_receive_text(update: Update, context):
