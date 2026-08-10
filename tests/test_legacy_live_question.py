@@ -26,7 +26,15 @@ def test_persisted_send_uses_timer_store_and_syncs_canonical_timestamp(monkeypat
 
     def mark(session_id, user_id, **kwargs):
         captured.update(session_id=session_id, user_id=user_id, **kwargs)
-        return {"applied": False, "sent_at": 99.5, "session": {}}
+        return {
+            "applied": False,
+            "sent_at": 99.5,
+            "session": {
+                "_id": "container-1",
+                "attempt_id": "attempt-1",
+                "current_index": 0,
+            },
+        }
 
     monkeypatch.setattr(question, "mark_question_sent_once", mark)
     result = question.mark_live_question_sent(42, data, target, sent_at=100.0)
