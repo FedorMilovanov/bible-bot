@@ -7,6 +7,7 @@ import math
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from legacy_attempt_identity import persisted_attempt_id
 from legacy_delivery_retention import ensure_state_aware_delivery_ttl
 from legacy_session_retention import ensure_state_aware_session_ttl
 
@@ -52,6 +53,12 @@ def _expected_index(value) -> int:
     return value
 
 
+def _required_attempt_id(value) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("expected_attempt_id is required")
+    return value.strip()
+
+
 def _latency_seconds(value) -> float | None:
     if value is None:
         return None
@@ -79,6 +86,7 @@ def record_owned_quiz_answer(
     session_id: str,
     user_id: int,
     *,
+    expected_attempt_id: str,
     expected_index: int,
     question_id: str,
     user_answer: str,
@@ -86,18 +94,19 @@ def record_owned_quiz_answer(
     question_obj: dict,
     latency_seconds: float | None = None,
 ) -> dict:
-    """Atomically persist one answer and make lost-response retry deterministic.
+    """Atomically persist one answer for one exact logical quiz attempt.
 
-    The live handler must supply the question index it believes it is answering.
-    First application is a single owner/status/index/question compare-and-set.
-    If that write committed but its response was lost, retrying exactly the same
-    immediately preceding transition reloads the ledger entry and returns it
-    without another increment. A different answer, an older stale callback, a
-    terminal session, or a contradictory ledger is a conflict, never a replay.
+    ``session_id`` identifies the durable container; ``expected_attempt_id``
+    identifies the logical attempt currently rendered to the user. Restart can
+    therefore reset the same container atomically without allowing an old
+    callback to mutate the new attempt. Legacy documents with no ``attempt_id``
+    match only when the expected attempt equals the container id; the successful
+    answer write backfills the field.
 
     The handler must mutate RAM counters/index only after this function returns
     either ``applied=True`` or an exact ``applied=False`` replay.
     """
+    expected_attempt_id = _required_attempt_id(expected_attempt_id)
     expected_index = _expected_index(expected_index)
     if not isinstance(question_id, str) or not question_id:
         raise ValueError("question_id is required")
@@ -123,11 +132,21 @@ def record_owned_quiz_answer(
         "ts": now.isoformat(),
     }
     owner_filter = {"_id": session_id, "user_id": owner}
+    attempt_filter = {
+        "$or": [
+            {"attempt_id": expected_attempt_id},
+            {
+                "attempt_id": {"$exists": False},
+                "_id": expected_attempt_id,
+            },
+        ]
+    }
     transition_filter = {
         **owner_filter,
         "status": "in_progress",
         "current_index": expected_index,
         f"question_ids.{expected_index}": question_id,
+        **attempt_filter,
     }
 
     try:
@@ -140,6 +159,7 @@ def record_owned_quiz_answer(
                 },
                 "$push": {"answered_questions": answer_record},
                 "$set": {
+                    "attempt_id": expected_attempt_id,
                     "updated_at": now.isoformat(),
                     "updated_at_dt": now,
                     "question_sent_at": None,
@@ -159,6 +179,12 @@ def record_owned_quiz_answer(
             raise QuizSessionAnswerConflict("quiz answer session is missing or not owned")
         if existing.get("status") != "in_progress":
             raise QuizSessionAnswerConflict("quiz answer session is not in progress")
+        try:
+            durable_attempt_id = persisted_attempt_id(existing)
+        except ValueError as exc:
+            raise QuizSessionAnswerConflict("durable quiz attempt identity is invalid") from exc
+        if durable_attempt_id != expected_attempt_id:
+            raise QuizSessionAnswerConflict("quiz answer belongs to another attempt")
 
         durable_index = existing.get("current_index")
         if (
