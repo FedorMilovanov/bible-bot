@@ -1,8 +1,14 @@
 from pathlib import Path
 import subprocess
 
+GOOD_CHECKPOINT = "6e8a7fb6b7933654f00fb7e53b653a320cd132fa"
 path = Path("database.py")
-original = subprocess.check_output(["git", "show", "HEAD^:database.py"])
+
+subprocess.run(
+    ["git", "merge-base", "--is-ancestor", GOOD_CHECKPOINT, "HEAD"],
+    check=True,
+)
+original = subprocess.check_output(["git", "show", f"{GOOD_CHECKPOINT}:database.py"])
 eol = b"\r\n" if b"\r\n" in original else b"\n"
 
 old = eol.join([
@@ -42,11 +48,9 @@ if patched.count(old_tail) != 1:
     raise SystemExit(f"expected one create_quiz_session insert tail, got {patched.count(old_tail)}")
 patched = patched.replace(old_tail, new_tail, 1)
 
-# Strong invariant: reverse only the intended two edits and require the exact
-# parent bytes. This prevents accidental truncation/normalization/churn.
 reversed_bytes = patched.replace(new_tail, old_tail, 1).replace(new, old, 1)
 if reversed_bytes != original:
-    raise SystemExit("reverse replacement did not recover parent database.py byte-for-byte")
+    raise SystemExit("reverse replacement did not recover checkpoint database.py byte-for-byte")
 if b"# (rest of file unchanged below this section)" in patched:
     raise SystemExit("truncated placeholder remains in database.py")
 
