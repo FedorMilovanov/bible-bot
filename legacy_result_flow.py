@@ -25,23 +25,29 @@ def stable_result_id(user_id: int, data: dict) -> str:
     """Return and memoize an idempotency key for one logical quiz attempt.
 
     Persisted quizzes use ``attempt_id``. Legacy sessions that predate the field
-    fall back to their Mongo session id, preserving existing receipts. Atomic
-    in-place restart assigns a fresh attempt id, so the new pass cannot collide
-    with a result receipt from the previous pass in the same session container.
+    fall back to their Mongo session id, preserving existing receipts. For a
+    persisted attempt, a memoized RAM ``result_id`` is accepted only when it
+    exactly matches the current attempt-derived id. This prevents an in-place
+    restart from accidentally reusing the previous attempt's scoring receipt if
+    stale RAM fields survive controller reconstruction.
+
     Memory-only review drills still receive a memoized random UUID.
     """
     del user_id  # kept in the public signature for call-site clarity/backward compatibility
 
     existing = str(data.get("result_id") or "").strip()
+    attempt_id = runtime_attempt_id(data)
+    if attempt_id:
+        expected = f"quiz:{attempt_id}"
+        if existing and existing != expected:
+            raise ValueError("memoized result_id belongs to another quiz attempt")
+        data["result_id"] = expected
+        return expected
+
     if existing:
         return existing
 
-    attempt_id = runtime_attempt_id(data)
-    if attempt_id:
-        result_id = f"quiz:{attempt_id}"
-    else:
-        result_id = f"memory:{uuid.uuid4().hex}"
-
+    result_id = f"memory:{uuid.uuid4().hex}"
     data["result_id"] = result_id
     return result_id
 
