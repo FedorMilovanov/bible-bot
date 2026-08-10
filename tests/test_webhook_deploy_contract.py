@@ -14,9 +14,17 @@ def test_render_enables_webhook_transport_on_existing_web_service():
     assert "startCommand: python bot.py" in render
     assert "healthCheckPath: /live" in render
     assert "- key: TELEGRAM_TRANSPORT\n        value: webhook" in render
-    assert "- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: \"4\"" in render
+    assert "- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: \"2\"" in render
+    assert "- key: WEB_THREADS\n        value: \"4\"" in render
     assert "TELEGRAM_WEBHOOK_BASE_URL" not in render
     assert "TELEGRAM_WEBHOOK_SECRET" not in render
+
+
+def test_render_reserves_http_threads_beside_telegram_delivery():
+    render = read("render.yaml")
+
+    assert "- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: \"2\"" in render
+    assert "- key: WEB_THREADS\n        value: \"4\"" in render
 
 
 def test_render_separates_webhook_envelope_from_miniapp_body_limit():
@@ -33,6 +41,8 @@ def test_bot_launcher_uses_configurable_transport_and_shutdown_hook():
     assert "from web_api.telegram_transport import run_telegram_application" in bot
     assert "run_telegram_application(app, before_shutdown=_save_all_sessions)" in bot
     assert "app.run_polling()" not in bot
+    assert "def _handle_shutdown" not in bot
+    assert "signal.signal(signal.SIG" not in bot
 
 
 def test_custom_webhook_uses_existing_flask_waitress_stack_without_ptb_webhook_extra():
