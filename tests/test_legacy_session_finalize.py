@@ -9,6 +9,7 @@ def _session(**overrides):
     session = {
         "_id": "session-1",
         "user_id": "42",
+        "status": "in_progress",
         "mode": "level",
         "questions_data": [{"id": "q1"}, {"id": "q2"}],
         "current_index": 2,
@@ -60,6 +61,27 @@ def test_completed_normal_session_uses_persisted_result_inputs(monkeypatch):
     assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
 
 
+def test_finished_completed_session_remains_recoverable_for_legacy_crash_boundary(monkeypatch):
+    captured = {}
+
+    def normal(**kwargs):
+        captured.update(kwargs)
+        return {"scored": True}
+
+    monkeypatch.setattr(recovery, "finalize_normal_result", normal)
+
+    result = recovery.finalize_completed_session(
+        user_id=42,
+        session=_session(status="finished"),
+        username="u",
+        first_name="User",
+        achievement_rewards={},
+    )
+
+    assert result["scored"] is True
+    assert captured["data"]["session_id"] == "session-1"
+
+
 def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
     captured = {}
 
@@ -105,6 +127,44 @@ def test_completed_session_recovery_rejects_other_owner(monkeypatch):
         recovery.finalize_completed_session(
             user_id=42,
             session=_session(user_id="99"),
+            username="u",
+            first_name="User",
+            achievement_rewards={},
+        )
+
+
+@pytest.mark.parametrize("status", ["cancelled", "", None, "unknown"])
+def test_completed_session_recovery_rejects_nonrecoverable_status(monkeypatch, status):
+    monkeypatch.setattr(
+        recovery,
+        "finalize_normal_result",
+        lambda **_: pytest.fail("invalid status must fail before scoring"),
+    )
+
+    session = _session(status=status)
+    with pytest.raises(recovery.LegacyCompletedSessionStateInvalid):
+        recovery.finalize_completed_session(
+            user_id=42,
+            session=session,
+            username="u",
+            first_name="User",
+            achievement_rewards={},
+        )
+
+
+def test_completed_session_recovery_rejects_missing_status(monkeypatch):
+    monkeypatch.setattr(
+        recovery,
+        "finalize_normal_result",
+        lambda **_: pytest.fail("missing status must fail before scoring"),
+    )
+
+    session = _session()
+    session.pop("status")
+    with pytest.raises(recovery.LegacyCompletedSessionStateInvalid):
+        recovery.finalize_completed_session(
+            user_id=42,
+            session=session,
             username="u",
             first_name="User",
             achievement_rewards={},
