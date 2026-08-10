@@ -244,17 +244,14 @@ def test_daily_bonus_backfills_legacy_date_without_double_credit(monkeypatch):
     assert users.doc["daily_bonus_receipts"]["20260810"]["legacy"] is True
 
 
-def test_daily_bonus_public_api_preserves_replay_state(monkeypatch):
+def test_daily_bonus_compatibility_wrapper_returns_only_new_credit(monkeypatch):
     doc = base_user()
     doc["daily_activity_streak"] = 3
     users = FakeUsers(doc)
     monkeypatch.setattr(database, "collection", users)
 
-    first = store.claim_daily_bonus_once(42, "2026-08-10")
-    replay = store.claim_daily_bonus_once(42, "2026-08-10")
-
-    assert first == {"bonus": 10, "eligible": True, "claimed_now": True}
-    assert replay == {"bonus": 10, "eligible": True, "claimed_now": False}
+    assert store.claim_daily_bonus_once(42, "2026-08-10") == 10
+    assert store.claim_daily_bonus_once(42, "2026-08-10") == 0
     assert users.doc["total_points"] == 10
 
 
