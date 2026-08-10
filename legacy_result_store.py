@@ -24,6 +24,7 @@ import database
 logger = logging.getLogger(__name__)
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
+_QUIZ_MODES = frozenset({"relaxed", "timed", "speed"})
 _BASE_CAS_RETRIES = 8
 
 
@@ -180,6 +181,57 @@ def _finite_nonnegative_float(value, field: str) -> float:
     if not math.isfinite(number) or number < 0:
         raise ValueError(f"{field} must be a finite non-negative number")
     return number
+
+
+def _strict_nonnegative_int(value, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field} must be a non-negative integer")
+    return value
+
+
+def _strict_score(score, total) -> tuple[int, int]:
+    score = _strict_nonnegative_int(score, "score")
+    total = _strict_nonnegative_int(total, "total")
+    if total < 1 or total > 100:
+        raise ValueError("total must be between 1 and 100")
+    if score > total:
+        raise ValueError("score cannot exceed total")
+    return score, total
+
+
+def _strict_level_key(level_key) -> str:
+    if not isinstance(level_key, str) or level_key not in database.POINTS_PER_QUESTION:
+        raise ValueError("unsupported level_key for durable result")
+    return level_key
+
+
+def _validate_result_semantics(
+    *,
+    level_key: str,
+    total: int,
+    score_multiplier: float,
+    max_streak: int,
+    challenge_mode: str | None,
+    quiz_mode: str | None,
+) -> None:
+    if max_streak > total:
+        raise ValueError("max_streak cannot exceed total")
+    if score_multiplier <= 0 or score_multiplier > 2.0:
+        raise ValueError("score_multiplier must be greater than 0 and at most 2")
+    if quiz_mode is not None and quiz_mode not in _QUIZ_MODES:
+        raise ValueError(f"unsupported quiz_mode: {quiz_mode}")
+    if challenge_mode is None:
+        if level_key in _CHALLENGE_MODES:
+            raise ValueError("Challenge level_key requires challenge_mode")
+        return
+    if challenge_mode not in _CHALLENGE_MODES:
+        raise ValueError(f"unsupported challenge mode: {challenge_mode}")
+    if level_key != challenge_mode:
+        raise ValueError("Challenge level_key must match challenge_mode")
+    if quiz_mode is not None:
+        raise ValueError("Challenge result cannot carry normal quiz_mode")
+    if score_multiplier != 1.0:
+        raise ValueError("Challenge result multiplier must be 1.0")
 
 
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
@@ -355,21 +407,29 @@ def apply_base_result_once(
 
     Live results omit ``completed_at`` and use write-time UTC. Restart recovery
     passes the final persisted answer timestamp so daily/weekly economics stay
-    attached to the day/week in which the quiz actually ended.
+    attached to the day/week in which the quiz actually ended. Result semantics
+    are validated before the first user-document read so legacy fallback/clamp
+    helpers can never turn corrupt evidence into a different durable result.
     """
     result_id = _normalize_result_id(result_id)
-    collection = _users()
-    uid = database._uid(user_id)
-    level_key = database._safe_level_key(level_key)
-    score, total = database._validate_score(score, total)
+    level_key = _strict_level_key(level_key)
+    score, total = _strict_score(score, total)
     time_seconds = _finite_nonnegative_float(time_seconds, "time_seconds")
     score_multiplier = _finite_nonnegative_float(score_multiplier, "score_multiplier")
-    max_streak = max(0, int(max_streak))
-    if challenge_mode is not None and challenge_mode not in _CHALLENGE_MODES:
-        raise ValueError(f"unsupported challenge mode: {challenge_mode}")
+    max_streak = _strict_nonnegative_int(max_streak, "max_streak")
     if fastest_answer is not None:
         fastest_answer = _finite_nonnegative_float(fastest_answer, "fastest_answer")
+    _validate_result_semantics(
+        level_key=level_key,
+        total=total,
+        score_multiplier=score_multiplier,
+        max_streak=max_streak,
+        challenge_mode=challenge_mode,
+        quiz_mode=quiz_mode,
+    )
 
+    collection = _users()
+    uid = database._uid(user_id)
     write_now = _naive_utc(database._now_utc())
     if completed_at is None:
         result_completed = write_now
@@ -390,9 +450,9 @@ def apply_base_result_once(
     result_owner = _receipt_digest(result_id)
     bonus_owner_path = _bonus_owner_path(today, challenge_mode)
 
-    ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
+    ppq = database.POINTS_PER_QUESTION[level_key]
     earned_base = round(score * ppq * score_multiplier)
-    is_perfect = total > 0 and score == total
+    is_perfect = score == total
     durable_result = {
         "level_key": level_key,
         "score": score,
@@ -592,7 +652,7 @@ def sync_weekly_best(
     if mode not in _CHALLENGE_MODES:
         raise ValueError(f"unsupported challenge mode: {mode}")
     collection = _weekly()
-    score, _ = database._validate_score(score, 20)
+    score, _ = _strict_score(score, 20)
     time_seconds = _finite_nonnegative_float(time_seconds, "weekly time_seconds")
     doc_id = f"{week_id}_{mode}_{user_id}"
     now = database._now_utc()
