@@ -5,6 +5,7 @@ runtime/scoring fields from persisted data without importing Telegram handlers.
 """
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
@@ -54,6 +55,32 @@ def _streaks(answered: list[dict]) -> tuple[int, int]:
         current += 1
         maximum = max(maximum, current)
     return current, maximum
+
+
+def persisted_fastest_answer(session: dict) -> float | None:
+    """Return the fastest durable latency that is safe to use for achievements.
+
+    Legacy answer records may have no latency field at all, so missing/None
+    values are treated as unknown evidence and skipped. A present malformed
+    value invalidates the speed-achievement evidence for the whole recovered
+    result: silently ignoring corrupt latency could manufacture a Lightning
+    achievement from an incomplete ledger. Valid latencies are finite,
+    non-negative real numbers; booleans are rejected explicitly.
+    """
+    fastest: float | None = None
+    for item in _answers(session):
+        if not isinstance(item, dict):
+            return None
+        if "latency_seconds" not in item or item.get("latency_seconds") is None:
+            continue
+        value = item.get("latency_seconds")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        latency = float(value)
+        if not math.isfinite(latency) or latency < 0:
+            return None
+        fastest = latency if fastest is None else min(fastest, latency)
+    return fastest
 
 
 def _normal_mode(time_limit) -> tuple[str, float, int | None]:
@@ -185,9 +212,7 @@ def recovery_fields(session: dict) -> dict:
         "quiz_time_limit": quiz_time_limit,
         "current_streak": current_streak,
         "max_streak": max_streak,
-        # answer latency is not persisted by the legacy schema. None is safer
-        # than manufacturing a Lightning-achievement value after restart.
-        "fastest_answer": None,
+        "fastest_answer": persisted_fastest_answer(session),
         "result_pending": session_is_complete(session),
         "persisted_result_time": persisted_result_time_seconds(session),
         "persisted_completed_at": persisted_completed_at(session),
