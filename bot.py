@@ -69,7 +69,11 @@ from database import (
     # History
     get_user_history,
 )
-from battle_consistency import apply_battle_reward_once, join_battle_atomic
+from battle_consistency import (
+    apply_battle_reward_once, battle_role_for_user,
+    cancel_battle_for_participant, join_battle_atomic,
+    record_battle_finish_atomic,
+)
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
 
@@ -2518,6 +2522,11 @@ async def start_battle_questions(update: Update, context):
         await query.edit_message_text("❌ Битва не найдена.")
         return
 
+    actual_role = battle_role_for_user(battle, user_id)
+    if actual_role is None or role != actual_role:
+        await query.edit_message_text("❌ Эта кнопка не относится к вашей роли в битве.")
+        return
+
     user_data[user_id] = _create_session_data(
         user_id=user_id,
         session_id=battle_id,
@@ -2619,13 +2628,18 @@ async def battle_answer(update: Update, context):
             await query.answer()
             return
 
-        q_num        = data["current_question"]
-        q            = data["questions"][q_num]
-        user_answer  = current_options[idx]
+        q_num = data["current_question"]
+        if q_num >= len(data["questions"]):
+            await query.answer()
+            await finish_battle_for_user(context.bot, chat_id, user_id)
+            return
+
+        q = data["questions"][q_num]
+        user_answer = current_options[idx]
         correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
 
-        sent_at     = data.get("question_sent_at", time.time())
-        elapsed     = min(time.time() - sent_at, 7.0)
+        sent_at = data.get("question_sent_at", time.time())
+        elapsed = min(time.time() - sent_at, 7.0)
 
         if user_answer == correct_text:
             data["correct_answers"] += 1
@@ -2637,13 +2651,14 @@ async def battle_answer(update: Update, context):
             await query.answer(f"❌ Верно: {correct_text}", show_alert=True)
 
         data["current_question"] += 1
+        if data["current_question"] < len(data["questions"]):
+            await send_battle_question(context.bot, chat_id, user_id)
+        else:
+            await finish_battle_for_user(context.bot, chat_id, user_id)
     finally:
-        data["processing_answer"] = False
-
-    if data["current_question"] < len(data["questions"]):
-        await send_battle_question(context.bot, chat_id, user_id)
-    else:
-        await finish_battle_for_user(context.bot, chat_id, user_id)
+        active = user_data.get(user_id)
+        if active is data:
+            active["processing_answer"] = False
 
 
 async def finish_battle_for_user(bot, chat_id: int, user_id: int):
@@ -2654,28 +2669,20 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int):
     time_taken    = time.time() - data["start_time"]
     battle_points = data.get("battle_points", 0)
 
-    battle = get_battle(battle_id)
+    battle = record_battle_finish_atomic(
+        battle_id, user_id, role,
+        score=data["correct_answers"],
+        time_taken=time_taken,
+        points=battle_points,
+    )
     if not battle:
-        await bot.send_message(chat_id=chat_id, text="❌ Битва не найдена.")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Не удалось зафиксировать результат битвы. Нажмите ответ ещё раз для повтора.",
+        )
         return
 
-    if role == "creator":
-        update_battle(battle_id, {
-            "creator_score":    data["correct_answers"],
-            "creator_time":     time_taken,
-            "creator_points":   battle_points,
-            "creator_finished": True,
-        })
-    else:
-        update_battle(battle_id, {
-            "opponent_score":    data["correct_answers"],
-            "opponent_time":     time_taken,
-            "opponent_points":   battle_points,
-            "opponent_finished": True,
-        })
-
-    # Перечитываем актуальное состояние из БД
-    battle = get_battle(battle_id)
+    user_data.pop(user_id, None)
     if battle.get("creator_finished") and battle.get("opponent_finished"):
         await show_battle_results(bot, battle_id)
     else:
@@ -2759,7 +2766,10 @@ async def cancel_battle(update: Update, context):
     query = update.callback_query
     await query.answer()
     battle_id = query.data.replace("cancel_battle_", "")
-    delete_battle(battle_id)
+    if not cancel_battle_for_participant(battle_id, query.from_user.id):
+        await query.edit_message_text("❌ Битва не найдена или у вас нет права её отменять.")
+        return
+    user_data.pop(query.from_user.id, None)
     await query.edit_message_text(
         "❌ Битва отменена.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
