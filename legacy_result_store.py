@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -124,28 +124,32 @@ def _receipt_snapshot(doc: dict, result_id: str) -> dict:
     return {}
 
 
-def _coerce_completed_at(value: str | datetime | float | int | None) -> datetime:
-    if isinstance(value, datetime):
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
         return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _parse_completed_at(value: str | datetime | float | int) -> datetime:
+    if isinstance(value, datetime):
+        return _naive_utc(value)
     if isinstance(value, str) and value:
         try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            pass
-    if value is not None:
-        try:
-            return datetime.utcfromtimestamp(float(value))
-        except (TypeError, ValueError, OSError, OverflowError):
-            pass
-    return datetime.utcnow()
+            return _naive_utc(datetime.fromisoformat(value))
+        except ValueError as exc:
+            raise ValueError("result completion timestamp is invalid") from exc
+    try:
+        return datetime.utcfromtimestamp(float(value))
+    except (TypeError, ValueError, OSError, OverflowError) as exc:
+        raise ValueError("result completion timestamp is invalid") from exc
 
 
-def result_day(completed_at: str | datetime | float | int | None) -> str:
-    return _coerce_completed_at(completed_at).strftime("%Y-%m-%d")
+def result_day(completed_at: str | datetime | float | int) -> str:
+    return _parse_completed_at(completed_at).strftime("%Y-%m-%d")
 
 
-def result_week_id(completed_at: str | datetime | float | int | None) -> str:
-    iso = _coerce_completed_at(completed_at).isocalendar()
+def result_week_id(completed_at: str | datetime | float | int) -> str:
+    iso = _parse_completed_at(completed_at).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
 
@@ -164,6 +168,41 @@ def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
         raise
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("user stats lookup failed") from exc
+
+
+def _stored_day(entry: dict, field: str) -> str | None:
+    value = entry.get(field, "")
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise LegacyResultStoreUnavailable(f"{field} has invalid persisted type")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise LegacyResultStoreUnavailable(f"{field} has invalid persisted date") from exc
+    return value
+
+
+def _assert_result_chronology(entry: dict, today: str, challenge_mode: str | None) -> None:
+    """Never rewind streak state when a pre-base crash is recovered late.
+
+    A completed session may be recovered after another calendar day has already
+    been recorded for the user. Replaying that old result into mutable streak
+    fields would move ``*_last_date`` backwards and make the following streak
+    calculation incorrect. Such out-of-order evidence remains retryable/manual
+    instead of corrupting newer durable state.
+    """
+    daily_last = _stored_day(entry, "daily_activity_last")
+    if daily_last is not None and daily_last > today:
+        raise LegacyResultStoreUnavailable(
+            "result completion day predates newer daily activity state"
+        )
+    if challenge_mode in _CHALLENGE_MODES:
+        challenge_last = _stored_day(entry, "challenge_streak_last_date")
+        if challenge_last is not None and challenge_last > today:
+            raise LegacyResultStoreUnavailable(
+                "result completion day predates newer Challenge streak state"
+            )
 
 
 def _daily_activity_fields(entry: dict, today: str) -> dict:
@@ -274,6 +313,7 @@ def apply_base_result_once(
     challenge_mode: str | None = None,
     quiz_mode: str | None = None,
     fastest_answer: float | None = None,
+    completed_at: str | datetime | float | int | None = None,
 ) -> dict:
     """Apply counters once and reserve this result's bonus ownership once.
 
@@ -283,6 +323,10 @@ def apply_base_result_once(
     reserves a stable owner marker in this same atomic update. A later result
     can therefore never win the bonus merely because an earlier process died
     between base scoring and the bonus stage.
+
+    Live results omit ``completed_at`` and use write-time UTC. Restart recovery
+    passes the final persisted answer timestamp so daily/weekly economics stay
+    attached to the day/week in which the quiz actually ended.
     """
     result_id = _normalize_result_id(result_id)
     collection = _users()
@@ -297,9 +341,15 @@ def apply_base_result_once(
     if fastest_answer is not None:
         fastest_answer = max(0.0, float(fastest_answer))
 
-    now = database._now_utc()
-    completed_at = now.isoformat()
-    today = now.strftime("%Y-%m-%d")
+    write_now = _naive_utc(database._now_utc())
+    if completed_at is None:
+        result_completed = write_now
+    else:
+        result_completed = _parse_completed_at(completed_at)
+        if result_completed > write_now:
+            raise ValueError("result completion timestamp cannot be in the future")
+    completed_at_iso = result_completed.isoformat()
+    today = result_completed.strftime("%Y-%m-%d")
     receipt_path = _receipt_path(result_id)
     result_owner = _receipt_digest(result_id)
     bonus_owner_path = _bonus_owner_path(today, challenge_mode)
@@ -323,6 +373,7 @@ def apply_base_result_once(
     try:
         entry = _ensure_user(user_id, username, first_name)
         for _attempt in range(_BASE_CAS_RETRIES):
+            _assert_result_chronology(entry, today, challenge_mode)
             daily_fields = _daily_activity_fields(entry, today)
             challenge_fields = _challenge_streak_fields(entry, today, challenge_mode, score)
             achievement_state = _post_result_achievement_state(
@@ -333,7 +384,7 @@ def apply_base_result_once(
                 max_streak=max_streak,
             )
             receipt_snapshot = {
-                "completed_at": completed_at,
+                "completed_at": completed_at_iso,
                 "daily_streak": achievement_state["daily_activity_streak"],
                 "challenge_streak": achievement_state["challenge_streak_count"],
                 "result": durable_result,
@@ -356,7 +407,7 @@ def apply_base_result_once(
             set_fields = {
                 "username": username or "",
                 "first_name": first_name or "Пользователь",
-                "last_activity": now,
+                "last_activity": write_now,
                 receipt_path: receipt_snapshot,
                 **daily_fields,
                 **challenge_fields,
@@ -397,7 +448,7 @@ def apply_base_result_once(
                 return {
                     "applied": True,
                     "earned_base": earned_base,
-                    "completed_at": completed_at,
+                    "completed_at": completed_at_iso,
                     "receipt": receipt_snapshot,
                     "result": durable_result,
                     "user": after,
