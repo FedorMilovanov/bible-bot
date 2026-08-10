@@ -26,6 +26,17 @@ class BattleRewardResult:
     missing_user: bool = False
 
 
+def battle_role_for_user(battle: dict | None, user_id: int) -> str | None:
+    """Return the server-authoritative PvP role for a participant."""
+    if not battle:
+        return None
+    if battle.get("creator_id") == user_id:
+        return "creator"
+    if battle.get("opponent_id") == user_id:
+        return "opponent"
+    return None
+
+
 def join_battle_atomic(battle_id: str, user_id: int, user_name: str) -> dict | None:
     """Claim the only opponent slot and return the updated battle."""
     collection = database.battles_collection
@@ -53,6 +64,27 @@ def join_battle_atomic(battle_id: str, user_id: int, user_name: str) -> dict | N
     except PyMongoError:
         logger.exception("join_battle_atomic failed for %s", battle_id)
         return None
+
+
+def cancel_battle_for_participant(battle_id: str, user_id: int) -> bool:
+    """Delete a battle only when the requester is one of its participants."""
+    collection = database.battles_collection
+    if collection is None:
+        return False
+    try:
+        result = collection.delete_one(
+            {
+                "_id": battle_id,
+                "$or": [
+                    {"creator_id": user_id},
+                    {"opponent_id": user_id},
+                ],
+            }
+        )
+        return result.deleted_count == 1
+    except PyMongoError:
+        logger.exception("cancel_battle_for_participant failed for %s", battle_id)
+        return False
 
 
 def _battle_result_increment(result: str) -> dict[str, int]:
