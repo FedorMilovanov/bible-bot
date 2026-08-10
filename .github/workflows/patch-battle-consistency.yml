@@ -1,0 +1,83 @@
+name: One-shot battle consistency patch
+
+on:
+  push:
+    branches: [agent/bible-bot-battle-consistency]
+    paths:
+      - .github/workflows/patch-battle-consistency.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-battle-consistency
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Apply exact byte replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("bot.py")
+          original = path.read_bytes()
+          nl = b"\r\n" if b"\r\n" in original else b"\n"
+
+          def block(text: str) -> bytes:
+              return text.replace("\n", nl.decode()).encode()
+
+          replacements = [
+              (
+                  block('from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif\nfrom questions import get_pool_by_key, BATTLE_POOL'),
+                  block('from battle_consistency import apply_battle_reward_once, join_battle_atomic\nfrom utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif\nfrom questions import get_pool_by_key, BATTLE_POOL'),
+              ),
+              (
+                  block('''    battle = get_battle(battle_id)\n    if not battle or battle.get("status") != "waiting":\n        await query.edit_message_text(\n            "❌ Битва не найдена или уже началась.",\n            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),\n        )\n        return\n\n    if battle["creator_id"] == user_id:\n        await query.answer("Нельзя присоединиться к своей битве!", show_alert=True)\n        return\n    if battle["opponent_id"] is not None:\n        await query.answer("К этой битве уже присоединился другой игрок!", show_alert=True)\n        return\n\n    update_battle(battle_id, {\n        "opponent_id":   user_id,\n        "opponent_name": user_name,\n        "status":        "in_progress",\n    })'''),
+                  block('''    battle = join_battle_atomic(battle_id, user_id, user_name)\n    if not battle:\n        await query.edit_message_text(\n            "❌ Битва не найдена, уже началась или занята другим игроком.",\n            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),\n        )\n        return'''),
+              ),
+              (
+                  block('''    if winner == "creator":\n        update_battle_stats(battle["creator_id"], "win")\n        update_battle_stats(battle["opponent_id"], "lose")\n    elif winner == "opponent":\n        update_battle_stats(battle["creator_id"], "lose")\n        update_battle_stats(battle["opponent_id"], "win")\n    else:\n        update_battle_stats(battle["creator_id"], "draw")\n        update_battle_stats(battle["opponent_id"], "draw")'''),
+                  block('''    if winner == "creator":\n        apply_battle_reward_once(battle["creator_id"], battle_id, "win")\n        apply_battle_reward_once(battle["opponent_id"], battle_id, "lose")\n    elif winner == "opponent":\n        apply_battle_reward_once(battle["creator_id"], battle_id, "lose")\n        apply_battle_reward_once(battle["opponent_id"], battle_id, "win")\n    else:\n        apply_battle_reward_once(battle["creator_id"], battle_id, "draw")\n        apply_battle_reward_once(battle["opponent_id"], battle_id, "draw")'''),
+              ),
+          ]
+
+          current = original
+          for old, new in replacements:
+              if current.count(old) != 1:
+                  raise SystemExit(f"expected exactly one source block, got {current.count(old)}")
+              if new in current:
+                  raise SystemExit("replacement block already present")
+              current = current.replace(old, new, 1)
+
+          # Strong invariant: reversing the three replacements must reproduce
+          # the original bot.py bytes exactly, including line endings.
+          reversed_bytes = current
+          for old, new in reversed(replacements):
+              if reversed_bytes.count(new) != 1:
+                  raise SystemExit("replacement uniqueness invariant failed")
+              reversed_bytes = reversed_bytes.replace(new, old, 1)
+          if reversed_bytes != original:
+              raise SystemExit("reverse replacement did not reproduce original bot.py")
+
+          path.write_bytes(current)
+
+      - name: Verify patch scope
+        run: |
+          test "$(git diff --name-only)" = "bot.py"
+          git diff -- bot.py
+          grep -F 'from battle_consistency import apply_battle_reward_once, join_battle_atomic' bot.py
+          grep -F 'battle = join_battle_atomic(battle_id, user_id, user_name)' bot.py
+          test "$(grep -c 'apply_battle_reward_once(battle\[' bot.py)" -eq 6
+
+      - name: Commit exact handler integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot.py
+          git commit -m "Use atomic PvP join and idempotent rewards"
+          git push origin HEAD:agent/bible-bot-battle-consistency
