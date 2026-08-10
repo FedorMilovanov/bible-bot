@@ -1,5 +1,8 @@
 from copy import deepcopy
+from datetime import datetime
 from types import SimpleNamespace
+
+import pytest
 
 import database
 import legacy_result_store as store
@@ -56,14 +59,6 @@ def _apply_update(doc, update):
         current, exists = _get_path(doc, key)
         if not exists or value > current:
             _set_path(doc, key, value)
-    for key, spec in update.get("$push", {}).items():
-        current, exists = _get_path(doc, key)
-        values = list(current) if exists else []
-        values.extend(spec.get("$each", []))
-        slice_value = spec.get("$slice")
-        if isinstance(slice_value, int) and slice_value < 0:
-            values = values[slice_value:]
-        _set_path(doc, key, values)
 
 
 class FakeUsers:
@@ -159,16 +154,26 @@ def apply_easy_result(result_id):
     )
 
 
+def test_base_result_requires_idempotency_key(monkeypatch):
+    users = FakeUsers(base_user())
+    monkeypatch.setattr(database, "collection", users)
+
+    with pytest.raises(ValueError, match="result_id is required"):
+        apply_easy_result("")
+
+    assert users.doc["total_tests"] == 0
+
+
 def test_base_result_receipt_prevents_duplicate_counters(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
-    monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
 
     first = apply_easy_result("session-1")
     second = apply_easy_result("session-1")
 
     assert first["applied"] is True
     assert second["applied"] is False
+    assert first["completed_at"] == second["completed_at"]
     assert users.doc["total_tests"] == 1
     assert users.doc["total_points"] == 8
     assert users.doc["easy_attempts"] == 1
@@ -180,7 +185,6 @@ def test_base_result_receipt_prevents_duplicate_counters(monkeypatch):
 def test_base_result_receipts_do_not_expire_after_128_newer_results(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
-    monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
 
     for index in range(140):
         assert apply_easy_result(f"session-{index}")["applied"] is True
@@ -193,28 +197,45 @@ def test_base_result_receipts_do_not_expire_after_128_newer_results(monkeypatch)
     assert len(users.doc["legacy_result_receipts"]) == 140
 
 
-def test_daily_bonus_is_claimed_once(monkeypatch):
+def test_duplicate_result_keeps_original_completion_day_across_midnight(monkeypatch):
+    users = FakeUsers(base_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 10, 23, 59, 59))
+
+    first = apply_easy_result("midnight-session")
+
+    monkeypatch.setattr(database, "_now_utc", lambda: datetime(2026, 8, 11, 0, 0, 1))
+    retry = apply_easy_result("midnight-session")
+
+    assert retry["applied"] is False
+    assert retry["completed_at"] == first["completed_at"]
+    assert store.result_day(retry["completed_at"]) == "2026-08-10"
+
+
+def test_daily_bonus_receipt_survives_later_day_claim(monkeypatch):
     doc = base_user()
     doc["daily_activity_streak"] = 3
     users = FakeUsers(doc)
     monkeypatch.setattr(database, "collection", users)
-    monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
 
-    assert store.claim_daily_bonus_once(42) == 10
-    assert store.claim_daily_bonus_once(42) == 0
-    assert users.doc["total_points"] == 10
-    assert users.doc["last_daily_bonus"] == "2026-08-10"
+    assert store.claim_daily_bonus_once(42, "2026-08-10") == 10
+    assert store.claim_daily_bonus_once(42, "2026-08-11") == 10
+    assert store.claim_daily_bonus_once(42, "2026-08-10") == 0
+    assert users.doc["total_points"] == 20
+    assert users.doc["last_daily_bonus"] == "2026-08-11"
+    assert len(users.doc["daily_bonus_receipts"]) == 2
 
 
-def test_challenge_bonus_consumes_daily_mode_claim_once(monkeypatch):
+def test_challenge_bonus_receipt_survives_later_day_claim(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
-    monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
 
-    assert store.claim_challenge_bonus_once(42, "random20", 18) == 60
-    assert store.claim_challenge_bonus_once(42, "random20", 18) == 0
-    assert users.doc["total_points"] == 60
-    assert users.doc["random20_last_bonus_date"] == "2026-08-10"
+    assert store.claim_challenge_bonus_once(42, "random20", 18, "2026-08-10") == 60
+    assert store.claim_challenge_bonus_once(42, "random20", 18, "2026-08-11") == 60
+    assert store.claim_challenge_bonus_once(42, "random20", 18, "2026-08-10") == 0
+    assert users.doc["total_points"] == 120
+    assert users.doc["random20_last_bonus_date"] == "2026-08-11"
+    assert len(users.doc["challenge_bonus_receipts"]["random20"]) == 2
 
 
 def test_achievement_reward_is_claimed_once(monkeypatch):
@@ -227,8 +248,8 @@ def test_achievement_reward_is_claimed_once(monkeypatch):
     assert users.doc["total_points"] == 25
 
 
-def test_result_week_id_uses_iso_year_boundary():
-    assert store.result_week_id(1609459200) == "2020-W53"  # 2021-01-01 UTC
+def test_result_week_id_uses_durable_completion_time():
+    assert store.result_week_id("2021-01-01T00:00:00") == "2020-W53"
 
 
 def test_weekly_best_is_idempotent_and_only_improves(monkeypatch):
