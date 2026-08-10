@@ -1,14 +1,14 @@
 """Atomic Mongo operations and authorization helpers for legacy PvP battles."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
-
-_BATTLE_RECEIPT_LIMIT = 64
 
 
 class BattleStoreUnavailable(RuntimeError):
@@ -31,6 +31,50 @@ def _user_collection():
     if collection is None:
         raise BattleStoreUnavailable("user stats collection is unavailable")
     return collection
+
+
+def _battle_receipt_digest(battle_id: str) -> str:
+    value = str(battle_id or "").strip()
+    if not value:
+        raise ValueError("battle_id is required for idempotent outcome scoring")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _battle_receipt_path(battle_id: str) -> str:
+    return f"battle_result_receipt_map.{_battle_receipt_digest(battle_id)}"
+
+
+def _entry_field(entry: dict, path: str) -> tuple[object | None, bool]:
+    current: object = entry
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None, False
+        current = current[part]
+    return current, True
+
+
+def _nonnegative_int(value, field: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a non-negative integer")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a non-negative integer") from exc
+    if number < 0:
+        raise ValueError(f"{field} must be a non-negative integer")
+    return number
+
+
+def _nonnegative_float(value, field: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a finite non-negative number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite non-negative number") from exc
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"{field} must be a finite non-negative number")
+    return number
 
 
 def battle_role_for_user(battle: dict | None, user_id: int) -> str | None:
@@ -82,6 +126,9 @@ def record_battle_result(
     if role not in {"creator", "opponent"}:
         return None
 
+    score = _nonnegative_int(score, "battle score")
+    time_seconds = _nonnegative_float(time_seconds, "battle time")
+    points = _nonnegative_int(points, "battle points")
     collection = _battle_collection()
     participant_field = f"{role}_id"
     finished_field = f"{role}_finished"
@@ -95,9 +142,9 @@ def record_battle_result(
             },
             {
                 "$set": {
-                    f"{role}_score": int(score),
-                    f"{role}_time": float(time_seconds),
-                    f"{role}_points": int(points),
+                    f"{role}_score": score,
+                    f"{role}_time": time_seconds,
+                    f"{role}_points": points,
                     finished_field: True,
                 }
             },
@@ -121,8 +168,8 @@ def record_battle_result(
 
 
 def _result_for_role(battle: dict, role: str) -> str:
-    creator_points = int(battle.get("creator_points", 0))
-    opponent_points = int(battle.get("opponent_points", 0))
+    creator_points = _nonnegative_int(battle.get("creator_points", 0), "creator points")
+    opponent_points = _nonnegative_int(battle.get("opponent_points", 0), "opponent points")
     if creator_points == opponent_points:
         return "draw"
     winner = "creator" if creator_points > opponent_points else "opponent"
@@ -136,11 +183,18 @@ def _apply_battle_outcome_once(
     *,
     first_name: str,
 ) -> None:
-    """Increment one user's PvP stats once, keyed by battle_id receipt."""
+    """Increment one user's PvP stats once, keyed by a durable battle marker.
+
+    New outcomes use a non-evicting SHA-256 field marker. The historical
+    ``battle_result_receipts`` array remains read-only migration evidence: once
+    this code is deployed it is no longer pushed/sliced, so IDs already present
+    there also stop expiring.
+    """
     import database
 
     collection = _user_collection()
     uid = database._uid(user_id)
+    receipt_path = _battle_receipt_path(battle_id)
     inc = {"battles_played": 1}
     if result == "win":
         inc.update({"battles_won": 1, "total_points": 5})
@@ -153,18 +207,36 @@ def _apply_battle_outcome_once(
 
     def apply_once():
         return collection.update_one(
-            {"_id": uid, "battle_result_receipts": {"$ne": battle_id}},
+            {
+                "_id": uid,
+                receipt_path: {"$exists": False},
+                # Migration guard: do not re-credit an outcome already present
+                # in the frozen legacy array.
+                "battle_result_receipts": {"$ne": battle_id},
+            },
             {
                 "$inc": inc,
-                "$set": {"last_activity": database._now_utc()},
-                "$push": {
-                    "battle_result_receipts": {
-                        "$each": [battle_id],
-                        "$slice": -_BATTLE_RECEIPT_LIMIT,
-                    }
+                "$set": {
+                    "last_activity": database._now_utc(),
+                    receipt_path: True,
                 },
             },
         )
+
+    def confirm_existing(entry: dict | None) -> bool:
+        if not entry:
+            return False
+        marker, marker_exists = _entry_field(entry, receipt_path)
+        if marker_exists:
+            if marker is True:
+                return True
+            raise BattleStoreUnavailable("battle outcome receipt marker is invalid")
+        legacy = entry.get("battle_result_receipts")
+        if legacy is None:
+            return False
+        if not isinstance(legacy, list):
+            raise BattleStoreUnavailable("legacy battle receipt list is invalid")
+        return battle_id in legacy
 
     try:
         write = apply_once()
@@ -173,7 +245,7 @@ def _apply_battle_outcome_once(
 
         existing = collection.find_one(
             {"_id": uid},
-            {"battle_result_receipts": 1},
+            {receipt_path: 1, "battle_result_receipts": 1},
         )
         if existing is None:
             # Normally /start already initialized every participant, but keep
@@ -184,12 +256,14 @@ def _apply_battle_outcome_once(
                 return
             existing = collection.find_one(
                 {"_id": uid},
-                {"battle_result_receipts": 1},
+                {receipt_path: 1, "battle_result_receipts": 1},
             )
 
-        if existing and battle_id in existing.get("battle_result_receipts", []):
+        if confirm_existing(existing):
             return
         raise BattleStoreUnavailable("battle outcome receipt could not be persisted")
+    except BattleStoreUnavailable:
+        raise
     except PyMongoError as exc:
         logger.exception("failed to apply battle outcome for user %s", user_id)
         raise BattleStoreUnavailable("battle outcome write failed") from exc
