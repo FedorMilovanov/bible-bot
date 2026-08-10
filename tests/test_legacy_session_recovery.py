@@ -2,6 +2,7 @@ from datetime import datetime
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 from legacy_session_recovery import (
+    completed_result_inputs,
     persisted_result_time_seconds,
     recovery_fields,
     session_is_complete,
@@ -111,3 +112,41 @@ def test_fastest_answer_is_unknown_after_restart_without_latency_evidence():
     fields = recovery_fields(_session(time_limit=SPEED_MODE_TIMEOUT))
 
     assert fields["fastest_answer"] is None
+
+
+def test_completed_result_inputs_use_only_persisted_score_total_and_duration():
+    session = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    result = completed_result_inputs(session)
+
+    assert result is not None
+    assert result["score"] == 2
+    assert result["total"] == 3
+    assert result["time_seconds"] == 45.0
+    assert result["data"]["result_pending"] is True
+
+
+def test_completed_result_inputs_refuse_missing_last_answer_timestamp():
+    session = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": True},
+        ],
+    )
+
+    assert completed_result_inputs(session) is None
+
+
+def test_completed_result_inputs_refuse_incomplete_session():
+    assert completed_result_inputs(_session(current_index=2)) is None
