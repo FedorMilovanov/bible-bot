@@ -358,11 +358,18 @@ def apply_live_timeout_once(
     data: dict,
     expected_index: int,
     *,
+    expected_attempt_id: str,
     now: float | None = None,
 ) -> LiveAnswerOutcome:
-    """Durably record a timeout using the exact question index captured at send."""
+    """Durably record a timeout for the exact attempt/question captured at send."""
+    if not isinstance(expected_attempt_id, str) or not expected_attempt_id:
+        raise ValueError("expected_attempt_id is required")
     if isinstance(expected_index, bool) or not isinstance(expected_index, int) or expected_index < 0:
         raise ValueError("expected_index must be a non-negative integer")
+
+    scope = ensure_callback_scope(data)
+    if scope != expected_attempt_id:
+        raise LegacyLiveAnswerStale("timeout belongs to another attempt")
     if expected_index != _current_index(data):
         raise LegacyLiveAnswerStale("timeout belongs to another question")
 
@@ -371,13 +378,12 @@ def apply_live_timeout_once(
     latency = _elapsed_seconds(data, now)
     question_id = legacy_question_id(question)
     session_id = data.get("session_id")
-    scope = ensure_callback_scope(data)
 
     if isinstance(session_id, str) and session_id:
         result = record_owned_quiz_answer(
             session_id,
             user_id,
-            expected_attempt_id=scope,
+            expected_attempt_id=expected_attempt_id,
             expected_index=expected_index,
             question_id=question_id,
             user_answer=_TIMEOUT_ANSWER,
