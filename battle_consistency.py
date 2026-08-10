@@ -239,13 +239,16 @@ def apply_battle_reward_once(user_id: int, battle_id: str, result: str) -> Battl
         return BattleRewardResult(applied=True)
 
     try:
-        entry = collection.find_one({"_id": uid}, {"battle_reward_receipts": 1})
+        receipt_exists = collection.count_documents(
+            {"_id": uid, "battle_reward_receipts": receipt}, limit=1
+        ) > 0
+        if receipt_exists:
+            return BattleRewardResult(applied=False, already_applied=True)
+        user_exists = collection.count_documents({"_id": uid}, limit=1) > 0
     except PyMongoError:
         logger.exception("could not verify battle reward receipt for battle=%s user=%s", battle_id, uid)
         return BattleRewardResult(applied=False, retryable_error=True)
 
-    if entry is None:
+    if not user_exists:
         return BattleRewardResult(applied=False, missing_user=True)
-    if receipt in entry.get("battle_reward_receipts", []):
-        return BattleRewardResult(applied=False, already_applied=True)
     return BattleRewardResult(applied=False, retryable_error=True)
