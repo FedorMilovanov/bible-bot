@@ -15,7 +15,7 @@ import hmac
 
 _ALLOWED_PREFIXES = frozenset({"qa", "cha"})
 _TOKEN_BYTES = 9  # 72-bit attempt fingerprint -> 12 base64url characters
-_OPTION_TOKEN_BYTES = 6  # 48-bit rendered-option fingerprint -> 8 characters
+_OPTION_TOKEN_BYTES = 9  # 72-bit rendered-option fingerprint -> 12 characters
 _MAX_CALLBACK_BYTES = 64
 
 
@@ -88,7 +88,7 @@ def parse_answer_callback(
     ):
         raise ValueError("malformed session callback token")
     option_token = parts[4]
-    if len(option_token) != 8 or any(
+    if len(option_token) != 12 or any(
         ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
         for ch in option_token
     ):
@@ -118,7 +118,7 @@ def callback_matches_session(token: str, session_id: str) -> bool:
 
 
 def callback_matches_option(token: str, option_text: str) -> bool:
-    """Verify that a callback slot still renders the same answer text."""
+    """Verify that a callback fingerprint represents the supplied answer text."""
     if not isinstance(token, str):
         return False
     try:
