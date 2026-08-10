@@ -343,15 +343,14 @@ def claim_daily_bonus_state(user_id: int, day: str, daily_streak: int) -> dict:
         raise LegacyResultStoreUnavailable("daily bonus write failed") from exc
 
 
-def claim_daily_bonus_once(user_id: int, day: str, daily_streak: int | None = None) -> int:
-    """Compatibility wrapper: return points only for the winning claim."""
+def claim_daily_bonus_once(user_id: int, day: str, daily_streak: int | None = None) -> dict:
+    """Return the durable daily-bonus stage, including replay metadata."""
     if daily_streak is None:
         entry = _users().find_one(
             {"_id": database._uid(user_id)}, {"daily_activity_streak": 1}
         ) or {}
         daily_streak = int(entry.get("daily_activity_streak", 0) or 0)
-    stage = claim_daily_bonus_state(user_id, day, daily_streak)
-    return stage["bonus"] if stage["claimed_now"] else 0
+    return claim_daily_bonus_state(user_id, day, daily_streak)
 
 
 def claim_challenge_bonus_state(user_id: int, mode: str, score: int, day: str) -> dict:
@@ -410,10 +409,9 @@ def claim_challenge_bonus_state(user_id: int, mode: str, score: int, day: str) -
         raise LegacyResultStoreUnavailable("challenge bonus write failed") from exc
 
 
-def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> int:
-    """Compatibility wrapper: return points only for the winning claim."""
-    stage = claim_challenge_bonus_state(user_id, mode, score, day)
-    return stage["bonus"] if stage["claimed_now"] else 0
+def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> dict:
+    """Return the durable Challenge-bonus stage, including replay metadata."""
+    return claim_challenge_bonus_state(user_id, mode, score, day)
 
 
 def claim_achievement_once(
