@@ -205,7 +205,10 @@ def test_owned_answer_missing_or_wrong_index_is_conflict(monkeypatch):
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
     monkeypatch.setattr(database, "_now_utc", lambda: _FakeNow("2026-08-10T12:00:03"))
 
-    with pytest.raises(QuizSessionAnswerConflict, match="index does not match"):
+    with pytest.raises(
+        QuizSessionAnswerConflict,
+        match="not the immediately preceding durable transition",
+    ):
         record_owned_quiz_answer(
             "s1",
             42,
