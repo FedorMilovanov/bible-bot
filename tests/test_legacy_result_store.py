@@ -145,42 +145,52 @@ def base_user():
     }
 
 
+def apply_easy_result(result_id):
+    return store.apply_base_result_once(
+        result_id=result_id,
+        user_id=42,
+        username="u",
+        first_name="User",
+        level_key="easy",
+        score=8,
+        total=10,
+        time_seconds=12.5,
+        max_streak=4,
+    )
+
+
 def test_base_result_receipt_prevents_duplicate_counters(monkeypatch):
     users = FakeUsers(base_user())
     monkeypatch.setattr(database, "collection", users)
     monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
 
-    first = store.apply_base_result_once(
-        result_id="session-1",
-        user_id=42,
-        username="u",
-        first_name="User",
-        level_key="easy",
-        score=8,
-        total=10,
-        time_seconds=12.5,
-        max_streak=4,
-    )
-    second = store.apply_base_result_once(
-        result_id="session-1",
-        user_id=42,
-        username="u",
-        first_name="User",
-        level_key="easy",
-        score=8,
-        total=10,
-        time_seconds=12.5,
-        max_streak=4,
-    )
+    first = apply_easy_result("session-1")
+    second = apply_easy_result("session-1")
 
     assert first["applied"] is True
     assert second["applied"] is False
     assert users.doc["total_tests"] == 1
     assert users.doc["total_points"] == 8
     assert users.doc["easy_attempts"] == 1
-    assert users.doc["legacy_result_receipts"] == ["session-1"]
+    assert len(users.doc["legacy_result_receipts"]) == 1
     assert users.doc["daily_activity_streak"] == 1
     assert users.doc["max_streak_ever"] == 4
+
+
+def test_base_result_receipts_do_not_expire_after_128_newer_results(monkeypatch):
+    users = FakeUsers(base_user())
+    monkeypatch.setattr(database, "collection", users)
+    monkeypatch.setattr(database, "_today_utc", lambda: "2026-08-10")
+
+    for index in range(140):
+        assert apply_easy_result(f"session-{index}")["applied"] is True
+
+    replay = apply_easy_result("session-0")
+
+    assert replay["applied"] is False
+    assert users.doc["total_tests"] == 140
+    assert users.doc["easy_attempts"] == 140
+    assert len(users.doc["legacy_result_receipts"]) == 140
 
 
 def test_daily_bonus_is_claimed_once(monkeypatch):
