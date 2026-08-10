@@ -31,6 +31,7 @@ from legacy_session_close import (
     QuizSessionCompletionInvalid,
     QuizSessionCompletionStoreUnavailable,
     finish_completed_owned_quiz_session,
+    validate_completed_owned_quiz_session,
 )
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
@@ -101,6 +102,45 @@ def _nonnegative_number(value, field: str) -> float:
     if not math.isfinite(number) or number < 0:
         raise LegacyResultStoreUnavailable(f"durable {field} is invalid")
     return number
+
+
+def _preflight_recovery_session(
+    *,
+    user_id: int,
+    data: dict,
+    score: int,
+    total: int,
+    challenge_mode: str | None,
+) -> dict:
+    """Prove persisted completion before any result/bonus/achievement write."""
+    session_id = data.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise LegacyResultStoreUnavailable("durable result session id is missing")
+    session = validate_completed_owned_quiz_session(session_id, user_id)
+    if not isinstance(session, dict):
+        raise LegacyResultStoreUnavailable("durable result session is missing or terminal")
+
+    stored_score = _nonnegative_int(session.get("correct_count"), "session correct_count")
+    question_ids = session.get("question_ids")
+    if not isinstance(question_ids, list) or not question_ids:
+        raise LegacyResultStoreUnavailable("durable result session question ids are invalid")
+    if stored_score != score or len(question_ids) != total:
+        raise LegacyResultStoreUnavailable("durable result session score/total does not match")
+
+    mode = session.get("mode")
+    if challenge_mode is None:
+        if mode != "level":
+            raise LegacyResultStoreUnavailable("normal durable session has Challenge mode")
+        durable_level = session.get("level_key")
+        if durable_level != data.get("level_key"):
+            raise LegacyResultStoreUnavailable("durable result session level does not match")
+    else:
+        if challenge_mode not in _CHALLENGE_MODES or mode != challenge_mode:
+            raise LegacyResultStoreUnavailable("Challenge result mode does not match durable session")
+        durable_level = session.get("level_key")
+        if durable_level not in {None, challenge_mode}:
+            raise LegacyResultStoreUnavailable("Challenge durable session level does not match")
+    return session
 
 
 def _claim_achievements(
@@ -227,6 +267,13 @@ def finalize_normal_result(
         }
 
     try:
+        _preflight_recovery_session(
+            user_id=user_id,
+            data=data,
+            score=score,
+            total=total,
+            challenge_mode=None,
+        )
         result_id = stable_result_id(user_id, data)
         base = apply_base_result_once(
             result_id=result_id,
@@ -296,8 +343,17 @@ def finalize_challenge_result(
     achievement_rewards: Mapping[str, int],
 ) -> dict:
     """Durably finalize one Challenge result with retry-stable bonus/week data."""
-    requested_mode = str(data["challenge_mode"])
     try:
+        requested_mode = data.get("challenge_mode")
+        if not isinstance(requested_mode, str) or requested_mode not in _CHALLENGE_MODES:
+            raise LegacyResultStoreUnavailable("Challenge requested mode is invalid")
+        _preflight_recovery_session(
+            user_id=user_id,
+            data=data,
+            score=score,
+            total=total,
+            challenge_mode=requested_mode,
+        )
         result_id = stable_result_id(user_id, data)
         base = apply_base_result_once(
             result_id=result_id,
