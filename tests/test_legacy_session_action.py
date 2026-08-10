@@ -33,6 +33,7 @@ def _session(*, attempt_id="attempt-1", current=0):
         "correct_count": correct,
         "answered_questions": answered,
         "time_limit": None,
+        "start_time": 0.0,
     }
 
 
