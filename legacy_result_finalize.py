@@ -9,6 +9,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
+from legacy_bonus_store import (
+    claim_challenge_bonus_for_result,
+    claim_daily_bonus_for_result,
+)
 from legacy_result_flow import (
     challenge_badge_candidates,
     general_achievement_candidates,
@@ -18,8 +22,6 @@ from legacy_result_store import (
     LegacyResultStoreUnavailable,
     apply_base_result_once,
     claim_achievement_once,
-    claim_challenge_bonus_state,
-    claim_daily_bonus_state,
     result_day,
     result_week_id,
     sync_weekly_best,
@@ -69,6 +71,33 @@ def _finish_recovery_session(data: dict, user_id: int) -> bool:
     return finished is not None
 
 
+def _durable_result(base: dict) -> dict:
+    receipt = base.get("receipt") or {}
+    stored = receipt.get("result") if isinstance(receipt, dict) else None
+    if isinstance(stored, dict) and stored:
+        return stored
+    stored = base.get("result")
+    return stored if isinstance(stored, dict) else {}
+
+
+def _achievement_state(base: dict) -> dict:
+    receipt = base.get("receipt") or {}
+    stored = receipt.get("achievement_state") if isinstance(receipt, dict) else None
+    if isinstance(stored, dict) and stored:
+        return stored
+    user_doc = base.get("user")
+    return user_doc if isinstance(user_doc, dict) else {}
+
+
+def _policy_data(data: dict, durable: dict) -> dict:
+    """Use result-time policy inputs on retries instead of mutable handler state."""
+    policy = dict(data)
+    for key in ("quiz_mode", "fastest_answer"):
+        if key in durable:
+            policy[key] = durable[key]
+    return policy
+
+
 def finalize_normal_result(
     *,
     user_id: int,
@@ -105,16 +134,24 @@ def finalize_normal_result(
             time_seconds=time_seconds,
             score_multiplier=data.get("score_multiplier", 1.0),
             max_streak=data.get("max_streak", 0),
+            quiz_mode=data.get("quiz_mode"),
+            fastest_answer=data.get("fastest_answer"),
         )
         completed_at = base["completed_at"]
         receipt = base.get("receipt") or {}
+        durable = _durable_result(base)
+        achievement_state = _achievement_state(base)
         day = result_day(completed_at)
-        daily_bonus = claim_daily_bonus_state(
-            user_id,
-            day,
+        daily_bonus = claim_daily_bonus_for_result(
+            user_id=user_id,
+            result_id=result_id,
+            day=day,
             daily_streak=int(receipt.get("daily_streak", 0) or 0),
         )
-        keys = general_achievement_candidates(base["user"], data)
+        keys = general_achievement_candidates(
+            achievement_state,
+            _policy_data(data, durable),
+        )
         claimed = _claim_achievements(
             user_id=user_id,
             keys=keys,
@@ -146,7 +183,7 @@ def finalize_challenge_result(
     achievement_rewards: Mapping[str, int],
 ) -> dict:
     """Durably finalize one Challenge result with retry-stable bonus/week data."""
-    mode = str(data["challenge_mode"])
+    requested_mode = str(data["challenge_mode"])
     try:
         result_id = stable_result_id(user_id, data)
         base = apply_base_result_once(
@@ -154,17 +191,31 @@ def finalize_challenge_result(
             user_id=user_id,
             username=data.get("username") or "",
             first_name=data.get("first_name") or "Игрок",
-            level_key=mode,
+            level_key=requested_mode,
             score=score,
             total=total,
             time_seconds=time_seconds,
             score_multiplier=1.0,
             max_streak=data.get("max_streak", 0),
-            challenge_mode=mode,
+            challenge_mode=requested_mode,
+            quiz_mode=data.get("quiz_mode"),
+            fastest_answer=data.get("fastest_answer"),
         )
         completed_at = base["completed_at"]
+        durable = _durable_result(base)
+        achievement_state = _achievement_state(base)
+        mode = str(durable.get("challenge_mode") or requested_mode)
+        durable_score = int(durable.get("score", score) or 0)
+        durable_time = max(0.0, float(durable.get("time_seconds", time_seconds) or 0.0))
         day = result_day(completed_at)
-        bonus = claim_challenge_bonus_state(user_id, mode, score, day)
+
+        bonus = claim_challenge_bonus_for_result(
+            user_id=user_id,
+            result_id=result_id,
+            mode=mode,
+            score=durable_score,
+            day=day,
+        )
 
         # Weekly ranking is independent from the once-per-day bonus. Every
         # attempt may improve the weekly best, including second attempts.
@@ -173,12 +224,15 @@ def finalize_challenge_result(
             username=data.get("username") or "",
             first_name=data.get("first_name") or "Игрок",
             mode=mode,
-            score=score,
-            time_seconds=time_seconds,
+            score=durable_score,
+            time_seconds=durable_time,
             week_id=result_week_id(completed_at),
         )
 
-        general_keys = general_achievement_candidates(base["user"], data)
+        general_keys = general_achievement_candidates(
+            achievement_state,
+            _policy_data(data, durable),
+        )
         general_claimed = _claim_achievements(
             user_id=user_id,
             keys=general_keys,
@@ -189,7 +243,7 @@ def finalize_challenge_result(
         # Challenge policy intentionally returns (storage key, legacy UI text)
         # pairs. Persist only the canonical key, then surface the message for
         # claims that actually won the idempotent achievement update.
-        badge_candidates = challenge_badge_candidates(base["user"], score)
+        badge_candidates = challenge_badge_candidates(achievement_state, durable_score)
         badge_keys = [key for key, _message in badge_candidates]
         badge_claimed_keys = _claim_achievements(
             user_id=user_id,
