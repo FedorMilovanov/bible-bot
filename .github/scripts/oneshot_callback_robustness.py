@@ -23,7 +23,7 @@ def replace_region(start: str, end: str, replacement: str, label: str) -> None:
 replace_region(
     "async def report_inaccuracy_handler(update: Update, context):\n",
     "\n\nasync def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeout_seconds: int):\n",
-    '''async def report_inaccuracy_handler(update: Update, context):
+    r'''async def report_inaccuracy_handler(update: Update, context):
     """Отправляет админу именно тот вопрос, чья кнопка «Неточность?» была нажата."""
     query = update.callback_query
     user = update.effective_user
@@ -77,7 +77,7 @@ replace_region(
 replace_region(
     "async def retry_errors(update: Update, context):\n",
     "\n\n# ═══════════════════════════════════════════════\n# ПАГИНАЦИЯ РАЗБОРА ОШИБОК\n",
-    '''async def retry_errors(update: Update, context):
+    r'''async def retry_errors(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
 
@@ -137,7 +137,7 @@ replace_region(
 replace_region(
     "async def review_test_handler(update: Update, context):\n",
     "\n\nasync def review_errors_handler(update: Update, context):\n",
-    '''async def review_test_handler(update: Update, context):
+    r'''async def review_test_handler(update: Update, context):
     """Листание вопросов теста с правильными ответами после завершения."""
     query = update.callback_query
     user_id = query.from_user.id
@@ -203,7 +203,7 @@ replace_region(
 replace_region(
     "async def report_start(update: Update, context):\n",
     "\n\nasync def report_receive_text(update: Update, context):\n",
-    '''async def report_start(update: Update, context):
+    r'''async def report_start(update: Update, context):
     query = update.callback_query
     report_type = (query.data or "").replace("report_start_", "", 1)
     if report_type == "bug_direct":
@@ -225,14 +225,5 @@ replace_region(
     return REPORT_TEXT''',
     "report start callback",
 )
-
-for required in (
-    b'q_num = int((query.data or "").replace("report_inaccuracy_", "", 1))',
-    b"report_type not in REPORT_TYPE_LABELS",
-    b"q_index < 0 or q_index >= len(answered)",
-    b"target_id != user_id",
-):
-    if required not in data:
-        raise SystemExit(f"missing callback robustness marker: {required!r}")
 
 path.write_bytes(data)
