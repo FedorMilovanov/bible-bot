@@ -18,6 +18,23 @@ def replace_once(old: str, new: str, label: str) -> None:
     data = data.replace(old_b, enc(new), 1)
 
 
+def replace_once_in_region(start: str, end: str, old: str, new: str, label: str) -> None:
+    global data
+    start_b = enc(start)
+    end_b = enc(end)
+    if data.count(start_b) != 1 or data.count(end_b) != 1:
+        raise SystemExit(f"{label}: region markers are not unique")
+    start_i = data.index(start_b)
+    end_i = data.index(end_b, start_i)
+    region = data[start_i:end_i]
+    old_b = enc(old)
+    count = region.count(old_b)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match inside region, got {count}")
+    region = region.replace(old_b, enc(new), 1)
+    data = data[:start_i] + region + data[end_i:]
+
+
 def replace_region(start: str, end: str, replacement: str, label: str) -> None:
     global data
     start_b = enc(start)
@@ -39,7 +56,9 @@ replace_once(
     "battle helper import",
 )
 
-replace_once(
+replace_once_in_region(
+    "async def random_command(update: Update, context):\n",
+    "\n\nasync def admin_command(update: Update, context):\n",
     '        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",\n'
     '        "intro1", "intro2", "intro3",\n',
     '        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",\n'
