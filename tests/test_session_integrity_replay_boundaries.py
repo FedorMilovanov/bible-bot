@@ -28,6 +28,7 @@ def _record(monkeypatch, session, *, expected_index=0):
     return record_owned_quiz_answer(
         "s1",
         42,
+        expected_attempt_id="s1",
         expected_index=expected_index,
         question_id=f"q{expected_index}",
         user_answer="A",
