@@ -18,6 +18,7 @@ from battle_integrity import (
 )
 from report_integrity import (
     claim_report_delivery_stage,
+    get_report_delivery_stage_state,
     mark_report_delivery_stage_delivered,
     release_report_delivery_stage,
 )
@@ -114,7 +115,18 @@ async def deliver_report_once(
     photo_sender: Callable[[dict], Awaitable[Any]],
     text_sender: Callable[[dict], Awaitable[Any]],
 ) -> tuple[bool, bool]:
-    """Deliver pending photo then text stages without replaying acknowledged work."""
+    """Deliver photo before text without mistaking another worker's lease for ack."""
     photo = await _deliver_report_stage_once(report_id, "photo", photo_sender)
+    if not photo:
+        photo_state = get_report_delivery_stage_state(report_id, "photo")
+        if photo_state is None:
+            raise LegacyDeliveryStateInvalid(
+                "report disappeared while checking photo delivery state"
+            )
+        if photo_state.get("delivered") is not True:
+            # A different worker may currently own the photo lease. Do not let
+            # this worker overtake it and send text before photo is durably acked.
+            return False, False
+
     text = await _deliver_report_stage_once(report_id, "text", text_sender)
     return photo, text
