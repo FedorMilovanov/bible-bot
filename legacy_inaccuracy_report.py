@@ -82,7 +82,7 @@ def stable_inaccuracy_report_id(
         raise LegacyInaccuracyReportInvalid("inaccuracy report question id is invalid")
     owner = _database()._uid(user_id)
     digest = hashlib.sha256(
-        f"{owner}\x1f{attempt_id}\x1f{question_index}\x1f{question_id}".encode("utf-8")
+        f"{owner}\x1f{attempt_id}\x1f{question_index}\x1f{question_id}".encode()
     ).hexdigest()
     return f"inaccuracy-{digest[:40]}"
 
@@ -100,7 +100,7 @@ def _report_text(
         f"  {index + 1}. {option}" for index, option in enumerate(options)
     )
     text = (
-        "Сообщение о неточности в вопросе\n\n"
+        "Неточность в вопросе\n\n"
         f"Тест: {safe_level}\n"
         f"Вопрос {question_index + 1}: {question_text}\n\n"
         f"Варианты:\n{options_text}\n\n"
