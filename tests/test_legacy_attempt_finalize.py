@@ -78,6 +78,46 @@ def test_stale_runtime_attempt_never_enters_scoring(monkeypatch):
         )
 
 
+def test_stale_memoized_result_receipt_is_retryable_and_never_enters_scoring(monkeypatch):
+    monkeypatch.setattr(
+        attempt_finalize,
+        "validate_completed_owned_quiz_session",
+        lambda *_: _session(attempt_id="attempt-new"),
+    )
+    monkeypatch.setattr(
+        attempt_finalize,
+        "_finalize_normal_result",
+        lambda **_: pytest.fail("stale result receipt must not enter result scoring"),
+    )
+    data = _data(attempt_id="attempt-new")
+    data["result_id"] = "quiz:attempt-old"
+
+    with pytest.raises(
+        attempt_finalize.LegacyAttemptFinalizationPending,
+        match="receipt identity belongs to another quiz attempt",
+    ):
+        attempt_finalize.finalize_normal_result(
+            user_id=42,
+            data=data,
+            score=1,
+            total=1,
+            time_seconds=2.0,
+            achievement_rewards={},
+        )
+
+
+def test_matching_memoized_result_receipt_allows_current_attempt(monkeypatch):
+    monkeypatch.setattr(
+        attempt_finalize,
+        "validate_completed_owned_quiz_session",
+        lambda *_: _session(attempt_id="attempt-1"),
+    )
+    data = _data(attempt_id="attempt-1")
+    data["result_id"] = "quiz:attempt-1"
+
+    assert attempt_finalize._prove_current_attempt(42, data) == "attempt-1"
+
+
 def test_same_container_restart_changes_result_identity_and_blocks_old_result(monkeypatch):
     durable = _session(attempt_id="attempt-new")
     monkeypatch.setattr(
