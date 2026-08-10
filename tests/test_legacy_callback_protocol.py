@@ -70,7 +70,7 @@ def test_tokens_are_compact_deterministic_and_nonempty():
     assert session_first == session_second
     assert len(session_first) == 12
     assert option_first == option_second
-    assert len(option_first) == 8
+    assert len(option_first) == 12
 
 
 def test_protocol_rejects_invalid_indexes_and_tokens():
@@ -81,7 +81,7 @@ def test_protocol_rejects_invalid_indexes_and_tokens():
     with pytest.raises(ValueError, match="option_text"):
         build_answer_callback("qa", "s1", 0, 0, None)
     with pytest.raises(ValueError, match="malformed session callback token"):
-        parse_answer_callback("qa:not-a-token:0:1:abcdefgh", "qa")
+        parse_answer_callback("qa:not-a-token:0:1:abcdefghijkl", "qa")
     token = session_callback_token("s1")
     with pytest.raises(ValueError, match="malformed option callback token"):
         parse_answer_callback(f"qa:{token}:0:1:bad", "qa")
