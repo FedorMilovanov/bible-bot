@@ -185,13 +185,23 @@ def finalize_challenge_result(
             rewards=achievement_rewards,
             awarded_at=_award_date(completed_at),
         )
-        badge_keys = challenge_badge_candidates(base["user"], score)
-        badge_claimed = _claim_achievements(
+
+        # Challenge policy intentionally returns (storage key, legacy UI text)
+        # pairs. Persist only the canonical key, then surface the message for
+        # claims that actually won the idempotent achievement update.
+        badge_candidates = challenge_badge_candidates(base["user"], score)
+        badge_keys = [key for key, _message in badge_candidates]
+        badge_claimed_keys = _claim_achievements(
             user_id=user_id,
             keys=badge_keys,
             rewards={},
             awarded_at=_award_date(completed_at),
         )
+        claimed_key_set = set(badge_claimed_keys)
+        badge_messages = [
+            message for key, message in badge_candidates if key in claimed_key_set
+        ]
+
         session_finished = _finish_recovery_session(data, user_id)
         return {
             "scored": True,
@@ -201,7 +211,7 @@ def finalize_challenge_result(
             "completed_at": completed_at,
             "bonus": bonus,
             "new_achievements": general_claimed,
-            "new_challenge_badges": badge_claimed,
+            "new_challenge_badges": badge_messages,
             "session_finished": session_finished,
         }
     except (LegacyResultStoreUnavailable, QuizSessionStoreUnavailable) as exc:
