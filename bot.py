@@ -4356,8 +4356,6 @@ async def remind_unfinished_tests_job(context):
 # ─────────────────────────────────────────────
 # GRACEFUL SHUTDOWN (6.6)
 # ─────────────────────────────────────────────
-import signal
-
 async def _save_all_sessions():
     """Сохраняет все in-memory сессии в MongoDB при корректной остановке."""
     saved = 0
@@ -4374,17 +4372,6 @@ async def _save_all_sessions():
                 pass
     logger.info("💾 Graceful shutdown: сохранено %d сессий", saved)
 
-
-def _handle_shutdown(signum, frame):
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        loop.create_task(_save_all_sessions())
-    else:
-        loop.run_until_complete(_save_all_sessions())
-
-
-signal.signal(signal.SIGTERM, _handle_shutdown)
-signal.signal(signal.SIGINT,  _handle_shutdown)
 
 
 async def on_error(update: object, context):
