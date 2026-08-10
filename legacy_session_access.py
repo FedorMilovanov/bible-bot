@@ -126,7 +126,7 @@ def create_quiz_session_strict(
     time_limit: int | None = None,
     chat_id: int | None = None,
 ) -> dict:
-    """Create one durable session or raise; never return phantom success."""
+    """Create one durable session/attempt or raise; never return phantom success."""
     if mode not in _ALLOWED_MODES:
         raise ValueError("unsupported persisted quiz session mode")
     _validate_questions(question_ids, questions_data)
@@ -147,6 +147,10 @@ def create_quiz_session_strict(
         "_id": session_id,
         "user_id": uid,
         "session_id": session_id,
+        # On first creation the logical attempt id equals the container id.
+        # Atomic in-place restart later assigns a fresh attempt id while keeping
+        # this durable container/owner identity stable.
+        "attempt_id": session_id,
         "status": "in_progress",
         "mode": mode,
         "level_key": level_key,
