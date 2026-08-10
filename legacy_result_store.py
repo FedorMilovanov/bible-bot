@@ -96,6 +96,23 @@ def _day_key(day: str) -> str:
     return parsed.strftime("%Y%m%d")
 
 
+def _bonus_stage(receipt, *, claimed_now: bool) -> dict:
+    """Normalize a durable bonus receipt into the public stage result."""
+    if isinstance(receipt, dict):
+        bonus = max(0, int(receipt.get("bonus", 0) or 0))
+        eligible = bool(receipt.get("eligible", False))
+    else:
+        # Transitional compatibility with boolean receipts from development
+        # checkpoints. No amount can be reconstructed from those markers.
+        bonus = 0
+        eligible = bool(receipt)
+    return {
+        "bonus": bonus,
+        "eligible": eligible,
+        "claimed_now": claimed_now,
+    }
+
+
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
     collection = _users()
     uid = database._uid(user_id)
@@ -162,8 +179,6 @@ def _challenge_streak_fields(entry: dict, today: str, mode: str | None, score: i
             "challenge_streak_last_date": today,
         }
 
-    # A failed attempt resets the streak only on the first challenge result of
-    # the day, matching the legacy semantics.
     if last != today:
         return {
             "challenge_streak_count": 0,
@@ -281,8 +296,8 @@ def apply_base_result_once(
         raise LegacyResultStoreUnavailable("base result write failed") from exc
 
 
-def claim_daily_bonus_once(user_id: int, day: str) -> int:
-    """Atomically award the normal-test daily bonus for the result's durable day."""
+def claim_daily_bonus_once(user_id: int, day: str) -> dict:
+    """Atomically award/replay the normal-test daily bonus for a durable day."""
     collection = _users()
     uid = database._uid(user_id)
     day_key = _day_key(day)
@@ -293,38 +308,52 @@ def claim_daily_bonus_once(user_id: int, day: str) -> int:
             {"daily_activity_streak": 1, "last_daily_bonus": 1, receipt_path: 1},
         )
         if not entry:
-            return 0
-        receipt_value = entry.get("daily_bonus_receipts", {}).get(day_key)
-        if receipt_value:
-            return 0
+            raise LegacyResultStoreUnavailable("daily bonus user document is missing")
 
-        # Migration bridge: legacy code recorded only the latest date. If that
-        # field already says this result day was paid, backfill the durable
-        # per-day receipt without awarding points again.
+        receipts = entry.get("daily_bonus_receipts", {})
+        if isinstance(receipts, dict) and day_key in receipts:
+            return _bonus_stage(receipts[day_key], claimed_now=False)
+
         if entry.get("last_daily_bonus", "") == day:
-            collection.update_one(
+            receipt = {"bonus": 0, "eligible": False, "legacy": True}
+            result = collection.update_one(
                 {"_id": uid, receipt_path: {"$exists": False}},
-                {"$set": {receipt_path: True}},
+                {"$set": {receipt_path: receipt}},
             )
-            return 0
+            if result.modified_count == 1:
+                return _bonus_stage(receipt, claimed_now=False)
+            refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+            stored = refreshed.get("daily_bonus_receipts", {}).get(day_key)
+            if stored is not None:
+                return _bonus_stage(stored, claimed_now=False)
+            raise LegacyResultStoreUnavailable("daily bonus migration receipt disappeared")
 
         streak = int(entry.get("daily_activity_streak", 0) or 0)
         bonus = 15 if streak >= 7 else 10 if streak >= 3 else 5
+        receipt = {"bonus": bonus, "eligible": True}
         result = collection.update_one(
             {"_id": uid, receipt_path: {"$exists": False}},
             {
-                "$set": {receipt_path: True},
+                "$set": {receipt_path: receipt},
                 "$max": {"last_daily_bonus": day},
                 "$inc": {"total_points": bonus},
             },
         )
-        return bonus if result.modified_count == 1 else 0
+        if result.modified_count == 1:
+            return _bonus_stage(receipt, claimed_now=True)
+        refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+        stored = refreshed.get("daily_bonus_receipts", {}).get(day_key)
+        if stored is not None:
+            return _bonus_stage(stored, claimed_now=False)
+        raise LegacyResultStoreUnavailable("daily bonus receipt could not be persisted")
+    except LegacyResultStoreUnavailable:
+        raise
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("daily bonus write failed") from exc
 
 
-def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> int:
-    """Atomically award a challenge bonus for the base result's durable day."""
+def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) -> dict:
+    """Atomically award/replay a challenge bonus for a durable result day."""
     if mode not in _CHALLENGE_MODES:
         raise ValueError(f"unsupported challenge mode: {mode}")
     collection = _users()
@@ -340,25 +369,34 @@ def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) ->
             {date_field: 1, receipt_path: 1},
         )
         if not entry:
-            return 0
-        receipt_value = (
-            entry.get("challenge_bonus_receipts", {})
-            .get(mode, {})
-            .get(day_key)
-        )
-        if receipt_value:
-            return 0
+            raise LegacyResultStoreUnavailable("challenge bonus user document is missing")
 
-        # Migration bridge for pre-receipt deployments.
+        receipts = entry.get("challenge_bonus_receipts", {})
+        mode_receipts = receipts.get(mode, {}) if isinstance(receipts, dict) else {}
+        if isinstance(mode_receipts, dict) and day_key in mode_receipts:
+            return _bonus_stage(mode_receipts[day_key], claimed_now=False)
+
         if entry.get(date_field, "") == day:
-            collection.update_one(
+            receipt = {"bonus": 0, "eligible": False, "legacy": True}
+            result = collection.update_one(
                 {"_id": uid, receipt_path: {"$exists": False}},
-                {"$set": {receipt_path: True}},
+                {"$set": {receipt_path: receipt}},
             )
-            return 0
+            if result.modified_count == 1:
+                return _bonus_stage(receipt, claimed_now=False)
+            refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+            stored = (
+                refreshed.get("challenge_bonus_receipts", {})
+                .get(mode, {})
+                .get(day_key)
+            )
+            if stored is not None:
+                return _bonus_stage(stored, claimed_now=False)
+            raise LegacyResultStoreUnavailable("challenge bonus migration receipt disappeared")
 
+        receipt = {"bonus": bonus, "eligible": True}
         update: dict = {
-            "$set": {receipt_path: True},
+            "$set": {receipt_path: receipt},
             "$max": {date_field: day},
         }
         if bonus:
@@ -367,7 +405,19 @@ def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) ->
             {"_id": uid, receipt_path: {"$exists": False}},
             update,
         )
-        return bonus if result.modified_count == 1 else 0
+        if result.modified_count == 1:
+            return _bonus_stage(receipt, claimed_now=True)
+        refreshed = collection.find_one({"_id": uid}, {receipt_path: 1}) or {}
+        stored = (
+            refreshed.get("challenge_bonus_receipts", {})
+            .get(mode, {})
+            .get(day_key)
+        )
+        if stored is not None:
+            return _bonus_stage(stored, claimed_now=False)
+        raise LegacyResultStoreUnavailable("challenge bonus receipt could not be persisted")
+    except LegacyResultStoreUnavailable:
+        raise
     except PyMongoError as exc:
         raise LegacyResultStoreUnavailable("challenge bonus write failed") from exc
 
