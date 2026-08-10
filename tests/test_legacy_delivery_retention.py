@@ -142,6 +142,39 @@ def test_wrong_target_options_are_replaced(monkeypatch):
     assert len(reports.created) == 1
 
 
+def test_wrong_target_key_is_replaced(monkeypatch):
+    battles = FakeIndexes(
+        {
+            "ttl_battles_delivered_created_at": {
+                "key": [("updated_at_dt", 1)],
+                "expireAfterSeconds": 2592000,
+                "partialFilterExpression": {
+                    "status": "finalized",
+                    "result_delivery.creator.delivered": True,
+                    "result_delivery.opponent.delivered": True,
+                },
+            }
+        }
+    )
+    reports = FakeIndexes(
+        {
+            "ttl_reports_delivered_created_at": {
+                "key": [("updated_at_dt", 1)],
+                "expireAfterSeconds": 7776000,
+                "partialFilterExpression": {"admin_delivered": True},
+            }
+        }
+    )
+    monkeypatch.setattr(database, "battles_collection", battles)
+    monkeypatch.setattr(database, "reports_collection", reports)
+
+    assert ensure_state_aware_delivery_ttl() is True
+    assert battles.dropped == ["ttl_battles_delivered_created_at"]
+    assert reports.dropped == ["ttl_reports_delivered_created_at"]
+    assert battles.created[0][0] == [("created_at_dt", 1)]
+    assert reports.created[0][0] == [("created_at_dt", 1)]
+
+
 def test_absent_collections_are_explicit_noop(monkeypatch):
     monkeypatch.setattr(database, "battles_collection", None)
     monkeypatch.setattr(database, "reports_collection", None)
