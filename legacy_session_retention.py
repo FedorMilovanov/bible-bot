@@ -48,6 +48,7 @@ def ensure_state_aware_session_ttl() -> bool:
 
         expected_terminal = (
             terminal is not None
+            and terminal.get("key") == [("updated_at_dt", ASCENDING)]
             and terminal.get("expireAfterSeconds") == _TERMINAL_RETENTION_SECONDS
             and terminal.get("partialFilterExpression") == _TERMINAL_FILTER
         )
