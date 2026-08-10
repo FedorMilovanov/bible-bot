@@ -36,8 +36,8 @@ def finalize_completed_session(
 ) -> dict:
     """Finalize one completed, owner-validated persisted legacy quiz session.
 
-    The result score, total and elapsed time are taken exclusively from Mongo
-    evidence. Caller-provided identity is used only for leaderboard display.
+    Score, total, elapsed time and completion timestamp are taken exclusively
+    from Mongo evidence. Caller-provided identity is used only for display.
     """
     _assert_owner(session, user_id)
     recovered = completed_result_inputs(session)
@@ -49,6 +49,7 @@ def finalize_completed_session(
     data = dict(recovered["data"])
     data["username"] = username or ""
     data["first_name"] = first_name or "Игрок"
+    data["result_completed_at"] = recovered["completed_at"]
     score = int(recovered["score"])
     total = int(recovered["total"])
     time_seconds = float(recovered["time_seconds"])
