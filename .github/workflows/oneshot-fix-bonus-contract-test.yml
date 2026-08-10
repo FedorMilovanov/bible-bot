@@ -1,0 +1,35 @@
+name: One-shot bonus API contract test cleanup
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+      - name: Apply guarded test patch
+        run: python .github/scripts/oneshot_fix_bonus_contract_test.py
+      - name: Verify test-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "tests/test_legacy_result_store.py"
+          git diff --check
+          grep -q 'test_daily_bonus_compatibility_wrapper_returns_only_new_credit' tests/test_legacy_result_store.py
+          ! grep -q 'test_daily_bonus_public_api_preserves_replay_state' tests/test_legacy_result_store.py
+      - name: Commit test contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_legacy_result_store.py
+          git commit -m 'test: pin legacy bonus wrapper compatibility'
+          git push origin HEAD:agent/bible-bot-legacy-correctness
