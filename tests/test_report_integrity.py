@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 import database
 from report_integrity import (
@@ -118,7 +118,7 @@ class UserCollection:
 
     def update_one(self, query, update):
         if self.fail_update:
-            raise RuntimeError("mongo user write failed")
+            raise PyMongoError("mongo user write failed")
         if query.get("_id") != self.doc["_id"]:
             return SimpleNamespace(modified_count=0)
         before = deepcopy(self.doc)
