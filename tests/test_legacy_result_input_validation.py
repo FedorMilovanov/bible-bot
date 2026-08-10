@@ -93,7 +93,7 @@ def test_challenge_cannot_carry_normal_quiz_mode():
 
 
 def test_challenge_multiplier_must_remain_one():
-    with pytest.raises(ValueError, match="multiplier must be 1.0"):
+    with pytest.raises(ValueError, match=r"multiplier must be 1\.0"):
         _apply(
             level_key="random20",
             challenge_mode="random20",
