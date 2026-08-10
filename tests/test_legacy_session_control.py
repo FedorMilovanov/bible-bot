@@ -122,6 +122,24 @@ def test_store_outage_is_not_treated_as_no_active_session(monkeypatch):
         control.cancel_current_incomplete_session(42)
 
 
+def test_ambiguous_duplicate_active_lookup_is_control_conflict(monkeypatch):
+    monkeypatch.setattr(
+        control,
+        "get_active_quiz_session_strict",
+        lambda _uid: (_ for _ in ()).throw(
+            control.QuizSessionAccessSchemaInvalid("multiple active sessions")
+        ),
+    )
+    monkeypatch.setattr(
+        control,
+        "cancel_owned_incomplete_quiz_attempt",
+        lambda *_args, **_kwargs: pytest.fail("ambiguous state must never cancel"),
+    )
+
+    with pytest.raises(control.LegacySessionControlConflict, match="ambiguous"):
+        control.cancel_current_incomplete_session(42)
+
+
 def test_contradictory_active_state_is_not_cancelled(monkeypatch):
     bad = _partial()
     bad["correct_count"] = "1"
