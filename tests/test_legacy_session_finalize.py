@@ -57,6 +57,7 @@ def test_completed_normal_session_uses_persisted_result_inputs(monkeypatch):
     assert captured["data"]["username"] == "tester"
     assert captured["data"]["first_name"] == "Test"
     assert captured["data"]["result_pending"] is True
+    assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
 
 
 def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
@@ -90,6 +91,7 @@ def test_completed_challenge_session_routes_to_challenge_finalizer(monkeypatch):
     assert captured["data"]["challenge_mode"] == "hardcore20"
     assert captured["data"]["challenge_time_limit"] == 10
     assert captured["data"]["first_name"] == "Игрок"
+    assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
 
 
 def test_completed_session_recovery_rejects_other_owner(monkeypatch):
