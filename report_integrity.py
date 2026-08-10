@@ -69,7 +69,6 @@ def _immutable_snapshot(doc: dict) -> dict:
         "type": doc.get("type"),
         "text": doc.get("text"),
         "photo_file_id": doc.get("photo_file_id"),
-        "context": doc.get("context", {}),
     }
 
 
