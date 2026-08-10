@@ -8,12 +8,21 @@ import database
 import legacy_session_access as access
 
 
+class FakeCursor:
+    def __init__(self, docs):
+        self.docs = list(docs)
+
+    def limit(self, value):
+        return self.docs[:value]
+
+
 class FakeSessions:
     def __init__(self):
         self.indexes = {}
         self.created_indexes = []
         self.inserted = []
         self.active = None
+        self.active_docs = []
         self.insert_error = None
         self.find_error = None
 
@@ -45,6 +54,18 @@ class FakeSessions:
             if self.active.get(key) != value:
                 return None
         return self.active
+
+    def find(self, query):
+        if self.find_error is not None:
+            raise self.find_error
+        docs = self.active_docs
+        if not docs and self.active is not None:
+            docs = [self.active]
+        matches = [
+            doc for doc in docs
+            if all(doc.get(key) == value for key, value in query.items())
+        ]
+        return FakeCursor(matches)
 
 
 def _install(monkeypatch):
@@ -158,6 +179,26 @@ def test_active_lookup_distinguishes_absent_from_outage(monkeypatch):
 
     collection.find_error = AutoReconnect("mongo unavailable")
     with pytest.raises(access.QuizSessionAccessUnavailable, match="lookup failed"):
+        access.get_active_quiz_session_strict(42)
+
+
+def test_active_lookup_returns_only_matching_owned_active_session(monkeypatch):
+    collection, _now = _install(monkeypatch)
+    session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
+    collection.active_docs = [session]
+
+    assert access.get_active_quiz_session_strict(42) == session
+    assert access.get_active_quiz_session_strict(99) is None
+
+
+def test_active_lookup_rejects_ambiguous_legacy_duplicates(monkeypatch):
+    collection, _now = _install(monkeypatch)
+    collection.active_docs = [
+        {"_id": "s1", "user_id": "42", "status": "in_progress"},
+        {"_id": "s2", "user_id": "42", "status": "in_progress"},
+    ]
+
+    with pytest.raises(access.QuizSessionAccessSchemaInvalid, match="multiple active"):
         access.get_active_quiz_session_strict(42)
 
 
