@@ -28,6 +28,6 @@ def test_state_aware_migrations_still_remove_indexes_from_older_deployments():
     assert '"ttl_battles_created_at"' in DELIVERY_RETENTION
     assert '"ttl_reports_created_at"' in DELIVERY_RETENTION
 
-    assert 'name="ttl_terminal_updated_at"' in SESSION_RETENTION
-    assert 'name="ttl_delivered_battles_created_at"' in DELIVERY_RETENTION
-    assert 'name="ttl_delivered_reports_created_at"' in DELIVERY_RETENTION
+    assert 'name=_TERMINAL_TTL_NAME' in SESSION_RETENTION
+    assert 'target_name=_BATTLE_DELIVERED_TTL' in DELIVERY_RETENTION
+    assert 'target_name=_REPORT_DELIVERED_TTL' in DELIVERY_RETENTION
