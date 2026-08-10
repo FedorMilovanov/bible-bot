@@ -177,16 +177,20 @@ def create_quiz_session_strict(
 
 
 def get_active_quiz_session_strict(user_id: int | str) -> dict | None:
-    """Distinguish a genuinely absent active session from Mongo outage."""
+    """Return the only active session, rejecting ambiguous legacy duplicates."""
     database = _database()
+    query = {"user_id": database._uid(user_id), "status": "in_progress"}
     try:
-        return _collection().find_one(
-            {"user_id": database._uid(user_id), "status": "in_progress"}
-        )
+        active = list(_collection().find(query).limit(2))
     except PyMongoError as exc:
         raise QuizSessionAccessUnavailable(
             "active quiz session lookup failed"
         ) from exc
+    if len(active) > 1:
+        raise QuizSessionAccessSchemaInvalid(
+            "multiple active quiz sessions exist for one user"
+        )
+    return active[0] if active else None
 
 
 def get_quiz_session_strict(
