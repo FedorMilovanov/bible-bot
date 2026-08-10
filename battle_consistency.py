@@ -169,6 +169,65 @@ def get_battles_needing_finalization(limit: int = 20) -> list[str]:
         return []
 
 
+def mark_battle_result_delivered(battle_id: str, user_id: int, role: str) -> bool:
+    """Persist one participant's result-delivery receipt idempotently."""
+    if role not in _VALID_ROLES:
+        return False
+    collection = database.battles_collection
+    if collection is None:
+        return False
+
+    now = database._now_utc()
+    delivered_key = f"{role}_result_delivered"
+    try:
+        outcome = collection.update_one(
+            {
+                "_id": battle_id,
+                f"{role}_id": user_id,
+                delivered_key: {"$ne": True},
+            },
+            {
+                "$set": {
+                    delivered_key: True,
+                    f"{role}_result_delivered_at": now,
+                    "updated_at": now.isoformat(),
+                }
+            },
+        )
+        if outcome.modified_count == 1:
+            return True
+        return collection.count_documents(
+            {
+                "_id": battle_id,
+                f"{role}_id": user_id,
+                delivered_key: True,
+            },
+            limit=1,
+        ) > 0
+    except PyMongoError:
+        logger.exception("mark_battle_result_delivered failed for battle=%s user=%s", battle_id, user_id)
+        return False
+
+
+def delete_battle_if_fully_delivered(battle_id: str) -> bool:
+    """Delete only a battle whose two result deliveries are durably marked."""
+    collection = database.battles_collection
+    if collection is None:
+        return False
+    try:
+        result = collection.delete_one(
+            {
+                "_id": battle_id,
+                "creator_result_delivered": True,
+                "opponent_result_delivered": True,
+            }
+        )
+        return result.deleted_count == 1
+    except PyMongoError:
+        logger.exception("delete_battle_if_fully_delivered failed for %s", battle_id)
+        return False
+
+
 def cancel_battle_for_participant(battle_id: str, user_id: int) -> bool:
     """Delete a battle only when the requester is one of its participants."""
     collection = database.battles_collection
