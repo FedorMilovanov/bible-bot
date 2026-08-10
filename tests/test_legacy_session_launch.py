@@ -183,6 +183,24 @@ def test_lookup_and_create_outages_are_explicit(monkeypatch):
         _launch()
 
 
+def test_ambiguous_duplicate_active_lookup_is_launch_conflict(monkeypatch):
+    monkeypatch.setattr(
+        launch,
+        "get_active_quiz_session_strict",
+        lambda _uid: (_ for _ in ()).throw(
+            launch.QuizSessionAccessSchemaInvalid("multiple active sessions")
+        ),
+    )
+    monkeypatch.setattr(
+        launch,
+        "create_quiz_session_strict",
+        lambda **_: pytest.fail("ambiguous active state must never create"),
+    )
+
+    with pytest.raises(launch.LegacySessionLaunchConflict, match="ambiguous"):
+        _launch()
+
+
 def test_corrupt_active_session_is_never_replaced(monkeypatch):
     bad = _partial()
     bad["correct_count"] = "1"
