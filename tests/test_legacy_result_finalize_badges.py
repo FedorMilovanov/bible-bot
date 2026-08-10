@@ -64,7 +64,7 @@ def test_challenge_badges_persist_keys_and_return_legacy_messages(monkeypatch):
     monkeypatch.setattr(finalize, "claim_achievement_once", claim)
     monkeypatch.setattr(
         finalize,
-        "finish_owned_quiz_session",
+        "finish_completed_owned_quiz_session",
         lambda *_: {"status": "finished"},
     )
 
