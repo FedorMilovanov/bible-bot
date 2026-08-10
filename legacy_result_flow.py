@@ -1,7 +1,7 @@
 """Pure policy helpers for crash-safe legacy quiz finalization."""
 from __future__ import annotations
 
-import hashlib
+import uuid
 
 
 _GENERAL_THRESHOLDS = (
@@ -20,12 +20,17 @@ _GENERAL_THRESHOLDS = (
 
 
 def stable_result_id(user_id: int, data: dict) -> str:
-    """Return and memoize an idempotency key for one in-memory quiz result.
+    """Return and memoize an idempotency key for one quiz result.
 
-    Persisted quizzes use their Mongo session id. If quiz-session persistence was
-    unavailable at start, a deterministic in-memory fallback is used so repeated
-    finalization inside the same process still cannot double-credit the result.
+    Persisted quizzes use their Mongo session id. If session persistence was
+    unavailable at start, recovery across a process crash is impossible anyway;
+    a fresh UUID is therefore safer than a deterministic hash of incomplete
+    runtime fields, which could collapse two distinct attempts into one receipt.
+    Repeated finalization of the same in-memory ``data`` object remains stable
+    because the generated id is memoized immediately.
     """
+    del user_id  # kept in the public signature for call-site clarity/backward compatibility
+
     existing = str(data.get("result_id") or "").strip()
     if existing:
         return existing
@@ -34,20 +39,7 @@ def stable_result_id(user_id: int, data: dict) -> str:
     if session_id:
         result_id = f"quiz:{session_id}"
     else:
-        question_ids = []
-        for question in data.get("questions", []):
-            if isinstance(question, dict):
-                question_ids.append(str(question.get("id") or question.get("question") or ""))
-        seed = "|".join(
-            [
-                str(user_id),
-                str(data.get("start_time") or ""),
-                str(data.get("level_key") or data.get("challenge_mode") or ""),
-                ",".join(question_ids),
-            ]
-        )
-        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-        result_id = f"memory:{digest}"
+        result_id = f"memory:{uuid.uuid4().hex}"
 
     data["result_id"] = result_id
     return result_id
