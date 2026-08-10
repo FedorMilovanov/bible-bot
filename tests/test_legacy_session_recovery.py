@@ -150,3 +150,30 @@ def test_completed_result_inputs_refuse_missing_last_answer_timestamp():
 
 def test_completed_result_inputs_refuse_incomplete_session():
     assert completed_result_inputs(_session(current_index=2)) is None
+
+
+def test_completed_result_inputs_refuse_missing_answer_record():
+    session = _session(
+        current_index=3,
+        correct_count=1,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+        ],
+    )
+
+    assert completed_result_inputs(session) is None
+
+
+def test_completed_result_inputs_refuse_correct_counter_mismatch():
+    session = _session(
+        current_index=3,
+        correct_count=3,
+        answered_questions=[
+            {"is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    assert completed_result_inputs(session) is None
