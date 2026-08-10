@@ -152,4 +152,5 @@ def accept_inaccuracy_report_once(
         ),
         photo_file_id=None,
         context=context,
+        update_cooldown=False,
     )
