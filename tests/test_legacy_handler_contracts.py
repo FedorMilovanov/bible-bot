@@ -55,3 +55,33 @@ def test_pending_battle_result_cannot_be_cancelled():
     source = region("async def cancel_battle", "async def inline_query_handler")
     assert "battle_result_pending" in source
     assert "delete_battle_for_participant" in source
+
+
+def test_inaccuracy_report_uses_clicked_question_index_and_plain_delivery():
+    source = region("async def report_inaccuracy_handler", "async def _handle_question_timeout")
+    assert 'replace("report_inaccuracy_", "", 1)' in source
+    assert "q_num < 0 or q_num >= len(q_list)" in source
+    assert "data.get(\"current_question\"" not in source
+    assert "parse_mode=\"Markdown\"" not in source
+    assert "Принято, отправляю автору" in source
+
+
+def test_retry_errors_has_single_branch_answer_and_safe_callback_parse():
+    source = region("async def retry_errors", "def _build_error_page")
+    assert 'replace("retry_errors_", "", 1)' in source
+    assert "except (TypeError, ValueError)" in source
+    assert "target_id != user_id" in source
+    assert not source.lstrip().startswith("async def retry_errors(update: Update, context):\n    query   = update.callback_query\n    await query.answer()")
+
+
+def test_review_test_rejects_malformed_and_negative_indexes():
+    source = region("async def review_test_handler", "async def review_errors_handler")
+    assert "except (TypeError, ValueError)" in source
+    assert "q_index < 0 or q_index >= len(answered)" in source
+
+
+def test_report_start_validates_type_before_answering_callback():
+    source = region("async def report_start", "async def report_receive_text")
+    assert "report_type not in REPORT_TYPE_LABELS" in source
+    assert "if not can_submit_report(user_id)" in source
+    assert source.index("await query.answer()") > source.index("if not can_submit_report(user_id)")
