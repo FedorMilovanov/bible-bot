@@ -1,0 +1,38 @@
+name: One-shot restore database persistence edit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+          fetch-depth: 2
+      - name: Restore parent database and apply exact persistence fix
+        run: python .github/scripts/oneshot_restore_database.py
+      - name: Guard database diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "database.py"
+          grep -q 'chat_id: int = None) -> str | None:' database.py
+          grep -A80 '^def create_quiz_session' database.py | grep -q 'return None'
+          ! grep -q '# (rest of file unchanged below this section)' database.py
+          test "$(wc -l < database.py)" -gt 1000
+      - name: Commit restored exact edit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add database.py
+          git commit -m "fix: return no session id when Mongo insert fails"
+          git push origin HEAD:agent/bible-bot-legacy-correctness
