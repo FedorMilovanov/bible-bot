@@ -9,6 +9,7 @@ import math
 from datetime import UTC, datetime
 
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
+from legacy_attempt_identity import persisted_attempt_id
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
 _PERSISTED_QUIZ_MODES = frozenset({"level", *_CHALLENGE_MODES})
@@ -18,9 +19,19 @@ class LegacyPersistedSessionModeInvalid(RuntimeError):
     """Raised when persisted mode/timer evidence cannot be interpreted safely."""
 
 
+class LegacyPersistedSessionStateInvalid(LegacyPersistedSessionModeInvalid):
+    """Raised when persisted counters/identity carry contradictory types."""
+
+
 def _answers(session: dict) -> list[dict]:
     value = session.get("answered_questions", [])
     return value if isinstance(value, list) else []
+
+
+def _strict_nonnegative_int(value, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise LegacyPersistedSessionStateInvalid(f"persisted {field} is invalid")
+    return value
 
 
 def session_is_complete(session: dict) -> bool:
@@ -151,13 +162,7 @@ def _persisted_answer_timeline(session: dict) -> tuple[datetime, list[datetime]]
 
 
 def persisted_result_time_seconds(session: dict) -> float | None:
-    """Return duration bounded by the persisted answer chronology.
-
-    All answer timestamps must be parseable, non-decreasing and not precede the
-    persisted start time. Offset-aware timestamps are converted to UTC instead
-    of having their offset discarded. This prevents contradictory evidence from
-    becoming an artificial zero-second or multi-hour result after restart.
-    """
+    """Return duration bounded by the persisted answer chronology."""
     timeline = _persisted_answer_timeline(session)
     if timeline is None:
         return None
@@ -166,12 +171,7 @@ def persisted_result_time_seconds(session: dict) -> float | None:
 
 
 def persisted_completed_at(session: dict) -> str | None:
-    """Return the final persisted answer timestamp normalized to naive UTC ISO.
-
-    A recovered result must keep the day/week when the quiz actually finished,
-    not the later process-restart time. The same validated answer chronology used
-    for elapsed time is therefore also the authority for result completion time.
-    """
+    """Return the final persisted answer timestamp normalized to naive UTC ISO."""
     timeline = _persisted_answer_timeline(session)
     if timeline is None:
         return None
@@ -182,9 +182,16 @@ def persisted_completed_at(session: dict) -> str | None:
 def recovery_fields(session: dict) -> dict:
     """Build non-Telegram runtime fields from one persisted quiz session."""
     mode = _persisted_mode(session)
+    try:
+        attempt_id = persisted_attempt_id(session)
+    except ValueError as exc:
+        raise LegacyPersistedSessionStateInvalid(
+            "persisted quiz attempt identity is invalid"
+        ) from exc
     is_challenge = mode in _CHALLENGE_MODES
     time_limit = session.get("time_limit")
-    current_streak, max_streak = _streaks(_answers(session))
+    answered = _answers(session)
+    current_streak, max_streak = _streaks(answered)
 
     if is_challenge:
         quiz_mode = None
@@ -197,22 +204,23 @@ def recovery_fields(session: dict) -> dict:
         challenge_mode = None
         challenge_time_limit = None
 
-    try:
-        correct_answers = max(0, int(session.get("correct_count", 0) or 0))
-    except (TypeError, ValueError):
-        correct_answers = 0
-    try:
-        current_question = max(0, int(session.get("current_index", 0) or 0))
-    except (TypeError, ValueError):
-        current_question = 0
+    correct_answers = _strict_nonnegative_int(
+        session.get("correct_count", 0),
+        "correct_count",
+    )
+    current_question = _strict_nonnegative_int(
+        session.get("current_index", 0),
+        "current_index",
+    )
 
     return {
         "session_id": session.get("_id"),
+        "attempt_id": attempt_id,
         "questions": session.get("questions_data", []),
         "level_name": session.get("level_name", "Тест"),
         "quiz_chat_id": session.get("chat_id"),
         "current_question": current_question,
-        "answered_questions": _answers(session),
+        "answered_questions": answered,
         "level_key": session.get("level_key", mode),
         "correct_answers": correct_answers,
         "start_time": session.get("start_time"),
@@ -255,17 +263,32 @@ def completed_result_inputs(session: dict) -> dict | None:
         return None
 
     answered = fields.get("answered_questions", [])
-    if not isinstance(answered, list) or len(answered) != total:
-        return None
-    if any(
-        not isinstance(item, dict) or not isinstance(item.get("is_correct"), bool)
-        for item in answered
+    question_ids = session.get("question_ids")
+    if (
+        not isinstance(answered, list)
+        or len(answered) != total
+        or not isinstance(question_ids, list)
+        or len(question_ids) != total
+        or any(not isinstance(qid, str) or not qid for qid in question_ids)
     ):
         return None
-    score_from_answers = sum(1 for item in answered if item["is_correct"] is True)
-    stored_score = session.get("correct_count", 0)
-    if isinstance(stored_score, bool) or not isinstance(stored_score, int):
-        return None
+
+    score_from_answers = 0
+    for index, item in enumerate(answered):
+        if not isinstance(item, dict) or not isinstance(item.get("is_correct"), bool):
+            return None
+        if item.get("qid") is not None and item.get("qid") != question_ids[index]:
+            return None
+        stored_index = item.get("index", index)
+        if (
+            isinstance(stored_index, bool)
+            or not isinstance(stored_index, int)
+            or stored_index != index
+        ):
+            return None
+        score_from_answers += int(item["is_correct"])
+
+    stored_score = fields["correct_answers"]
     if stored_score != score_from_answers:
         return None
 
