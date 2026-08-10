@@ -91,6 +91,31 @@ def _exact_state_filter(session: dict) -> dict:
     }
 
 
+def _restart_replay(session: dict, expected_attempt_id: str) -> dict | None:
+    """Return an immediate lost-response replay, never a later stale button."""
+    if session.get("previous_attempt_id") != expected_attempt_id:
+        return None
+    if (
+        session.get("status") != "in_progress"
+        or session.get("current_index") != 0
+        or session.get("correct_count") != 0
+        or session.get("answered_questions") != []
+    ):
+        raise QuizSessionLifecycleConflict(
+            "restart was already applied and the replacement attempt has progressed"
+        )
+    try:
+        attempt_id = persisted_attempt_id(session)
+    except ValueError as exc:
+        raise QuizSessionLifecycleConflict("quiz attempt identity is invalid") from exc
+    return {
+        "applied": False,
+        "session": session,
+        "attempt_id": attempt_id,
+        "previous_attempt_id": expected_attempt_id,
+    }
+
+
 def restart_owned_quiz_attempt(
     session_id: str,
     user_id: int | str,
@@ -106,10 +131,11 @@ def restart_owned_quiz_attempt(
 ) -> dict:
     """Atomically replace one incomplete logical attempt inside its container.
 
-    If the same old-attempt request is retried after the update committed but
-    before the caller received the response, ``previous_attempt_id`` identifies
-    the already-created replacement and the durable snapshot is returned without
-    resetting it a second time.
+    If the same old-attempt request is retried immediately after the update
+    committed but before its response arrived, ``previous_attempt_id`` proves
+    the replacement and the durable zero-progress snapshot is returned without
+    resetting it again. Once that replacement advances, the old restart button
+    becomes stale and fails closed.
     """
     expected_attempt_id = _required_id(expected_attempt_id, "expected_attempt_id")
     spec = validated_session_spec(
@@ -129,18 +155,11 @@ def restart_owned_quiz_attempt(
         existing = collection.find_one(owner_filter)
         if existing is None:
             raise QuizSessionLifecycleConflict("quiz session is missing or not owned")
+        replay = _restart_replay(existing, expected_attempt_id)
+        if replay is not None:
+            return replay
         if existing.get("status") != "in_progress":
             raise QuizSessionLifecycleConflict("quiz session is not in progress")
-
-        # Lost response after a committed restart: the old attempt id remains as
-        # durable replay evidence. Never reset the replacement a second time.
-        if existing.get("previous_attempt_id") == expected_attempt_id:
-            return {
-                "applied": False,
-                "session": existing,
-                "attempt_id": persisted_attempt_id(existing),
-                "previous_attempt_id": expected_attempt_id,
-            }
 
         try:
             current_attempt_id = persisted_attempt_id(existing)
@@ -193,13 +212,9 @@ def restart_owned_quiz_attempt(
         latest = collection.find_one(owner_filter)
         if latest is None:
             raise QuizSessionLifecycleConflict("quiz session disappeared during restart")
-        if latest.get("previous_attempt_id") == expected_attempt_id:
-            return {
-                "applied": False,
-                "session": latest,
-                "attempt_id": persisted_attempt_id(latest),
-                "previous_attempt_id": expected_attempt_id,
-            }
+        replay = _restart_replay(latest, expected_attempt_id)
+        if replay is not None:
+            return replay
         try:
             latest_attempt_id = persisted_attempt_id(latest)
         except ValueError as exc:
