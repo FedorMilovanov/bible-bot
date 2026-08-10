@@ -1224,9 +1224,9 @@ def get_hardest_questions(limit: int = 10) -> list:
 # ═══════════════════════════════════════════════
 
 def can_submit_report(user_id: int) -> bool:
-    """Проверяет кулдаун через MongoDB (переживает рестарт)."""
-    if collection is None:
-        return True
+    """Проверяет кулдаун только при доступном durable report storage."""
+    if collection is None or reports_collection is None:
+        return False
     try:
         entry = collection.find_one(
             {"_id": _uid(user_id)}, {"last_report_at": 1}
@@ -1234,18 +1234,19 @@ def can_submit_report(user_id: int) -> bool:
         if not entry or "last_report_at" not in entry:
             return True
         last = entry["last_report_at"]
-        if isinstance(last, datetime):
-            elapsed = (_now_utc() - last).total_seconds()
-        else:
-            elapsed = REPORT_COOLDOWN_SECONDS + 1
+        if not isinstance(last, datetime):
+            logger.error("can_submit_report: invalid last_report_at for user %s", user_id)
+            return False
+        elapsed = (_now_utc() - last).total_seconds()
         return elapsed >= REPORT_COOLDOWN_SECONDS
-    except Exception:
-        return True
+    except Exception as e:
+        logger.error("can_submit_report error: %s", e)
+        return False
 
 
 def seconds_until_next_report(user_id: int) -> int:
-    if collection is None:
-        return 0
+    if collection is None or reports_collection is None:
+        return REPORT_COOLDOWN_SECONDS
     try:
         entry = collection.find_one(
             {"_id": _uid(user_id)}, {"last_report_at": 1}
@@ -1253,16 +1254,25 @@ def seconds_until_next_report(user_id: int) -> int:
         if not entry or "last_report_at" not in entry:
             return 0
         last = entry["last_report_at"]
-        if isinstance(last, datetime):
-            elapsed = (_now_utc() - last).total_seconds()
-            return max(0, int(REPORT_COOLDOWN_SECONDS - elapsed))
-        return 0
-    except Exception:
-        return 0
+        if not isinstance(last, datetime):
+            logger.error("seconds_until_next_report: invalid last_report_at for user %s", user_id)
+            return REPORT_COOLDOWN_SECONDS
+        elapsed = (_now_utc() - last).total_seconds()
+        if elapsed < 0:
+            logger.error("seconds_until_next_report: future last_report_at for user %s", user_id)
+            return REPORT_COOLDOWN_SECONDS
+        return max(0, min(REPORT_COOLDOWN_SECONDS, int(REPORT_COOLDOWN_SECONDS - elapsed)))
+    except Exception as e:
+        logger.error("seconds_until_next_report error: %s", e)
+        return REPORT_COOLDOWN_SECONDS
 
 
 def insert_report(user_id: int, username: str, first_name: str,
-                  report_type: str, text: str, context: dict = None) -> str:
+                  report_type: str, text: str, context: dict = None) -> str | None:
+    """Persist report first; never consume cooldown for a failed report insert."""
+    if reports_collection is None or collection is None:
+        return None
+
     report_id = str(uuid.uuid4())
     now = _now_utc()
     text = (text or "")[:2000]
@@ -1281,35 +1291,52 @@ def insert_report(user_id: int, username: str, first_name: str,
         "admin_delivered": False,
     }
 
-    if reports_collection is not None:
-        try:
-            reports_collection.insert_one(doc)
-        except Exception as e:
-            logger.error("insert_report error: %s", e)
+    try:
+        reports_collection.insert_one(doc)
+    except Exception as e:
+        logger.error("insert_report error: %s", e)
+        return None
 
-    # Обновляем кулдаун в коллекции users (переживает рестарт)
-    if collection is not None:
-        try:
-            collection.update_one(
-                {"_id": _uid(user_id)},
-                {"$set": {"last_report_at": now}}
+    try:
+        result = collection.update_one(
+            {"_id": _uid(user_id)},
+            {"$set": {"last_report_at": now}},
+        )
+        if result.modified_count != 1:
+            logger.error(
+                "insert_report: report %s persisted but cooldown was not updated for user %s",
+                report_id,
+                user_id,
             )
-        except Exception:
-            pass
+    except Exception as e:
+        # The report is already durable. Never turn a persisted report into a
+        # phantom failure merely because the secondary cooldown write failed.
+        logger.error(
+            "insert_report: report %s persisted but cooldown update failed: %s",
+            report_id,
+            e,
+        )
 
     return report_id
 
 
-def mark_report_delivered(report_id: str):
+def mark_report_delivered(report_id: str) -> bool:
     if reports_collection is None:
-        return
+        return False
     try:
-        reports_collection.update_one(
-            {"_id": report_id},
-            {"$set": {"admin_delivered": True}}
+        result = reports_collection.update_one(
+            {"_id": report_id, "admin_delivered": {"$ne": True}},
+            {"$set": {"admin_delivered": True}},
         )
+        if result.modified_count == 1:
+            return True
+        existing = reports_collection.find_one(
+            {"_id": report_id}, {"admin_delivered": 1}
+        )
+        return bool(existing and existing.get("admin_delivered") is True)
     except Exception as e:
         logger.error("mark_report_delivered error: %s", e)
+        return False
 
 
 # ═══════════════════════════════════════════════
