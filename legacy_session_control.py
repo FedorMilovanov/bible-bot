@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from legacy_attempt_identity import persisted_attempt_id
 from legacy_restart_policy import LegacyRestartStateInvalid, classify_restart_session
 from legacy_session_access import (
+    QuizSessionAccessSchemaInvalid,
     QuizSessionAccessUnavailable,
     get_active_quiz_session_strict,
 )
@@ -46,6 +47,10 @@ def cancel_current_incomplete_session(user_id: int | str) -> CurrentSessionCance
     """Cancel only a proven incomplete current attempt; never erase result evidence."""
     try:
         session = get_active_quiz_session_strict(user_id)
+    except QuizSessionAccessSchemaInvalid as exc:
+        raise LegacySessionControlConflict(
+            "active quiz session state is ambiguous"
+        ) from exc
     except QuizSessionAccessUnavailable as exc:
         raise LegacySessionControlUnavailable("active session lookup failed") from exc
     if session is None:
