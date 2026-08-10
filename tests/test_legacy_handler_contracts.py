@@ -10,9 +10,23 @@ def region(start: str, end: str) -> str:
     return BOT[start_i:end_i]
 
 
-def test_random_command_includes_historical_leaf_pools():
-    random_source = region("async def random_command", "async def admin_command")
-    assert '"nero", "geography"' in random_source
+def test_both_random_entry_paths_use_canonical_random_all_pool():
+    callback_source = region("async def random_all_start_handler", "async def timed_mode_handler")
+    command_source = region("async def random_command", "async def admin_command")
+
+    for source in (callback_source, command_source):
+        assert 'all_questions = get_pool_by_key("random_all")' in source
+        assert 'await send_question(context.bot, user_id, time_limit=None)' in source
+        assert 'all_pool_keys = [' not in source
+
+
+def test_random_command_uses_current_session_contract_without_stringifying_none():
+    source = region("async def random_command", "async def admin_command")
+
+    assert "user_data[user_id] = _create_session_data(" in source
+    assert "session_id=session_id" in source
+    assert 'context.user_data["session_id"] = str(session_id)' not in source
+    assert "send_question(update, context, questions" not in source
 
 
 def test_review_errors_never_uses_callback_user_as_authorization():
