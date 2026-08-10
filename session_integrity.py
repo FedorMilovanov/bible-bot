@@ -13,19 +13,28 @@ class QuizSessionStoreUnavailable(RuntimeError):
     """Raised when an owner-scoped quiz-session operation cannot reach MongoDB."""
 
 
-def _quiz_session_collection():
+def _database():
     import database
 
-    collection = getattr(database, "quiz_sessions_collection", None)
+    return database
+
+
+def _quiz_session_collection():
+    collection = getattr(_database(), "quiz_sessions_collection", None)
     if collection is None:
         raise QuizSessionStoreUnavailable("quiz session collection is unavailable")
     return collection
 
 
+def _owner_id(user_id: int | str) -> str:
+    """Use the same canonical representation as database.create_quiz_session."""
+    return _database()._uid(user_id)
+
+
 def get_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
     collection = _quiz_session_collection()
     try:
-        return collection.find_one({"_id": session_id, "user_id": int(user_id)})
+        return collection.find_one({"_id": session_id, "user_id": _owner_id(user_id)})
     except PyMongoError as exc:
         logger.exception("failed to load owned quiz session %s", session_id)
         raise QuizSessionStoreUnavailable("quiz session lookup failed") from exc
@@ -36,7 +45,7 @@ def cancel_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
     collection = _quiz_session_collection()
     try:
         return collection.find_one_and_update(
-            {"_id": session_id, "user_id": int(user_id), "status": "in_progress"},
+            {"_id": session_id, "user_id": _owner_id(user_id), "status": "in_progress"},
             {"$set": {"status": "cancelled"}},
             return_document=ReturnDocument.BEFORE,
         )
@@ -54,11 +63,10 @@ def finish_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
     surfaced so callers can keep the result retryable instead of pretending the
     recovery record was closed successfully.
     """
-    import database
-
+    database = _database()
     collection = _quiz_session_collection()
     now = database._now_utc()
-    owner_filter = {"_id": session_id, "user_id": int(user_id)}
+    owner_filter = {"_id": session_id, "user_id": _owner_id(user_id)}
     try:
         finished = collection.find_one_and_update(
             {**owner_filter, "status": "in_progress"},
