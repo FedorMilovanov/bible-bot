@@ -67,7 +67,7 @@ def record_battle_result(
     time_seconds: float,
     points: int,
 ) -> dict | None:
-    """Persist one participant result once and only for the persisted participant role."""
+    """Persist one participant result once; safe retries return the stored snapshot."""
     if role not in {"creator", "opponent"}:
         return None
 
@@ -75,7 +75,7 @@ def record_battle_result(
     participant_field = f"{role}_id"
     finished_field = f"{role}_finished"
     try:
-        return collection.find_one_and_update(
+        updated = collection.find_one_and_update(
             {
                 "_id": battle_id,
                 participant_field: user_id,
@@ -91,6 +91,19 @@ def record_battle_result(
                 }
             },
             return_document=ReturnDocument.AFTER,
+        )
+        if updated is not None:
+            return updated
+
+        # A retry can arrive after the first atomic write succeeded but before
+        # the caller observed it. Return the already persisted participant
+        # result without overwriting score/time/points a second time.
+        return collection.find_one(
+            {
+                "_id": battle_id,
+                participant_field: user_id,
+                finished_field: True,
+            }
         )
     except PyMongoError as exc:
         logger.exception("failed to record %s result for battle %s", role, battle_id)
