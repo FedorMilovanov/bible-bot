@@ -143,9 +143,10 @@ def recovery_fields(session: dict) -> dict:
 def completed_result_inputs(session: dict) -> dict | None:
     """Return authoritative scoring inputs for a completed persisted session.
 
-    A completed index alone is not enough: if the legacy document lacks a last
-    answer timestamp, recovery cannot prove the original duration. In that case
-    callers must keep the result pending instead of substituting wall-clock time.
+    Recovery is intentionally strict. The completed index, answer ledger and
+    aggregate correct counter must agree, and the last answer must provide the
+    original duration boundary. Any inconsistent legacy/corrupt document stays
+    pending for manual/newer recovery rather than receiving guessed statistics.
     """
     if not session_is_complete(session):
         return None
@@ -157,9 +158,20 @@ def completed_result_inputs(session: dict) -> dict | None:
     total = len(questions) if isinstance(questions, list) else 0
     if total <= 0:
         return None
-    score = min(max(0, int(fields.get("correct_answers", 0) or 0)), total)
+
+    answered = fields.get("answered_questions", [])
+    if not isinstance(answered, list) or len(answered) != total:
+        return None
+    score_from_answers = sum(1 for item in answered if bool(item.get("is_correct")))
+    try:
+        stored_score = int(session.get("correct_count", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if stored_score != score_from_answers:
+        return None
+
     return {
-        "score": score,
+        "score": score_from_answers,
         "total": total,
         "time_seconds": float(duration),
         "data": fields,
