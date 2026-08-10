@@ -1,0 +1,38 @@
+name: One-shot random flow unification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+          fetch-depth: 0
+      - name: Patch both random entry paths
+        run: python .github/scripts/oneshot_random_unify.py
+      - name: Guard patch scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "bot.py"
+          test "$(grep -c 'all_questions = get_pool_by_key("random_all")' bot.py)" -ge 2
+          test "$(grep -c 'await send_question(context.bot, user_id, time_limit=None)' bot.py)" -ge 2
+          ! grep -q 'context.user_data\["session_id"\] = str(session_id)' bot.py
+          ! grep -q 'send_question(update, context, questions' bot.py
+      - name: Commit exact random flow patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot.py
+          git commit -m "fix: unify legacy random mode on canonical pool"
+          git push origin HEAD:agent/bible-bot-legacy-correctness
