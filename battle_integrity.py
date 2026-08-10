@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import uuid
+from datetime import timedelta
 
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
@@ -154,7 +156,9 @@ def record_battle_result(
             return updated
 
         # Retry after a successful write but lost response: return the stored
-        # snapshot without overwriting the participant's first result.
+        # snapshot without overwriting the participant's first result. This also
+        # lets a participant recover its already-stored score after the shared
+        # battle document has advanced to the retained ``finalized`` state.
         return collection.find_one(
             {
                 "_id": battle_id,
@@ -270,7 +274,17 @@ def _apply_battle_outcome_once(
 
 
 def claim_final_battle(battle_id: str) -> dict | None:
-    """Apply both outcomes idempotently, then atomically claim the result message snapshot."""
+    """Apply both outcomes, then retain and atomically claim the final snapshot.
+
+    The legacy implementation deleted the only shared battle document before the
+    two Telegram result messages were acknowledged. A process crash at that point
+    permanently lost delivery evidence. Final battles now remain in Mongo with a
+    per-recipient outbox state. The current handler still receives the snapshot
+    only once, preserving its no-duplicate behavior until it is wired to the
+    delivery-lease API below.
+    """
+    import database
+
     collection = _battle_collection()
     try:
         battle = collection.find_one(
@@ -296,15 +310,26 @@ def claim_final_battle(battle_id: str) -> dict | None:
             first_name=battle.get("opponent_name", "Игрок"),
         )
 
-        # Only one concurrent finisher receives the deleted snapshot and thus
-        # only one sends the shared result message. User rewards are already
-        # protected by per-user battle receipts above.
-        return collection.find_one_and_delete(
+        now = database._now_utc()
+        return collection.find_one_and_update(
             {
                 "_id": battle_id,
                 "creator_finished": True,
                 "opponent_finished": True,
-            }
+                "final_claimed": {"$ne": True},
+            },
+            {
+                "$set": {
+                    "final_claimed": True,
+                    "status": "finalized",
+                    "finalized_at": now,
+                    "result_delivery": {
+                        "creator": {"delivered": False, "attempts": 0},
+                        "opponent": {"delivered": False, "attempts": 0},
+                    },
+                }
+            },
+            return_document=ReturnDocument.AFTER,
         )
     except BattleStoreUnavailable:
         raise
@@ -314,6 +339,167 @@ def claim_final_battle(battle_id: str) -> dict | None:
     except PyMongoError as exc:
         logger.exception("failed to claim final battle %s", battle_id)
         raise BattleStoreUnavailable("battle finalization failed") from exc
+
+
+def claim_battle_result_delivery(
+    battle_id: str,
+    user_id: int,
+    *,
+    lease_seconds: int = 120,
+) -> dict | None:
+    """Lease one pending recipient delivery from a retained finalized battle.
+
+    Delivery is at-least-once: Telegram has no idempotency key for sendMessage,
+    so a process may still die after Telegram accepts a message but before the
+    acknowledgement write. The lease prevents concurrent workers from sending
+    the same recipient simultaneously and keeps durable retry evidence.
+    """
+    import database
+
+    if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
+        raise ValueError("lease_seconds must be a positive integer")
+
+    collection = _battle_collection()
+    try:
+        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        role = battle_role_for_user(battle, user_id)
+        if role is None:
+            return None
+
+        now = database._now_utc()
+        lease_until = now + timedelta(seconds=lease_seconds)
+        token = uuid.uuid4().hex
+        path = f"result_delivery.{role}"
+        claimed = collection.find_one_and_update(
+            {
+                "_id": battle_id,
+                "final_claimed": True,
+                f"{path}.delivered": {"$ne": True},
+                "$or": [
+                    {f"{path}.lease_until": {"$exists": False}},
+                    {f"{path}.lease_until": {"$lte": now}},
+                ],
+            },
+            {
+                "$set": {
+                    f"{path}.claim_token": token,
+                    f"{path}.lease_until": lease_until,
+                    f"{path}.last_attempt_at": now,
+                },
+                "$inc": {f"{path}.attempts": 1},
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        if claimed is None:
+            return None
+        return {"battle": claimed, "role": role, "claim_token": token}
+    except PyMongoError as exc:
+        logger.exception("failed to claim result delivery for battle %s user %s", battle_id, user_id)
+        raise BattleStoreUnavailable("battle result delivery claim failed") from exc
+
+
+def mark_battle_result_delivered(
+    battle_id: str,
+    user_id: int,
+    claim_token: str,
+) -> bool:
+    """Acknowledge one leased recipient delivery after Telegram send succeeds."""
+    import database
+
+    if not isinstance(claim_token, str) or not claim_token:
+        raise ValueError("claim_token is required")
+    collection = _battle_collection()
+    try:
+        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        role = battle_role_for_user(battle, user_id)
+        if role is None:
+            return False
+        path = f"result_delivery.{role}"
+        result = collection.update_one(
+            {
+                "_id": battle_id,
+                f"{path}.delivered": {"$ne": True},
+                f"{path}.claim_token": claim_token,
+            },
+            {
+                "$set": {
+                    f"{path}.delivered": True,
+                    f"{path}.delivered_at": database._now_utc(),
+                },
+                "$unset": {
+                    f"{path}.claim_token": "",
+                    f"{path}.lease_until": "",
+                    f"{path}.last_error": "",
+                },
+            },
+        )
+        if result.modified_count == 1:
+            return True
+        existing = collection.find_one({"_id": battle_id}, {f"{path}.delivered": 1})
+        delivered, exists = _entry_field(existing or {}, f"{path}.delivered")
+        return exists and delivered is True
+    except PyMongoError as exc:
+        logger.exception("failed to acknowledge result delivery for battle %s user %s", battle_id, user_id)
+        raise BattleStoreUnavailable("battle result delivery acknowledgement failed") from exc
+
+
+def release_battle_result_delivery(
+    battle_id: str,
+    user_id: int,
+    claim_token: str,
+    *,
+    error: str = "",
+) -> bool:
+    """Release a failed delivery lease so a later worker can retry it."""
+    if not isinstance(claim_token, str) or not claim_token:
+        raise ValueError("claim_token is required")
+    collection = _battle_collection()
+    try:
+        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        role = battle_role_for_user(battle, user_id)
+        if role is None:
+            return False
+        path = f"result_delivery.{role}"
+        result = collection.update_one(
+            {
+                "_id": battle_id,
+                f"{path}.delivered": {"$ne": True},
+                f"{path}.claim_token": claim_token,
+            },
+            {
+                "$set": {f"{path}.last_error": str(error or "")[:500]},
+                "$unset": {
+                    f"{path}.claim_token": "",
+                    f"{path}.lease_until": "",
+                },
+            },
+        )
+        return result.modified_count == 1
+    except PyMongoError as exc:
+        logger.exception("failed to release result delivery for battle %s user %s", battle_id, user_id)
+        raise BattleStoreUnavailable("battle result delivery release failed") from exc
+
+
+def get_pending_final_battles(limit: int = 50) -> list[dict]:
+    """Return retained finalized battles with at least one unacknowledged recipient."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+    collection = _battle_collection()
+    try:
+        return list(
+            collection.find(
+                {
+                    "status": "finalized",
+                    "$or": [
+                        {"result_delivery.creator.delivered": {"$ne": True}},
+                        {"result_delivery.opponent.delivered": {"$ne": True}},
+                    ],
+                }
+            ).limit(limit)
+        )
+    except PyMongoError as exc:
+        logger.exception("failed to list pending finalized battles")
+        raise BattleStoreUnavailable("battle result delivery listing failed") from exc
 
 
 def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
@@ -327,6 +513,9 @@ def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
                     {"creator_id": user_id},
                     {"opponent_id": user_id},
                 ],
+                # Retained finalized battles are delivery evidence/outbox state,
+                # not user-cancellable game sessions.
+                "final_claimed": {"$ne": True},
             }
         )
         return result.deleted_count == 1
