@@ -7,7 +7,15 @@ import math
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from legacy_session_retention import ensure_state_aware_session_ttl
+
 logger = logging.getLogger(__name__)
+
+# database._ensure_indexes() historically installs the unsafe generic six-hour
+# TTL before bot.py imports this integrity layer. Migrate it immediately during
+# normal runtime import so pending in-progress result evidence is protected
+# before any callback/recovery operation begins.
+SESSION_RETENTION_READY = ensure_state_aware_session_ttl()
 
 
 class QuizSessionStoreUnavailable(RuntimeError):
