@@ -27,7 +27,11 @@ from legacy_result_store import (
     result_week_id,
     sync_weekly_best,
 )
-from session_integrity import QuizSessionStoreUnavailable, finish_owned_quiz_session
+from legacy_session_close import (
+    QuizSessionCompletionInvalid,
+    QuizSessionCompletionStoreUnavailable,
+    finish_completed_owned_quiz_session,
+)
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
 _QUIZ_MODES = frozenset({"relaxed", "timed", "speed"})
@@ -123,10 +127,10 @@ def _finish_recovery_session(data: dict, user_id: int) -> bool:
     session_id = data.get("session_id")
     if not session_id:
         return False
-    finished = finish_owned_quiz_session(str(session_id), user_id)
-    # Missing/already-cancelled records are not recoverable, but they must not
-    # turn a fully durable score into an infinite retry loop. Mongo failures are
-    # surfaced by finish_owned_quiz_session and handled by the outer wrapper.
+    finished = finish_completed_owned_quiz_session(str(session_id), user_id)
+    # Missing/cancelled records are not recoverable, but an owned in-progress
+    # record can close only when its persisted index/question/answer ledger is
+    # exactly complete. Completion conflicts are surfaced to the outer wrapper.
     return finished is not None
 
 
@@ -274,7 +278,11 @@ def finalize_normal_result(
             "new_achievements": claimed,
             "session_finished": session_finished,
         }
-    except (LegacyResultStoreUnavailable, QuizSessionStoreUnavailable) as exc:
+    except (
+        LegacyResultStoreUnavailable,
+        QuizSessionCompletionInvalid,
+        QuizSessionCompletionStoreUnavailable,
+    ) as exc:
         raise LegacyResultFinalizationPending("normal result finalization is retryable") from exc
 
 
@@ -376,5 +384,9 @@ def finalize_challenge_result(
             "new_challenge_badges": badge_messages,
             "session_finished": session_finished,
         }
-    except (LegacyResultStoreUnavailable, QuizSessionStoreUnavailable) as exc:
+    except (
+        LegacyResultStoreUnavailable,
+        QuizSessionCompletionInvalid,
+        QuizSessionCompletionStoreUnavailable,
+    ) as exc:
         raise LegacyResultFinalizationPending("challenge result finalization is retryable") from exc
