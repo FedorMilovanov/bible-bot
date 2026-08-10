@@ -71,7 +71,8 @@ from database import (
 )
 from battle_consistency import (
     apply_battle_reward_once, battle_role_for_user,
-    cancel_battle_for_participant, join_battle_atomic,
+    cancel_battle_for_participant, claim_battle_finalization,
+    get_battles_needing_finalization, join_battle_atomic,
     record_battle_finish_atomic,
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
@@ -2704,7 +2705,7 @@ async def show_battle_results(bot, battle_id: str):
     Формирует итоговый текст и отправляет его ОБОИМ участникам через context.bot.
     Вызывается только когда creator_finished и opponent_finished == True.
     """
-    battle = get_battle(battle_id)
+    battle = claim_battle_finalization(battle_id)
     if not battle:
         return
 
@@ -2719,14 +2720,29 @@ async def show_battle_results(bot, battle_id: str):
         winner, winner_name = "draw", None
 
     if winner == "creator":
-        apply_battle_reward_once(battle["creator_id"], battle_id, "win")
-        apply_battle_reward_once(battle["opponent_id"], battle_id, "lose")
+        reward_results = (
+            apply_battle_reward_once(battle["creator_id"], battle_id, "win"),
+            apply_battle_reward_once(battle["opponent_id"], battle_id, "lose"),
+        )
     elif winner == "opponent":
-        apply_battle_reward_once(battle["creator_id"], battle_id, "lose")
-        apply_battle_reward_once(battle["opponent_id"], battle_id, "win")
+        reward_results = (
+            apply_battle_reward_once(battle["creator_id"], battle_id, "lose"),
+            apply_battle_reward_once(battle["opponent_id"], battle_id, "win"),
+        )
     else:
-        apply_battle_reward_once(battle["creator_id"], battle_id, "draw")
-        apply_battle_reward_once(battle["opponent_id"], battle_id, "draw")
+        reward_results = (
+            apply_battle_reward_once(battle["creator_id"], battle_id, "draw"),
+            apply_battle_reward_once(battle["opponent_id"], battle_id, "draw"),
+        )
+
+    if any(result.retryable_error for result in reward_results):
+        logger.warning("Battle %s reward finalization deferred for retry", battle_id)
+        return
+    for uid, result in zip(
+        (battle["creator_id"], battle["opponent_id"]), reward_results
+    ):
+        if result.missing_user:
+            logger.error("Battle %s reward target user %s is missing", battle_id, uid)
 
     text  = "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
     text += f"🏆 *Победитель: {winner_name}!*\n\n" if winner != "draw" else "🤝 *НИЧЬЯ!*\n\n"
@@ -4302,8 +4318,15 @@ async def _general_message_fallback(update: Update, context):
 
 
 async def cleanup_old_battles_job(context):
-    """JobQueue: удаляет устаревшие битвы из MongoDB."""
-    deleted = db_cleanup_stale_battles()
+    """JobQueue: восстанавливает финализацию и удаляет устаревшие битвы."""
+    pending = await asyncio.to_thread(get_battles_needing_finalization)
+    for battle_id in pending:
+        try:
+            await show_battle_results(context.bot, battle_id)
+        except Exception as exc:
+            logger.warning("Battle %s recovery failed: %s", battle_id, exc)
+
+    deleted = await asyncio.to_thread(db_cleanup_stale_battles)
     if deleted:
         logger.info("🧹 Удалено устаревших битв: %d", deleted)
 
