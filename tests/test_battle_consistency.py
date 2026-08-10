@@ -29,13 +29,24 @@ class FakeBattleCollection:
             doc = self.doc
             if doc is None or doc.get("_id") != predicate.get("_id"):
                 return None
-            if doc.get("status") != predicate.get("status"):
-                return None
-            if doc.get("opponent_id") is not None:
-                return None
-            creator_guard = predicate.get("creator_id", {})
-            if "$ne" in creator_guard and doc.get("creator_id") == creator_guard["$ne"]:
-                return None
+
+            if "status" in predicate:
+                if doc.get("status") != predicate["status"] or doc.get("opponent_id") is not None:
+                    return None
+                creator_guard = predicate.get("creator_id", {})
+                if "$ne" in creator_guard and doc.get("creator_id") == creator_guard["$ne"]:
+                    return None
+            else:
+                participant_keys = [key for key in ("creator_id", "opponent_id") if key in predicate]
+                if len(participant_keys) != 1:
+                    return None
+                participant_key = participant_keys[0]
+                if doc.get(participant_key) != predicate[participant_key]:
+                    return None
+                finished_key = participant_key.replace("_id", "_finished")
+                if doc.get(finished_key) is True:
+                    return None
+
             doc.update(update["$set"])
             return deepcopy(doc)
 
@@ -78,10 +89,7 @@ class FakeUserCollection:
             push = update["$push"]["battle_reward_receipts"]
             receipts.extend(push["$each"])
             slice_value = push["$slice"]
-            if slice_value < 0:
-                doc["battle_reward_receipts"] = receipts[slice_value:]
-            else:
-                doc["battle_reward_receipts"] = receipts[:slice_value]
+            doc["battle_reward_receipts"] = receipts[slice_value:] if slice_value < 0 else receipts[:slice_value]
             return UpdateResult(1)
 
     def count_documents(self, predicate, limit=0):
@@ -94,8 +102,16 @@ def _battle_doc():
         "creator_id": 1,
         "creator_name": "Creator",
         "status": "waiting",
+        "creator_score": 0,
+        "creator_time": 0,
+        "creator_points": 0,
+        "creator_finished": False,
         "opponent_id": None,
         "opponent_name": None,
+        "opponent_score": 0,
+        "opponent_time": 0,
+        "opponent_points": 0,
+        "opponent_finished": False,
     }
 
 
@@ -152,6 +168,61 @@ def test_atomic_join_rejects_creator(monkeypatch):
     assert collection.doc["opponent_id"] is None
 
 
+def test_atomic_finish_handoff_has_single_second_finisher(monkeypatch):
+    battle = _battle_doc() | {"opponent_id": 2, "status": "in_progress"}
+    collection = FakeBattleCollection(battle)
+    monkeypatch.setattr(database, "battles_collection", collection)
+
+    barrier = Barrier(3)
+    results = []
+
+    def finish(uid, role):
+        barrier.wait()
+        results.append(
+            battle_consistency.record_battle_finish_atomic(
+                "battle_1_123", uid, role, score=8, time_taken=12.5, points=100
+            )
+        )
+
+    creator = Thread(target=finish, args=(1, "creator"))
+    opponent = Thread(target=finish, args=(2, "opponent"))
+    creator.start()
+    opponent.start()
+    barrier.wait()
+    creator.join(timeout=2)
+    opponent.join(timeout=2)
+
+    assert all(result is not None for result in results)
+    both_finished = [
+        result for result in results
+        if result["creator_finished"] and result["opponent_finished"]
+    ]
+    assert len(both_finished) == 1
+    assert collection.doc["creator_finished"] is True
+    assert collection.doc["opponent_finished"] is True
+
+
+def test_atomic_finish_rejects_wrong_role_and_duplicate(monkeypatch):
+    battle = _battle_doc() | {"opponent_id": 2, "status": "in_progress"}
+    collection = FakeBattleCollection(battle)
+    monkeypatch.setattr(database, "battles_collection", collection)
+
+    assert battle_consistency.record_battle_finish_atomic(
+        "battle_1_123", 2, "creator", score=1, time_taken=1, points=1
+    ) is None
+
+    first = battle_consistency.record_battle_finish_atomic(
+        "battle_1_123", 1, "creator", score=7, time_taken=9, points=50
+    )
+    duplicate = battle_consistency.record_battle_finish_atomic(
+        "battle_1_123", 1, "creator", score=10, time_taken=1, points=999
+    )
+    assert first is not None
+    assert duplicate is None
+    assert collection.doc["creator_score"] == 7
+    assert collection.doc["creator_points"] == 50
+
+
 def test_cancel_battle_requires_participant(monkeypatch):
     battle = _battle_doc() | {"opponent_id": 2, "status": "in_progress"}
     collection = FakeBattleCollection(battle)
@@ -172,9 +243,7 @@ def test_battle_reward_is_exactly_once_under_concurrent_finalizers(monkeypatch):
 
     def reward():
         barrier.wait()
-        outcomes.append(
-            battle_consistency.apply_battle_reward_once(1, "battle_1_123", "win")
-        )
+        outcomes.append(battle_consistency.apply_battle_reward_once(1, "battle_1_123", "win"))
 
     first = Thread(target=reward)
     second = Thread(target=reward)
