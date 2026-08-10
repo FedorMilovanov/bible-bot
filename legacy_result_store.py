@@ -6,6 +6,7 @@ idempotent follow-up claims so a process crash can safely retry finalization.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 
@@ -16,7 +17,6 @@ import database
 
 logger = logging.getLogger(__name__)
 
-_RESULT_RECEIPT_LIMIT = 128
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
 
 
@@ -36,6 +36,12 @@ def _weekly():
     if collection is None:
         raise LegacyResultStoreUnavailable("weekly leaderboard collection is unavailable")
     return collection
+
+
+def _receipt_path(result_id: str) -> str:
+    """Return a Mongo-safe, non-evicting field path for one result identity."""
+    digest = hashlib.sha256(str(result_id).encode("utf-8")).hexdigest()
+    return f"legacy_result_receipts.{digest}"
 
 
 def _ensure_user(user_id: int, username: str, first_name: str) -> dict:
@@ -130,9 +136,14 @@ def apply_base_result_once(
 ) -> dict:
     """Apply base quiz counters/points once and return the durable user snapshot.
 
-    A persisted quiz uses its session id as ``result_id``. If no session id
-    exists because session persistence was unavailable, the current in-memory
-    result can still be credited, but it has no cross-process retry identity.
+    A persisted quiz uses its session id as ``result_id``. Result markers are
+    stored as hashed subdocument fields on the same user document as the
+    counters, so the receipt and all ``$inc`` operations commit atomically and
+    old receipts are never evicted by newer quiz results.
+
+    If no result id exists, the current in-memory result can still be credited,
+    but it has no cross-process retry identity. Callers should provide a stable
+    in-memory fallback id whenever possible.
     """
     collection = _users()
     entry = _ensure_user(user_id, username, first_name)
@@ -181,14 +192,11 @@ def apply_base_result_once(
         },
     }
     query = {"_id": uid}
+    receipt_path = None
     if result_id:
-        query["legacy_result_receipts"] = {"$ne": result_id}
-        update["$push"] = {
-            "legacy_result_receipts": {
-                "$each": [result_id],
-                "$slice": -_RESULT_RECEIPT_LIMIT,
-            }
-        }
+        receipt_path = _receipt_path(result_id)
+        query[receipt_path] = {"$exists": False}
+        update["$set"][receipt_path] = now
 
     try:
         after = collection.find_one_and_update(
@@ -203,9 +211,9 @@ def apply_base_result_once(
                 "user": after,
             }
 
-        if result_id:
-            existing = collection.find_one({"_id": uid})
-            if existing and result_id in existing.get("legacy_result_receipts", []):
+        if receipt_path:
+            existing = collection.find_one({"_id": uid, receipt_path: {"$exists": True}})
+            if existing:
                 return {
                     "applied": False,
                     "earned_base": earned_base,
