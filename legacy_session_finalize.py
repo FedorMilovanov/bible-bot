@@ -9,7 +9,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from legacy_result_finalize import finalize_challenge_result, finalize_normal_result
-from legacy_session_recovery import completed_result_inputs
+from legacy_session_recovery import (
+    LegacyPersistedSessionModeInvalid,
+    completed_result_inputs,
+)
 
 _RECOVERABLE_STATUSES = frozenset({"in_progress", "finished"})
 
@@ -60,7 +63,12 @@ def finalize_completed_session(
     """
     _assert_owner(session, user_id)
     _assert_recoverable_status(session)
-    recovered = completed_result_inputs(session)
+    try:
+        recovered = completed_result_inputs(session)
+    except LegacyPersistedSessionModeInvalid as exc:
+        raise LegacyCompletedSessionEvidenceIncomplete(
+            "completed session has an unsupported persisted quiz mode"
+        ) from exc
     if recovered is None:
         raise LegacyCompletedSessionEvidenceIncomplete(
             "completed session lacks authoritative result timing evidence"
