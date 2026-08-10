@@ -72,7 +72,8 @@ from database import (
 from battle_consistency import (
     apply_battle_reward_once, battle_role_for_user,
     cancel_battle_for_participant, claim_battle_finalization,
-    get_battles_needing_finalization, join_battle_atomic,
+    delete_battle_if_fully_delivered, get_battles_needing_finalization,
+    join_battle_atomic, mark_battle_result_delivered,
     record_battle_finish_atomic,
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
@@ -2763,8 +2764,13 @@ async def show_battle_results(bot, battle_id: str):
         [InlineKeyboardButton("⬅️ В меню",       callback_data="back_to_main")],
     ])
 
-    # Гарантированно отправляем обоим — каждый получит в свой личный чат
-    for uid in (battle["creator_id"], battle["opponent_id"]):
+    delivery_pending = False
+    for role, uid in (
+        ("creator", battle["creator_id"]),
+        ("opponent", battle["opponent_id"]),
+    ):
+        if battle.get(f"{role}_result_delivered") is True:
+            continue
         try:
             await bot.send_message(
                 chat_id=uid,
@@ -2774,8 +2780,20 @@ async def show_battle_results(bot, battle_id: str):
             )
         except Exception as e:
             logger.warning("Battle result delivery to %s failed: %s", uid, e)
+            delivery_pending = True
+            continue
 
-    delete_battle(battle_id)
+        if not mark_battle_result_delivered(battle_id, uid, role):
+            logger.warning(
+                "Battle %s delivery receipt for %s could not be persisted",
+                battle_id, uid,
+            )
+            delivery_pending = True
+
+    if delivery_pending:
+        return
+    if not delete_battle_if_fully_delivered(battle_id):
+        logger.warning("Battle %s final delete deferred for retry", battle_id)
 
 
 async def cancel_battle(update: Update, context):
