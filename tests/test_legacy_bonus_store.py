@@ -1,8 +1,11 @@
 from copy import deepcopy
 from types import SimpleNamespace
 
+import pytest
+
 import database
 import legacy_bonus_store as bonus_store
+from legacy_result_store import LegacyResultStoreUnavailable
 
 
 def _get_path(doc, path):
@@ -184,3 +187,46 @@ def test_legacy_date_backfill_never_assigns_old_credit_to_new_result(monkeypatch
     assert stage == {"bonus": 0, "eligible": False, "claimed_now": False}
     assert users.doc["total_points"] == 0
     assert users.doc["daily_bonus_receipts"]["20260810"]["legacy"] is True
+
+
+def test_owned_bonus_receipt_with_invalid_amount_is_retryable(monkeypatch):
+    users = FakeUsers()
+    users.doc["daily_bonus_receipts"] = {
+        "20260810": {
+            "bonus": "not-a-number",
+            "eligible": True,
+            "result_owner": bonus_store._owner("result-a"),
+        }
+    }
+    monkeypatch.setattr(database, "collection", users)
+
+    with pytest.raises(LegacyResultStoreUnavailable, match="amount is invalid"):
+        bonus_store.claim_daily_bonus_for_result(
+            user_id=42,
+            result_id="result-a",
+            day="2026-08-10",
+            daily_streak=3,
+        )
+
+
+def test_owned_bonus_receipt_with_invalid_eligibility_is_retryable(monkeypatch):
+    users = FakeUsers()
+    users.doc["challenge_bonus_receipts"] = {
+        "random20": {
+            "20260810": {
+                "bonus": 60,
+                "eligible": "yes",
+                "result_owner": bonus_store._owner("challenge-a"),
+            }
+        }
+    }
+    monkeypatch.setattr(database, "collection", users)
+
+    with pytest.raises(LegacyResultStoreUnavailable, match="eligibility is invalid"):
+        bonus_store.claim_challenge_bonus_for_result(
+            user_id=42,
+            result_id="challenge-a",
+            mode="random20",
+            score=18,
+            day="2026-08-10",
+        )
