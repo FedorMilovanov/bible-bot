@@ -10,6 +10,11 @@ from datetime import UTC, datetime
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
+_PERSISTED_QUIZ_MODES = frozenset({"level", *_CHALLENGE_MODES})
+
+
+class LegacyPersistedSessionModeInvalid(RuntimeError):
+    """Raised when Mongo carries a mode that legacy quiz creation never writes."""
 
 
 def _answers(session: dict) -> list[dict]:
@@ -28,6 +33,15 @@ def session_is_complete(session: dict) -> bool:
     # the persisted question ledger is contradictory/corrupt state and must not
     # be normalized into a recoverable completed result.
     return total > 0 and current == total
+
+
+def _persisted_mode(session: dict) -> str:
+    mode = session.get("mode")
+    if not isinstance(mode, str) or mode not in _PERSISTED_QUIZ_MODES:
+        raise LegacyPersistedSessionModeInvalid(
+            "persisted quiz session mode is not recognized"
+        )
+    return mode
 
 
 def _streaks(answered: list[dict]) -> tuple[int, int]:
@@ -126,7 +140,7 @@ def persisted_completed_at(session: dict) -> str | None:
 
 def recovery_fields(session: dict) -> dict:
     """Build non-Telegram runtime fields from one persisted quiz session."""
-    mode = str(session.get("mode") or "level")
+    mode = _persisted_mode(session)
     is_challenge = mode in _CHALLENGE_MODES
     time_limit = session.get("time_limit")
     current_streak, max_streak = _streaks(_answers(session))
