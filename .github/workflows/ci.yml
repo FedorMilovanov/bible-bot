@@ -43,7 +43,19 @@ jobs:
       - name: Guard tracked tree against secrets
         run: python scripts/check_secrets.py
       - name: Lint maintained Python layer
-        run: ruff check web_api keep_alive.py intro.py scripts tests --output-format=github
+        run: >-
+          ruff check
+          web_api
+          keep_alive.py
+          intro.py
+          battle_integrity.py
+          session_integrity.py
+          legacy_*.py
+          scripts
+          tests
+          --output-format=github
+      - name: Check legacy core for fatal Python errors
+        run: ruff check bot.py database.py --select=E9,F63,F7,F82 --output-format=github
       - name: Compile Python
         run: python -m compileall -q .
       - name: Run tests
