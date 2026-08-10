@@ -68,7 +68,7 @@ def finalize_completed_session(
         recovered = completed_result_inputs(session)
     except LegacyPersistedSessionModeInvalid as exc:
         raise LegacyCompletedSessionEvidenceIncomplete(
-            "completed session has unsupported persisted evidence"
+            "completed session has unsupported persisted quiz mode"
         ) from exc
     if recovered is None:
         raise LegacyCompletedSessionEvidenceIncomplete(
