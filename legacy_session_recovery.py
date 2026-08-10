@@ -15,7 +15,7 @@ _PERSISTED_QUIZ_MODES = frozenset({"level", *_CHALLENGE_MODES})
 
 
 class LegacyPersistedSessionModeInvalid(RuntimeError):
-    """Raised when Mongo carries a mode that legacy quiz creation never writes."""
+    """Raised when persisted mode/timer evidence cannot be interpreted safely."""
 
 
 def _answers(session: dict) -> list[dict]:
@@ -26,10 +26,9 @@ def _answers(session: dict) -> list[dict]:
 def session_is_complete(session: dict) -> bool:
     questions = session.get("questions_data", [])
     total = len(questions) if isinstance(questions, list) else 0
-    try:
-        current = max(0, int(session.get("current_index", 0) or 0))
-    except (TypeError, ValueError):
-        current = 0
+    current = session.get("current_index", 0)
+    if isinstance(current, bool) or not isinstance(current, int) or current < 0:
+        return False
     # Only an exact end position is valid completion evidence. An index beyond
     # the persisted question ledger is contradictory/corrupt state and must not
     # be normalized into a recoverable completed result.
@@ -84,18 +83,33 @@ def persisted_fastest_answer(session: dict) -> float | None:
 
 
 def _normal_mode(time_limit) -> tuple[str, float, int | None]:
-    if time_limit in (None, 0, ""):
+    if time_limit is None:
         return "relaxed", 1.0, None
-    try:
-        limit = int(time_limit)
-    except (TypeError, ValueError):
-        return "relaxed", 1.0, None
-    if limit == SPEED_MODE_TIMEOUT:
-        return "speed", 2.0, limit
-    if limit == TIMED_MODE_TIMEOUT:
-        return "timed", 1.5, limit
-    # Unknown legacy/custom limits must not receive an invented multiplier.
-    return "timed", 1.0, limit
+    if isinstance(time_limit, bool) or not isinstance(time_limit, int):
+        raise LegacyPersistedSessionModeInvalid(
+            "persisted normal quiz time_limit is invalid"
+        )
+    if time_limit == SPEED_MODE_TIMEOUT:
+        return "speed", 2.0, time_limit
+    if time_limit == TIMED_MODE_TIMEOUT:
+        return "timed", 1.5, time_limit
+    raise LegacyPersistedSessionModeInvalid(
+        "persisted normal quiz time_limit is not a recognized product mode"
+    )
+
+
+def _challenge_timer(time_limit) -> int | None:
+    if time_limit is None:
+        return None
+    if (
+        isinstance(time_limit, bool)
+        or not isinstance(time_limit, int)
+        or time_limit <= 0
+    ):
+        raise LegacyPersistedSessionModeInvalid(
+            "persisted Challenge time_limit is invalid"
+        )
+    return time_limit
 
 
 def _naive_utc(value: datetime) -> datetime:
@@ -177,7 +191,7 @@ def recovery_fields(session: dict) -> dict:
         score_multiplier = 1.0
         quiz_time_limit = None
         challenge_mode = mode
-        challenge_time_limit = time_limit
+        challenge_time_limit = _challenge_timer(time_limit)
     else:
         quiz_mode, score_multiplier, quiz_time_limit = _normal_mode(time_limit)
         challenge_mode = None
@@ -249,9 +263,8 @@ def completed_result_inputs(session: dict) -> dict | None:
     ):
         return None
     score_from_answers = sum(1 for item in answered if item["is_correct"] is True)
-    try:
-        stored_score = int(session.get("correct_count", 0) or 0)
-    except (TypeError, ValueError):
+    stored_score = session.get("correct_count", 0)
+    if isinstance(stored_score, bool) or not isinstance(stored_score, int):
         return None
     if stored_score != score_from_answers:
         return None
