@@ -289,7 +289,6 @@ def test_retry_error_session_is_memory_only_but_still_session_scoped(monkeypatch
 
 def test_invalid_memory_only_index_fails_before_answer_list_mutation(monkeypatch):
     data = _data(session_id=None)
-    payload = live.build_live_answer_callback("qa", data, 0, 1)
     data["current_question"] = "broken"
     before = deepcopy(data)
 
