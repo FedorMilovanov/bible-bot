@@ -42,13 +42,20 @@ def _day_key(day: str) -> str:
 
 def _stage(receipt, *, owner: str, claimed_now: bool) -> dict:
     if not isinstance(receipt, dict):
-        return {"bonus": 0, "eligible": False, "claimed_now": False}
+        raise LegacyResultStoreUnavailable("bonus receipt has invalid shape")
     stored_owner = receipt.get("result_owner")
     if stored_owner != owner:
         return {"bonus": 0, "eligible": False, "claimed_now": False}
+    try:
+        bonus = max(0, int(receipt.get("bonus", 0) or 0))
+    except (TypeError, ValueError) as exc:
+        raise LegacyResultStoreUnavailable("bonus receipt amount is invalid") from exc
+    eligible = receipt.get("eligible", False)
+    if not isinstance(eligible, bool):
+        raise LegacyResultStoreUnavailable("bonus receipt eligibility is invalid")
     return {
-        "bonus": max(0, int(receipt.get("bonus", 0) or 0)),
-        "eligible": bool(receipt.get("eligible", False)),
+        "bonus": bonus,
+        "eligible": eligible,
         "claimed_now": claimed_now,
     }
 
