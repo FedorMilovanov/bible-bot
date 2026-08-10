@@ -33,11 +33,28 @@ class LegacyResultFinalizationPending(RuntimeError):
     """Raised when a durable result stage must be retried later."""
 
 
-def _award_date(completed_at) -> str:
+def _validated_completed_at(base: dict) -> str:
+    """Return a parseable durable completion timestamp or fail closed.
+
+    Recovery must never reinterpret malformed durable evidence as "now", because
+    that would move an old result into a new daily-bonus day or ISO week.
+    """
+    value = base.get("completed_at")
+    if isinstance(value, datetime):
+        value = value.isoformat()
+    if not isinstance(value, str) or not value:
+        raise LegacyResultStoreUnavailable("durable result completion timestamp is missing")
     try:
-        return datetime.fromisoformat(str(completed_at)).strftime("%d.%m.%Y")
-    except (TypeError, ValueError):
-        return datetime.utcnow().strftime("%d.%m.%Y")
+        datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise LegacyResultStoreUnavailable(
+            "durable result completion timestamp is invalid"
+        ) from exc
+    return value
+
+
+def _award_date(completed_at: str) -> str:
+    return datetime.fromisoformat(completed_at).strftime("%d.%m.%Y")
 
 
 def _claim_achievements(
@@ -137,7 +154,7 @@ def finalize_normal_result(
             quiz_mode=data.get("quiz_mode"),
             fastest_answer=data.get("fastest_answer"),
         )
-        completed_at = base["completed_at"]
+        completed_at = _validated_completed_at(base)
         receipt = base.get("receipt") or {}
         durable = _durable_result(base)
         achievement_state = _achievement_state(base)
@@ -201,7 +218,7 @@ def finalize_challenge_result(
             quiz_mode=data.get("quiz_mode"),
             fastest_answer=data.get("fastest_answer"),
         )
-        completed_at = base["completed_at"]
+        completed_at = _validated_completed_at(base)
         durable = _durable_result(base)
         achievement_state = _achievement_state(base)
         mode = str(durable.get("challenge_mode") or requested_mode)
