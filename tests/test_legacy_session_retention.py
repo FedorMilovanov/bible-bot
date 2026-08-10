@@ -102,6 +102,25 @@ def test_wrong_terminal_options_are_replaced(monkeypatch):
     assert len(collection.created) == 1
 
 
+def test_wrong_terminal_key_is_replaced(monkeypatch):
+    collection = FakeIndexes(
+        {
+            "ttl_terminal_updated_at": {
+                "key": [("created_at_dt", 1)],
+                "expireAfterSeconds": 7776000,
+                "partialFilterExpression": {
+                    "status": {"$in": ["finished", "cancelled"]}
+                },
+            }
+        }
+    )
+    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
+
+    assert ensure_state_aware_session_ttl() is True
+    assert collection.dropped == ["ttl_terminal_updated_at"]
+    assert collection.created[0][0] == [("updated_at_dt", 1)]
+
+
 def test_missing_collection_is_explicit_noop(monkeypatch):
     monkeypatch.setattr(database, "quiz_sessions_collection", None)
 
