@@ -42,8 +42,20 @@ def _session(*, status="in_progress", current=2, answered=None, correct_count=1)
     question_ids = ["q1", "q2"]
     if answered is None:
         answered = [
-            {"index": 0, "qid": "q1", "is_correct": True},
-            {"index": 1, "qid": "q2", "is_correct": False},
+            {
+                "index": 0,
+                "qid": "q1",
+                "user_answer": "A",
+                "is_correct": True,
+                "question_obj": {"id": "q1"},
+            },
+            {
+                "index": 1,
+                "qid": "q2",
+                "user_answer": "B",
+                "is_correct": False,
+                "question_obj": {"id": "q2"},
+            },
         ]
     return {
         "_id": "s1",
@@ -88,8 +100,20 @@ def test_exact_complete_owned_session_is_closed_atomically(monkeypatch):
         "correct_count": 1,
         "question_ids": ["q1", "q2"],
         "answered_questions": [
-            {"index": 0, "qid": "q1", "is_correct": True},
-            {"index": 1, "qid": "q2", "is_correct": False},
+            {
+                "index": 0,
+                "qid": "q1",
+                "user_answer": "A",
+                "is_correct": True,
+                "question_obj": {"id": "q1"},
+            },
+            {
+                "index": 1,
+                "qid": "q2",
+                "user_answer": "B",
+                "is_correct": False,
+                "question_obj": {"id": "q2"},
+            },
         ],
     }
 
@@ -164,6 +188,28 @@ def test_non_boolean_correctness_is_rejected(monkeypatch):
 
     with pytest.raises(QuizSessionCompletionInvalid, match="correctness"):
         validate_completed_owned_quiz_session("s1", 42)
+
+
+@pytest.mark.parametrize(
+    "missing_field, message",
+    [
+        ("user_answer", "user_answer"),
+        ("question_obj", "question_obj"),
+    ],
+)
+def test_full_answer_payload_is_required_for_completion_proof(
+    monkeypatch,
+    missing_field,
+    message,
+):
+    answered = deepcopy(_session()["answered_questions"])
+    answered[0].pop(missing_field)
+    collection, _now = _install(monkeypatch, _session(answered=answered))
+
+    with pytest.raises(QuizSessionCompletionInvalid, match=message):
+        validate_completed_owned_quiz_session("s1", 42)
+
+    assert collection.update_filter is None
 
 
 def test_already_finished_exact_session_is_idempotent(monkeypatch):
