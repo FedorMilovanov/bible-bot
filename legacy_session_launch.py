@@ -82,6 +82,10 @@ def launch_quiz_attempt(
     """Create a durable attempt only when no active quiz evidence exists."""
     try:
         active = get_active_quiz_session_strict(user_id)
+    except QuizSessionAccessSchemaInvalid as exc:
+        raise LegacySessionLaunchConflict(
+            "active quiz session state is ambiguous"
+        ) from exc
     except QuizSessionAccessUnavailable as exc:
         raise LegacySessionLaunchUnavailable("active session lookup failed") from exc
 
