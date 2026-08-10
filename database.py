@@ -50,7 +50,7 @@ ALL_LEVEL_KEYS = [
     "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
     "nero", "geography",
     "intro1", "intro2", "intro3",
-    "random20", "hardcore20",
+    "random_all", "random20", "hardcore20",
 ]
 
 _ALL_LEVEL_KEYS_SET = frozenset(ALL_LEVEL_KEYS)
@@ -63,7 +63,7 @@ POINTS_PER_QUESTION = {
     "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
     "intro1": 2, "intro2": 2, "intro3": 2,
     "nero": 2, "geography": 2,
-    "random20": 1, "hardcore20": 2,
+    "random_all": 1, "random20": 1, "hardcore20": 2,
 }
 
 REPORT_COOLDOWN_SECONDS = 60
