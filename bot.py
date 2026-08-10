@@ -71,6 +71,10 @@ from database import (
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
+from battle_integrity import (
+    BattleStoreUnavailable, battle_role_for_user,
+    claim_battle_opponent, delete_battle_for_participant,
+)
 
 # ── Вопросы Введения (для Random20, Hardcore20, Битв) ────────────────────────
 try:
@@ -2478,58 +2482,60 @@ async def create_battle(update: Update, context):
 
 
 async def join_battle(update: Update, context):
-    query    = update.callback_query
-    await query.answer()
+    query = update.callback_query
     battle_id = query.data.replace("join_battle_", "")
-    user_id   = query.from_user.id
+    user_id = query.from_user.id
     user_name = query.from_user.first_name
 
     battle = get_battle(battle_id)
     if not battle or battle.get("status") != "waiting":
-        await query.edit_message_text(
-            "❌ Битва не найдена или уже началась.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
-        )
+        await query.answer("Битва не найдена или уже началась.", show_alert=True)
         return
-
-    if battle["creator_id"] == user_id:
+    if battle.get("creator_id") == user_id:
         await query.answer("Нельзя присоединиться к своей битве!", show_alert=True)
         return
-    if battle["opponent_id"] is not None:
-        await query.answer("К этой битве уже присоединился другой игрок!", show_alert=True)
+
+    try:
+        battle = claim_battle_opponent(battle_id, user_id, user_name)
+    except BattleStoreUnavailable:
+        await query.answer("База битв временно недоступна. Попробуй ещё раз.", show_alert=True)
+        return
+    if not battle:
+        await query.answer("Эту битву уже занял другой игрок.", show_alert=True)
         return
 
-    update_battle(battle_id, {
-        "opponent_id":   user_id,
-        "opponent_name": user_name,
-        "status":        "in_progress",
-    })
-
+    await query.answer()
     await query.edit_message_text(
         f"⚔️ *БИТВА НАЧАЛАСЬ!*\n\n"
         f"👤 Ты vs 👤 {battle['creator_name']}\n\n"
         "📝 10 вопросов\n⏱ Время учитывается!\nНажми «Начать»",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Начать отвечать", callback_data=f"start_battle_{battle_id}_opponent")],
-            [InlineKeyboardButton("⬅️ Назад",           callback_data="battle_menu")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")],
         ]),
         parse_mode="Markdown",
     )
 
-
 async def start_battle_questions(update: Update, context):
     query = update.callback_query
-    await query.answer()
     data_parts = query.data.replace("start_battle_", "").rsplit("_", 1)
-    battle_id  = data_parts[0]
-    role       = data_parts[1]
-    user_id    = query.from_user.id
-
-    battle = get_battle(battle_id)
-    if not battle:
-        await query.edit_message_text("❌ Битва не найдена.")
+    if len(data_parts) != 2 or data_parts[1] not in {"creator", "opponent"}:
+        await query.answer("Некорректная кнопка битвы.", show_alert=True)
         return
 
+    battle_id, requested_role = data_parts
+    user_id = query.from_user.id
+    battle = get_battle(battle_id)
+    if not battle:
+        await query.answer("Битва не найдена.", show_alert=True)
+        return
+
+    persisted_role = battle_role_for_user(battle, user_id)
+    if persisted_role is None or persisted_role != requested_role:
+        await query.answer("Эта кнопка принадлежит другому участнику.", show_alert=True)
+        return
+
+    await query.answer()
     user_data[user_id] = _create_session_data(
         user_id=user_id,
         session_id=battle_id,
@@ -2537,20 +2543,19 @@ async def start_battle_questions(update: Update, context):
         level_name="⚔️ PvP Битва",
         chat_id=query.message.chat_id,
         battle_id=battle_id,
-        role=role,
+        role=persisted_role,
         correct_answers=0,
         start_time=time.time(),
         last_activity=time.time(),
         is_battle=True,
         battle_points=0,
         battle_chat_id=query.message.chat_id,
-        battle_role=role,
+        battle_role=persisted_role,
     )
 
     await query.edit_message_text("⚔️ *БИТВА: Вопрос 1/10*\n\nНачинаем! 🍀", parse_mode="Markdown")
     await send_battle_question(context.bot, query.message.chat_id, user_id)
     return BATTLE_ANSWERING
-
 
 async def send_battle_question(bot, chat_id: int, user_id: int):
     """Отправляет или редактирует вопрос битвы. bot передаётся явно — всегда context.bot."""
@@ -2769,14 +2774,32 @@ async def show_battle_results(bot, battle_id: str):
 
 async def cancel_battle(update: Update, context):
     query = update.callback_query
-    await query.answer()
     battle_id = query.data.replace("cancel_battle_", "")
-    delete_battle(battle_id)
+    user_id = query.from_user.id
+
+    battle = get_battle(battle_id)
+    if not battle:
+        await query.answer("Битва уже завершена или удалена.", show_alert=True)
+        return
+    if battle_role_for_user(battle, user_id) is None:
+        await query.answer("Ты не участник этой битвы.", show_alert=True)
+        return
+
+    try:
+        deleted = delete_battle_for_participant(battle_id, user_id)
+    except BattleStoreUnavailable:
+        await query.answer("База битв временно недоступна.", show_alert=True)
+        return
+    if not deleted:
+        await query.answer("Битва уже завершена или изменена.", show_alert=True)
+        return
+
+    user_data.pop(user_id, None)
+    await query.answer()
     await query.edit_message_text(
         "❌ Битва отменена.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
     )
-
 
 # ═══════════════════════════════════════════════
 # INLINE MODE — Вызов на дуэль (задание 4.1)
@@ -2881,6 +2904,7 @@ async def random_command(update: Update, context):
         "hard", "hard_p1", "hard_p2",
         "practical_ch1", "practical_p1", "practical_p2",
         "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "nero", "geography",
         "intro1", "intro2", "intro3",
     ]
     all_questions = []
