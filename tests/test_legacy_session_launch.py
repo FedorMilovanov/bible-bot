@@ -93,64 +93,54 @@ def test_no_active_session_creates_durable_container(monkeypatch):
         }
 
     monkeypatch.setattr(launch, "create_quiz_session_strict", create)
-    monkeypatch.setattr(
-        launch,
-        "restart_owned_quiz_attempt",
-        lambda *_args, **_kwargs: pytest.fail("no active session must not restart"),
-    )
 
     result = _launch()
 
     assert result.session_id == "container-new"
     assert result.attempt_id == "container-new"
-    assert result.created_new_container is True
-    assert result.replaced_incomplete_attempt is False
     assert captured["level_key"] == "medium"
     assert captured["question_ids"] == ["n1", "n2"]
 
 
-def test_partial_active_attempt_is_atomically_replaced_in_same_container(monkeypatch):
+def test_partial_active_attempt_blocks_generic_launch_without_mutation(monkeypatch):
     active = _partial()
     monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: active)
-    captured = {}
-
-    def restart(session_id, user_id, **kwargs):
-        captured.update(session_id=session_id, user_id=user_id, **kwargs)
-        return {
-            "applied": True,
-            "session": {
-                "_id": "container-1",
-                "attempt_id": "attempt-new",
-                "status": "in_progress",
-            },
-        }
-
-    monkeypatch.setattr(launch, "restart_owned_quiz_attempt", restart)
     monkeypatch.setattr(
         launch,
         "create_quiz_session_strict",
-        lambda **_: pytest.fail("partial active attempt must not create second container"),
+        lambda **_: pytest.fail("active attempt must not create another container"),
     )
 
-    result = _launch(mode="random20", level_key="random20", time_limit=20)
+    with pytest.raises(launch.LegacySessionLaunchActiveAttempt) as exc_info:
+        _launch(mode="random20", level_key="random20", time_limit=20)
 
-    assert result.session_id == "container-1"
-    assert result.attempt_id == "attempt-new"
-    assert result.created_new_container is False
-    assert result.replaced_incomplete_attempt is True
-    assert captured["expected_attempt_id"] == "attempt-old"
-    assert captured["mode"] == "random20"
-    assert captured["level_key"] == "random20"
-    assert captured["time_limit"] == 20
+    exc = exc_info.value
+    assert exc.session is active
+    assert exc.session_id == "container-1"
+    assert exc.attempt_id == "attempt-old"
+
+
+def test_repeated_generic_launch_against_same_partial_attempt_stays_non_destructive(monkeypatch):
+    active = _partial()
+    monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: active)
+    calls = 0
+
+    def create(**_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("generic retry must not create or replace")
+
+    monkeypatch.setattr(launch, "create_quiz_session_strict", create)
+
+    for _ in range(2):
+        with pytest.raises(launch.LegacySessionLaunchActiveAttempt) as exc_info:
+            _launch()
+        assert exc_info.value.attempt_id == "attempt-old"
+    assert calls == 0
 
 
 def test_completed_active_result_blocks_new_launch_before_mutation(monkeypatch):
     monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: _complete())
-    monkeypatch.setattr(
-        launch,
-        "restart_owned_quiz_attempt",
-        lambda *_args, **_kwargs: pytest.fail("completed evidence must not be replaced"),
-    )
     monkeypatch.setattr(
         launch,
         "create_quiz_session_strict",
@@ -193,35 +183,21 @@ def test_lookup_and_create_outages_are_explicit(monkeypatch):
         _launch()
 
 
-def test_replace_race_is_explicit(monkeypatch):
-    monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: _partial())
-    monkeypatch.setattr(
-        launch,
-        "restart_owned_quiz_attempt",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            launch.QuizSessionLifecycleConflict("changed")
-        ),
-    )
-
-    with pytest.raises(launch.LegacySessionLaunchConflict, match="changed"):
-        _launch()
-
-
 def test_corrupt_active_session_is_never_replaced(monkeypatch):
     bad = _partial()
     bad["correct_count"] = "1"
     monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: bad)
     monkeypatch.setattr(
         launch,
-        "restart_owned_quiz_attempt",
-        lambda *_args, **_kwargs: pytest.fail("corrupt active session must not be replaced"),
+        "create_quiz_session_strict",
+        lambda **_: pytest.fail("corrupt active session must not create another container"),
     )
 
     with pytest.raises(launch.LegacySessionLaunchConflict, match="contradictory"):
         _launch()
 
 
-def test_invalid_new_spec_fails_in_strict_create_or_restart_without_fallback(monkeypatch):
+def test_invalid_new_spec_fails_in_strict_create_without_fallback(monkeypatch):
     monkeypatch.setattr(launch, "get_active_quiz_session_strict", lambda _uid: None)
     monkeypatch.setattr(
         launch,
