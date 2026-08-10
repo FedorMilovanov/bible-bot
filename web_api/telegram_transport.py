@@ -268,6 +268,9 @@ def run_telegram_application(application, *, before_shutdown=None) -> None:
     """Run the configured Telegram transport without changing handler setup."""
     mode = telegram_transport_mode()
     if mode == "polling":
-        application.run_polling()
+        try:
+            application.run_polling()
+        finally:
+            asyncio.run(_call_shutdown_hook(before_shutdown))
         return
     asyncio.run(_run_webhook_application(application, before_shutdown=before_shutdown))
