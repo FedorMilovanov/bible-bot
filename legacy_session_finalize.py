@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from legacy_result_finalize import finalize_challenge_result, finalize_normal_result
+from legacy_attempt_finalize import finalize_challenge_result, finalize_normal_result
 from legacy_session_recovery import (
     LegacyPersistedSessionModeInvalid,
     completed_result_inputs,
@@ -53,8 +53,9 @@ def finalize_completed_session(
 ) -> dict:
     """Finalize one completed, owner-validated persisted legacy quiz session.
 
-    Score, total, elapsed time and completion timestamp are taken exclusively
-    from Mongo evidence. Caller-provided identity is used only for display.
+    Score, total, elapsed time, logical attempt and completion timestamp are
+    taken exclusively from Mongo evidence. Caller-provided identity is used only
+    for display.
 
     Both ``in_progress`` and ``finished`` are recoverable. The latter preserves
     compatibility with the legacy crash boundary where a handler could mark the
@@ -67,7 +68,7 @@ def finalize_completed_session(
         recovered = completed_result_inputs(session)
     except LegacyPersistedSessionModeInvalid as exc:
         raise LegacyCompletedSessionEvidenceIncomplete(
-            "completed session has an unsupported persisted quiz mode"
+            "completed session has unsupported persisted evidence"
         ) from exc
     if recovered is None:
         raise LegacyCompletedSessionEvidenceIncomplete(
@@ -78,8 +79,8 @@ def finalize_completed_session(
     data["username"] = username or ""
     data["first_name"] = first_name or "Игрок"
     data["result_completed_at"] = recovered["completed_at"]
-    score = int(recovered["score"])
-    total = int(recovered["total"])
+    score = recovered["score"]
+    total = recovered["total"]
     time_seconds = float(recovered["time_seconds"])
 
     if data.get("is_challenge"):
