@@ -15,6 +15,7 @@ import re
 import signal
 from collections.abc import Awaitable, Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from threading import Event as ThreadEvent
 from threading import Lock
 from urllib.parse import urlsplit
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 WEBHOOK_PATH = "/telegram/webhook"
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 _BRIDGE_ENQUEUE_TIMEOUT_SECONDS = 2.0
+_BRIDGE_DRAIN_TIMEOUT_SECONDS = 3.0
 
 
 class TransportConfigurationError(RuntimeError):
@@ -99,11 +101,16 @@ class TelegramWebhookBridge:
         self._lock = Lock()
         self._application = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._active_submissions = 0
+        self._idle = ThreadEvent()
+        self._idle.set()
 
     def configure(self, application, loop: asyncio.AbstractEventLoop) -> None:
         if loop.is_closed():
             raise RuntimeError("cannot configure Telegram webhook bridge with a closed event loop")
         with self._lock:
+            if self._active_submissions:
+                raise RuntimeError("cannot reconfigure Telegram webhook bridge while submissions are active")
             self._application = application
             self._loop = loop
 
@@ -114,6 +121,18 @@ class TelegramWebhookBridge:
             self._application = None
             self._loop = None
 
+    async def deactivate_and_drain(
+        self,
+        application,
+        *,
+        timeout: float = _BRIDGE_DRAIN_TIMEOUT_SECONDS,
+    ) -> bool:
+        """Stop accepting submissions and wait boundedly for in-flight ones."""
+        self.clear(application)
+        if self._idle.is_set():
+            return True
+        return await asyncio.to_thread(self._idle.wait, timeout)
+
     def ready(self) -> bool:
         with self._lock:
             return self._application is not None and self._loop is not None and not self._loop.is_closed()
@@ -122,30 +141,37 @@ class TelegramWebhookBridge:
         with self._lock:
             application = self._application
             loop = self._loop
-
-        if application is None or loop is None or loop.is_closed():
-            raise WebhookNotReady("Telegram application is not ready")
+            if application is None or loop is None or loop.is_closed():
+                raise WebhookNotReady("Telegram application is not ready")
+            self._active_submissions += 1
+            self._idle.clear()
 
         try:
-            update = Update.de_json(data=payload, bot=application.bot)
-        except Exception as exc:
-            raise InvalidWebhookUpdate("invalid Telegram update") from exc
-        if (
-            update is None
-            or isinstance(update.update_id, bool)
-            or not isinstance(update.update_id, int)
-            or update.update_id < 0
-        ):
-            raise InvalidWebhookUpdate("invalid Telegram update")
+            try:
+                update = Update.de_json(data=payload, bot=application.bot)
+            except Exception as exc:
+                raise InvalidWebhookUpdate("invalid Telegram update") from exc
+            if (
+                update is None
+                or isinstance(update.update_id, bool)
+                or not isinstance(update.update_id, int)
+                or update.update_id < 0
+            ):
+                raise InvalidWebhookUpdate("invalid Telegram update")
 
-        future = asyncio.run_coroutine_threadsafe(application.update_queue.put(update), loop)
-        try:
-            future.result(timeout=_BRIDGE_ENQUEUE_TIMEOUT_SECONDS)
-        except FutureTimeoutError as exc:
-            future.cancel()
-            raise WebhookNotReady("Telegram update queue did not accept the update in time") from exc
-        except Exception as exc:
-            raise WebhookNotReady("Telegram update queue is unavailable") from exc
+            future = asyncio.run_coroutine_threadsafe(application.update_queue.put(update), loop)
+            try:
+                future.result(timeout=_BRIDGE_ENQUEUE_TIMEOUT_SECONDS)
+            except FutureTimeoutError as exc:
+                future.cancel()
+                raise WebhookNotReady("Telegram update queue did not accept the update in time") from exc
+            except Exception as exc:
+                raise WebhookNotReady("Telegram update queue is unavailable") from exc
+        finally:
+            with self._lock:
+                self._active_submissions -= 1
+                if self._active_submissions == 0:
+                    self._idle.set()
 
 
 TELEGRAM_WEBHOOK_BRIDGE = TelegramWebhookBridge()
@@ -157,6 +183,15 @@ async def _call_shutdown_hook(callback: Callable[[], Awaitable[None] | None] | N
     result = callback()
     if inspect.isawaitable(result):
         await result
+
+
+async def _deactivate_bridge_before_stop(application) -> None:
+    drained = await TELEGRAM_WEBHOOK_BRIDGE.deactivate_and_drain(application)
+    if not drained:
+        logger.warning(
+            "Telegram webhook bridge still had in-flight submissions after %.1fs shutdown drain",
+            _BRIDGE_DRAIN_TIMEOUT_SECONDS,
+        )
 
 
 async def _run_webhook_application(
@@ -206,19 +241,21 @@ async def _run_webhook_application(
 
             await local_stop.wait()
 
-            # Stop accepting HTTP updates before stopping PTB, then persist only
-            # after PTB has finished its in-flight work.
-            TELEGRAM_WEBHOOK_BRIDGE.clear(application)
+            # Stop new HTTP updates, finish submissions already crossing the
+            # Waitress -> asyncio boundary, then stop PTB before persisting state.
+            await _deactivate_bridge_before_stop(application)
             await application.stop()
             started = False
             await _call_shutdown_hook(before_shutdown)
     finally:
-        TELEGRAM_WEBHOOK_BRIDGE.clear(application)
         if started:
             try:
+                await _deactivate_bridge_before_stop(application)
                 await application.stop()
             except Exception:
                 logger.exception("failed to stop Telegram application cleanly")
+        else:
+            TELEGRAM_WEBHOOK_BRIDGE.clear(application)
         for sig in installed_signals:
             try:
                 loop.remove_signal_handler(sig)
