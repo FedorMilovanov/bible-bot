@@ -79,8 +79,25 @@ class FakeUsers:
         return SimpleNamespace(modified_count=1)
 
 
-def test_daily_bonus_retry_recovers_only_for_winning_result(monkeypatch):
+def _reserve_normal(users, result_id, day_key="20260810"):
+    _set_path(
+        users.doc,
+        f"normal_bonus_result_owners.{day_key}",
+        bonus_store._owner(result_id),
+    )
+
+
+def _reserve_challenge(users, result_id, *, mode="random20", day_key="20260810"):
+    _set_path(
+        users.doc,
+        f"challenge_bonus_result_owners.{mode}.{day_key}",
+        bonus_store._owner(result_id),
+    )
+
+
+def test_daily_bonus_retry_recovers_only_for_reserved_first_result(monkeypatch):
     users = FakeUsers()
+    _reserve_normal(users, "result-a")
     monkeypatch.setattr(database, "collection", users)
 
     first = bonus_store.claim_daily_bonus_for_result(
@@ -108,8 +125,32 @@ def test_daily_bonus_retry_recovers_only_for_winning_result(monkeypatch):
     assert users.doc["total_points"] == 10
 
 
+def test_later_normal_result_cannot_claim_before_reserved_owner_retry(monkeypatch):
+    users = FakeUsers()
+    _reserve_normal(users, "result-a")
+    monkeypatch.setattr(database, "collection", users)
+
+    later = bonus_store.claim_daily_bonus_for_result(
+        user_id=42,
+        result_id="result-b",
+        day="2026-08-10",
+        daily_streak=7,
+    )
+    owner_retry = bonus_store.claim_daily_bonus_for_result(
+        user_id=42,
+        result_id="result-a",
+        day="2026-08-10",
+        daily_streak=3,
+    )
+
+    assert later == {"bonus": 0, "eligible": False, "claimed_now": False}
+    assert owner_retry == {"bonus": 10, "eligible": True, "claimed_now": True}
+    assert users.doc["total_points"] == 10
+
+
 def test_challenge_second_attempt_cannot_inherit_first_bonus(monkeypatch):
     users = FakeUsers()
+    _reserve_challenge(users, "challenge-a")
     monkeypatch.setattr(database, "collection", users)
 
     first = bonus_store.claim_challenge_bonus_for_result(
@@ -140,8 +181,34 @@ def test_challenge_second_attempt_cannot_inherit_first_bonus(monkeypatch):
     assert users.doc["total_points"] == 60
 
 
+def test_later_challenge_cannot_steal_score_dependent_bonus_after_owner_crash(monkeypatch):
+    users = FakeUsers()
+    _reserve_challenge(users, "challenge-a")
+    monkeypatch.setattr(database, "collection", users)
+
+    later = bonus_store.claim_challenge_bonus_for_result(
+        user_id=42,
+        result_id="challenge-b",
+        mode="random20",
+        score=20,
+        day="2026-08-10",
+    )
+    owner_retry = bonus_store.claim_challenge_bonus_for_result(
+        user_id=42,
+        result_id="challenge-a",
+        mode="random20",
+        score=18,
+        day="2026-08-10",
+    )
+
+    assert later == {"bonus": 0, "eligible": False, "claimed_now": False}
+    assert owner_retry == {"bonus": 60, "eligible": True, "claimed_now": True}
+    assert users.doc["total_points"] == 60
+
+
 def test_zero_challenge_bonus_is_still_owned_by_first_attempt(monkeypatch):
     users = FakeUsers()
+    _reserve_challenge(users, "challenge-a")
     monkeypatch.setattr(database, "collection", users)
 
     first = bonus_store.claim_challenge_bonus_for_result(
@@ -172,6 +239,24 @@ def test_zero_challenge_bonus_is_still_owned_by_first_attempt(monkeypatch):
     assert users.doc["total_points"] == 0
 
 
+def test_missing_new_owner_marker_refuses_new_daily_claim(monkeypatch):
+    users = FakeUsers()
+    monkeypatch.setattr(database, "collection", users)
+
+    with pytest.raises(
+        LegacyResultStoreUnavailable,
+        match="first-result owner marker is missing",
+    ):
+        bonus_store.claim_daily_bonus_for_result(
+            user_id=42,
+            result_id="result-a",
+            day="2026-08-10",
+            daily_streak=3,
+        )
+
+    assert users.doc["total_points"] == 0
+
+
 def test_legacy_date_backfill_never_assigns_old_credit_to_new_result(monkeypatch):
     users = FakeUsers()
     users.doc["last_daily_bonus"] = "2026-08-10"
@@ -191,6 +276,7 @@ def test_legacy_date_backfill_never_assigns_old_credit_to_new_result(monkeypatch
 
 def test_owned_bonus_receipt_with_invalid_amount_is_retryable(monkeypatch):
     users = FakeUsers()
+    _reserve_normal(users, "result-a")
     users.doc["daily_bonus_receipts"] = {
         "20260810": {
             "bonus": "not-a-number",
@@ -211,6 +297,7 @@ def test_owned_bonus_receipt_with_invalid_amount_is_retryable(monkeypatch):
 
 def test_owned_bonus_receipt_with_invalid_eligibility_is_retryable(monkeypatch):
     users = FakeUsers()
+    _reserve_challenge(users, "challenge-a")
     users.doc["challenge_bonus_receipts"] = {
         "random20": {
             "20260810": {
@@ -229,4 +316,25 @@ def test_owned_bonus_receipt_with_invalid_eligibility_is_retryable(monkeypatch):
             mode="random20",
             score=18,
             day="2026-08-10",
+        )
+
+
+def test_receipt_owner_mismatch_against_durable_owner_is_retryable(monkeypatch):
+    users = FakeUsers()
+    _reserve_normal(users, "result-a")
+    users.doc["daily_bonus_receipts"] = {
+        "20260810": {
+            "bonus": 10,
+            "eligible": True,
+            "result_owner": bonus_store._owner("result-b"),
+        }
+    }
+    monkeypatch.setattr(database, "collection", users)
+
+    with pytest.raises(LegacyResultStoreUnavailable, match="owner contradicts"):
+        bonus_store.claim_daily_bonus_for_result(
+            user_id=42,
+            result_id="result-a",
+            day="2026-08-10",
+            daily_streak=3,
         )
