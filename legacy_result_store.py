@@ -443,6 +443,16 @@ def claim_achievement_once(
         raise LegacyResultStoreUnavailable("achievement claim failed") from exc
 
 
+def _weekly_is_at_least(doc: dict, *, score: int, time_seconds: float) -> bool:
+    current_score = int(doc.get("best_score", 0) or 0)
+    if current_score > score:
+        return True
+    if current_score < score:
+        return False
+    current_time = float(doc.get("best_time", 999999) or 999999)
+    return current_time <= time_seconds
+
+
 def sync_weekly_best(
     *,
     user_id: int,
@@ -481,14 +491,10 @@ def sync_weekly_best(
                 existing = collection.find_one({"_id": doc_id})
         if existing is None:
             raise LegacyResultStoreUnavailable("weekly result document disappeared")
-        better = score > int(existing.get("best_score", 0) or 0)
-        tied_faster = (
-            score == int(existing.get("best_score", 0) or 0)
-            and time_seconds < float(existing.get("best_time", 999999) or 999999)
-        )
-        if not (better or tied_faster):
+        if _weekly_is_at_least(existing, score=score, time_seconds=time_seconds):
             return
-        collection.update_one(
+
+        write = collection.update_one(
             {
                 "_id": doc_id,
                 "$or": [
@@ -497,6 +503,19 @@ def sync_weekly_best(
                 ],
             },
             {"$set": replacement},
+        )
+        if write.modified_count == 1:
+            return
+
+        refreshed = collection.find_one({"_id": doc_id})
+        if refreshed is not None and _weekly_is_at_least(
+            refreshed,
+            score=score,
+            time_seconds=time_seconds,
+        ):
+            return
+        raise LegacyResultStoreUnavailable(
+            "weekly best update was not persisted and no better result exists"
         )
     except LegacyResultStoreUnavailable:
         raise
