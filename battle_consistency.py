@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _BATTLE_REWARD_RECEIPT_LIMIT = 100
 _VALID_RESULTS = frozenset({"win", "lose", "draw"})
+_VALID_ROLES = frozenset({"creator", "opponent"})
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,52 @@ def join_battle_atomic(battle_id: str, user_id: int, user_name: str) -> dict | N
         )
     except PyMongoError:
         logger.exception("join_battle_atomic failed for %s", battle_id)
+        return None
+
+
+def record_battle_finish_atomic(
+    battle_id: str,
+    user_id: int,
+    role: str,
+    *,
+    score: int,
+    time_taken: float,
+    points: int,
+) -> dict | None:
+    """Record a participant finish once and return the post-update battle.
+
+    The participant identity, role and unfinished flag are all part of the
+    Mongo predicate. Across two concurrent finishers, only the second document
+    update can return a battle with both ``*_finished`` flags set, which gives
+    the caller a natural single-finalizer handoff without a read/write race.
+    """
+    if role not in _VALID_ROLES:
+        return None
+    collection = database.battles_collection
+    if collection is None:
+        return None
+
+    prefix = role
+    try:
+        return collection.find_one_and_update(
+            {
+                "_id": battle_id,
+                f"{prefix}_id": user_id,
+                f"{prefix}_finished": {"$ne": True},
+            },
+            {
+                "$set": {
+                    f"{prefix}_score": max(0, int(score)),
+                    f"{prefix}_time": max(0.0, float(time_taken)),
+                    f"{prefix}_points": max(0, int(points)),
+                    f"{prefix}_finished": True,
+                    "updated_at": database._now_utc().isoformat(),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except (PyMongoError, TypeError, ValueError, OverflowError):
+        logger.exception("record_battle_finish_atomic failed for battle=%s user=%s", battle_id, user_id)
         return None
 
 
