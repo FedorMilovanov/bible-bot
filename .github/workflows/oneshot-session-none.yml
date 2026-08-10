@@ -1,0 +1,39 @@
+name: One-shot disabled session return
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/bible-bot-legacy-correctness' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-legacy-correctness
+          fetch-depth: 0
+      - name: Patch disabled session return exactly
+        run: python .github/scripts/oneshot_session_none.py
+      - name: Guard database diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "database.py"
+          read -r added deleted file < <(git diff --numstat -- database.py)
+          test "$file" = "database.py"
+          test "$added" = "1"
+          test "$deleted" = "1"
+          grep -A12 '^def create_quiz_session' database.py | grep -q 'return None'
+      - name: Commit exact return fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add database.py
+          git commit -m "fix: return none when quiz session store is disabled"
+          git push origin HEAD:agent/bible-bot-legacy-correctness
