@@ -290,13 +290,24 @@ def claim_daily_bonus_once(user_id: int, day: str) -> int:
     try:
         entry = collection.find_one(
             {"_id": uid},
-            {"daily_activity_streak": 1, receipt_path: 1},
+            {"daily_activity_streak": 1, "last_daily_bonus": 1, receipt_path: 1},
         )
         if not entry:
             return 0
         receipt_value = entry.get("daily_bonus_receipts", {}).get(day_key)
         if receipt_value:
             return 0
+
+        # Migration bridge: legacy code recorded only the latest date. If that
+        # field already says this result day was paid, backfill the durable
+        # per-day receipt without awarding points again.
+        if entry.get("last_daily_bonus", "") == day:
+            collection.update_one(
+                {"_id": uid, receipt_path: {"$exists": False}},
+                {"$set": {receipt_path: True}},
+            )
+            return 0
+
         streak = int(entry.get("daily_activity_streak", 0) or 0)
         bonus = 15 if streak >= 7 else 10 if streak >= 3 else 5
         result = collection.update_one(
@@ -323,13 +334,35 @@ def claim_challenge_bonus_once(user_id: int, mode: str, score: int, day: str) ->
     bonus = database.compute_bonus(score, mode, True)
     date_field = f"{mode}_last_bonus_date"
     receipt_path = f"challenge_bonus_receipts.{mode}.{day_key}"
-    update: dict = {
-        "$set": {receipt_path: True},
-        "$max": {date_field: day},
-    }
-    if bonus:
-        update["$inc"] = {"total_points": bonus}
     try:
+        entry = collection.find_one(
+            {"_id": uid},
+            {date_field: 1, receipt_path: 1},
+        )
+        if not entry:
+            return 0
+        receipt_value = (
+            entry.get("challenge_bonus_receipts", {})
+            .get(mode, {})
+            .get(day_key)
+        )
+        if receipt_value:
+            return 0
+
+        # Migration bridge for pre-receipt deployments.
+        if entry.get(date_field, "") == day:
+            collection.update_one(
+                {"_id": uid, receipt_path: {"$exists": False}},
+                {"$set": {receipt_path: True}},
+            )
+            return 0
+
+        update: dict = {
+            "$set": {receipt_path: True},
+            "$max": {date_field: day},
+        }
+        if bonus:
+            update["$inc"] = {"total_points": bonus}
         result = collection.update_one(
             {"_id": uid, receipt_path: {"$exists": False}},
             update,
