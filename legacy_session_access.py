@@ -7,9 +7,10 @@ import uuid
 from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
 
+from legacy_session_spec import validated_session_spec
+
 _ACTIVE_INDEX = "uniq_active_quiz_user"
 _ACTIVE_FILTER = {"status": "in_progress"}
-_ALLOWED_MODES = frozenset({"level", "random20", "hardcore20"})
 
 
 class QuizSessionAccessUnavailable(RuntimeError):
@@ -104,17 +105,6 @@ def ensure_active_session_unique_index() -> bool:
         ) from exc
 
 
-def _validate_questions(question_ids: list, questions_data: list) -> None:
-    if not question_ids or not questions_data:
-        raise ValueError("quiz questions must be non-empty")
-    if len(question_ids) != len(questions_data):
-        raise ValueError("question ids/data length mismatch")
-    if any(not isinstance(qid, str) or not qid for qid in question_ids):
-        raise ValueError("question ids must be non-empty strings")
-    if any(not isinstance(question, dict) for question in questions_data):
-        raise ValueError("question data must contain dictionaries")
-
-
 def create_quiz_session_strict(
     *,
     user_id: int | str,
@@ -127,15 +117,15 @@ def create_quiz_session_strict(
     chat_id: int | None = None,
 ) -> dict:
     """Create one durable session/attempt or raise; never return phantom success."""
-    if mode not in _ALLOWED_MODES:
-        raise ValueError("unsupported persisted quiz session mode")
-    _validate_questions(question_ids, questions_data)
-    if time_limit is not None and (
-        isinstance(time_limit, bool)
-        or not isinstance(time_limit, int)
-        or time_limit <= 0
-    ):
-        raise ValueError("time_limit must be a positive integer or None")
+    spec = validated_session_spec(
+        mode=mode,
+        question_ids=question_ids,
+        questions_data=questions_data,
+        level_key=level_key,
+        level_name=level_name,
+        time_limit=time_limit,
+        chat_id=chat_id,
+    )
 
     ensure_active_session_unique_index()
     database = _database()
@@ -152,17 +142,11 @@ def create_quiz_session_strict(
         # this durable container/owner identity stable.
         "attempt_id": session_id,
         "status": "in_progress",
-        "mode": mode,
-        "level_key": level_key,
-        "level_name": level_name,
-        "question_ids": list(question_ids),
-        "questions_data": list(questions_data),
+        **spec,
         "current_index": 0,
         "correct_count": 0,
         "answered_questions": [],
-        "time_limit": time_limit,
         "question_sent_at": None,
-        "chat_id": chat_id,
         "start_time": time.time(),
         "started_at": now.isoformat(),
         "created_at": now,
