@@ -4,7 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from legacy_attempt_identity import persisted_attempt_id
-from legacy_restart_policy import RestartDecision, classify_restart_session
+from legacy_restart_policy import (
+    LegacyRestartStateInvalid,
+    RestartDecision,
+    classify_restart_session,
+)
 from legacy_session_access import (
     QuizSessionAccessUnavailable,
     get_quiz_session_strict,
@@ -72,8 +76,10 @@ def resolve_session_action(
 
     try:
         decision = classify_restart_session(session)
-    except RuntimeError as exc:
-        raise LegacySessionActionStale("session button targets contradictory durable state") from exc
+    except LegacyRestartStateInvalid as exc:
+        raise LegacySessionActionStale(
+            "session button targets contradictory durable state"
+        ) from exc
     return ResolvedSessionAction(
         action=action,
         session_id=session_id,
