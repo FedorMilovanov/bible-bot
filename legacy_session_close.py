@@ -91,6 +91,14 @@ def _completion_snapshot(session: dict) -> tuple[int, list[str], list[dict]]:
             raise QuizSessionCompletionInvalid(
                 "quiz session answer correctness is not boolean"
             )
+        if not isinstance(answer.get("user_answer"), str):
+            raise QuizSessionCompletionInvalid(
+                "quiz session answer user_answer is not a string"
+            )
+        if not isinstance(answer.get("question_obj"), dict):
+            raise QuizSessionCompletionInvalid(
+                "quiz session answer question_obj is not an object"
+            )
         counted_correct += int(is_correct)
 
     if counted_correct != correct_count:
