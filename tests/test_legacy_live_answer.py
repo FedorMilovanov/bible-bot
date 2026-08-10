@@ -14,9 +14,9 @@ def _question():
     }
 
 
-def _data(*, session_id="s1", current=0, questions=None):
+def _data(*, session_id="s1", attempt_id=None, current=0, questions=None):
     questions = questions or [_question()]
-    return {
+    data = {
         "session_id": session_id,
         "questions": questions,
         "current_question": current,
@@ -29,6 +29,9 @@ def _data(*, session_id="s1", current=0, questions=None):
         "max_streak": 0,
         "fastest_answer": None,
     }
+    if attempt_id is not None:
+        data["attempt_id"] = attempt_id
+    return data
 
 
 def _record(question, *, index=0, answer="Paul", correct=True, latency=5.0):
@@ -43,8 +46,18 @@ def _record(question, *, index=0, answer="Paul", correct=True, latency=5.0):
     }
 
 
+def _durable(data, *, current, correct, records, attempt_id=None):
+    return {
+        "_id": data["session_id"],
+        "attempt_id": attempt_id or data.get("attempt_id") or data["session_id"],
+        "current_index": current,
+        "correct_count": correct,
+        "answered_questions": records,
+    }
+
+
 def test_durable_answer_cas_happens_before_ram_and_syncs_from_session(monkeypatch):
-    data = _data()
+    data = _data(attempt_id="attempt-1")
     q = data["questions"][0]
     payload = live.build_live_answer_callback("qa", data, 0, 1)
     captured = {}
@@ -53,11 +66,12 @@ def test_durable_answer_cas_happens_before_ram_and_syncs_from_session(monkeypatc
         captured.update({"session_id": session_id, "user_id": user_id, **kwargs})
         return {
             "applied": True,
-            "session": {
-                "current_index": 1,
-                "correct_count": 1,
-                "answered_questions": [_record(q)],
-            },
+            "session": _durable(
+                data,
+                current=1,
+                correct=1,
+                records=[_record(q)],
+            ),
         }
 
     monkeypatch.setattr(live, "record_owned_quiz_answer", record)
@@ -66,6 +80,7 @@ def test_durable_answer_cas_happens_before_ram_and_syncs_from_session(monkeypatc
 
     assert captured["session_id"] == "s1"
     assert captured["user_id"] == 42
+    assert captured["expected_attempt_id"] == "attempt-1"
     assert captured["expected_index"] == 0
     assert captured["question_id"] == live.legacy_question_id(q)
     assert captured["user_answer"] == "Paul"
@@ -75,6 +90,7 @@ def test_durable_answer_cas_happens_before_ram_and_syncs_from_session(monkeypatc
     assert outcome.persisted is True
     assert outcome.correct_count == 1
     assert outcome.current_streak == 1
+    assert data["attempt_id"] == "attempt-1"
     assert data["current_question"] == 1
     assert data["correct_answers"] == 1
     assert data["answered_questions"] == [{"question_obj": q, "user_answer": "Paul"}]
@@ -82,7 +98,7 @@ def test_durable_answer_cas_happens_before_ram_and_syncs_from_session(monkeypatc
 
 
 def test_store_outage_does_not_advance_any_ram_counter(monkeypatch):
-    data = _data()
+    data = _data(attempt_id="attempt-1")
     payload = live.build_live_answer_callback("qa", data, 0, 1)
     before = deepcopy(data)
 
@@ -97,9 +113,10 @@ def test_store_outage_does_not_advance_any_ram_counter(monkeypatch):
     assert data == before
 
 
-def test_wrong_session_token_is_rejected_before_store(monkeypatch):
-    data = _data(session_id="current")
-    old = _data(session_id="old")
+def test_wrong_attempt_token_is_rejected_before_store(monkeypatch):
+    # Same durable container after an atomic restart, but a different attempt.
+    current = _data(session_id="container", attempt_id="attempt-new")
+    old = _data(session_id="container", attempt_id="attempt-old")
     payload = live.build_live_answer_callback("qa", old, 0, 1)
     called = False
 
@@ -110,16 +127,43 @@ def test_wrong_session_token_is_rejected_before_store(monkeypatch):
 
     monkeypatch.setattr(live, "record_owned_quiz_answer", record)
 
-    with pytest.raises(live.LegacyLiveAnswerStale, match="another session"):
-        live.apply_live_answer_once(42, data, payload, "qa", now=105.0)
+    with pytest.raises(live.LegacyLiveAnswerStale, match="another attempt"):
+        live.apply_live_answer_once(42, current, payload, "qa", now=105.0)
 
     assert called is False
 
 
+def test_legacy_session_id_still_scopes_callback_without_attempt_field(monkeypatch):
+    data = _data(session_id="legacy")
+    payload = live.build_live_answer_callback("qa", data, 0, 1)
+    q = data["questions"][0]
+    captured = {}
+
+    def record(_session_id, _user_id, **kwargs):
+        captured.update(kwargs)
+        return {
+            "applied": True,
+            "session": _durable(
+                data,
+                current=1,
+                correct=1,
+                records=[_record(q)],
+                attempt_id="legacy",
+            ),
+        }
+
+    monkeypatch.setattr(live, "record_owned_quiz_answer", record)
+
+    live.apply_live_answer_once(42, data, payload, "qa", now=105.0)
+
+    assert captured["expected_attempt_id"] == "legacy"
+    assert data["attempt_id"] == "legacy"
+
+
 def test_old_question_index_is_rejected_before_store(monkeypatch):
     questions = [_question(), _question()]
-    data = _data(current=1, questions=questions)
-    payload_data = _data(current=0, questions=questions)
+    data = _data(attempt_id="attempt-1", current=1, questions=questions)
+    payload_data = _data(attempt_id="attempt-1", current=0, questions=questions)
     payload = live.build_live_answer_callback("qa", payload_data, 0, 1)
     called = False
 
@@ -139,7 +183,7 @@ def test_old_question_index_is_rejected_before_store(monkeypatch):
 def test_duplicate_question_ids_remain_ordered_by_expected_index(monkeypatch):
     q = _question()
     questions = [deepcopy(q), deepcopy(q)]
-    data = _data(current=1, questions=questions)
+    data = _data(attempt_id="attempt-1", current=1, questions=questions)
     data["answered_questions"] = [{"question_obj": q, "user_answer": "Paul"}]
     data["correct_answers"] = 1
     data["current_streak"] = 1
@@ -151,20 +195,19 @@ def test_duplicate_question_ids_remain_ordered_by_expected_index(monkeypatch):
         captured.update(kwargs)
         return {
             "applied": True,
-            "session": {
-                "current_index": 2,
-                "correct_count": 2,
-                "answered_questions": [
-                    _record(q, index=0),
-                    _record(q, index=1),
-                ],
-            },
+            "session": _durable(
+                data,
+                current=2,
+                correct=2,
+                records=[_record(q, index=0), _record(q, index=1)],
+            ),
         }
 
     monkeypatch.setattr(live, "record_owned_quiz_answer", record)
 
     outcome = live.apply_live_answer_once(42, data, payload, "qa", now=105.0)
 
+    assert captured["expected_attempt_id"] == "attempt-1"
     assert captured["expected_index"] == 1
     assert captured["question_id"] == live.legacy_question_id(q)
     assert outcome.current_index == 2
@@ -172,7 +215,7 @@ def test_duplicate_question_ids_remain_ordered_by_expected_index(monkeypatch):
 
 
 def test_exact_store_replay_rebuilds_ram_without_double_increment(monkeypatch):
-    data = _data()
+    data = _data(attempt_id="attempt-1")
     q = data["questions"][0]
     payload = live.build_live_answer_callback("qa", data, 0, 1)
 
@@ -181,11 +224,12 @@ def test_exact_store_replay_rebuilds_ram_without_double_increment(monkeypatch):
         "record_owned_quiz_answer",
         lambda *args, **kwargs: {
             "applied": False,
-            "session": {
-                "current_index": 1,
-                "correct_count": 1,
-                "answered_questions": [_record(q)],
-            },
+            "session": _durable(
+                data,
+                current=1,
+                correct=1,
+                records=[_record(q)],
+            ),
         },
     )
 
@@ -198,7 +242,7 @@ def test_exact_store_replay_rebuilds_ram_without_double_increment(monkeypatch):
 
 
 def test_durable_counter_mismatch_fails_closed_after_store_response(monkeypatch):
-    data = _data()
+    data = _data(attempt_id="attempt-1")
     q = data["questions"][0]
     payload = live.build_live_answer_callback("qa", data, 0, 1)
 
@@ -207,11 +251,12 @@ def test_durable_counter_mismatch_fails_closed_after_store_response(monkeypatch)
         "record_owned_quiz_answer",
         lambda *args, **kwargs: {
             "applied": True,
-            "session": {
-                "current_index": 1,
-                "correct_count": 0,
-                "answered_questions": [_record(q, correct=True)],
-            },
+            "session": _durable(
+                data,
+                current=1,
+                correct=0,
+                records=[_record(q, correct=True)],
+            ),
         },
     )
 
@@ -219,8 +264,8 @@ def test_durable_counter_mismatch_fails_closed_after_store_response(monkeypatch)
         live.apply_live_answer_once(42, data, payload, "qa", now=105.0)
 
 
-def test_timeout_uses_same_expected_index_cas_and_syncs_durable_state(monkeypatch):
-    data = _data()
+def test_timeout_uses_same_attempt_and_index_cas(monkeypatch):
+    data = _data(attempt_id="attempt-1")
     q = data["questions"][0]
     captured = {}
 
@@ -228,19 +273,19 @@ def test_timeout_uses_same_expected_index_cas_and_syncs_durable_state(monkeypatc
         captured.update(kwargs)
         return {
             "applied": True,
-            "session": {
-                "current_index": 1,
-                "correct_count": 0,
-                "answered_questions": [
-                    _record(q, answer="⏱ Время вышло", correct=False, latency=30.0)
-                ],
-            },
+            "session": _durable(
+                data,
+                current=1,
+                correct=0,
+                records=[_record(q, answer="⏱ Время вышло", correct=False, latency=30.0)],
+            ),
         }
 
     monkeypatch.setattr(live, "record_owned_quiz_answer", record)
 
     outcome = live.apply_live_timeout_once(42, data, 0, now=130.0)
 
+    assert captured["expected_attempt_id"] == "attempt-1"
     assert captured["expected_index"] == 0
     assert captured["user_answer"] == "⏱ Время вышло"
     assert captured["is_correct"] is False
@@ -251,7 +296,7 @@ def test_timeout_uses_same_expected_index_cas_and_syncs_durable_state(monkeypatc
 
 
 def test_timeout_store_outage_leaves_ram_unchanged(monkeypatch):
-    data = _data()
+    data = _data(attempt_id="attempt-1")
     before = deepcopy(data)
 
     monkeypatch.setattr(
@@ -298,9 +343,6 @@ def test_invalid_memory_only_index_fails_before_answer_list_mutation(monkeypatch
     monkeypatch.setattr(live, "record_owned_quiz_answer", should_not_persist)
 
     with pytest.raises(live.LegacyLiveStateInvalid, match="current_question is invalid"):
-        # Call the internal memory helper directly because callback validation
-        # rejects the broken index before reaching it. This regression proves
-        # the helper itself remains mutation-free on invalid state.
         live._apply_memory_only(
             data,
             question=data["questions"][0],
