@@ -6,6 +6,7 @@ retry after partial Mongo failures without double-crediting users.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -27,6 +28,32 @@ from legacy_result_store import (
     sync_weekly_best,
 )
 from session_integrity import QuizSessionStoreUnavailable, finish_owned_quiz_session
+
+_CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
+_QUIZ_MODES = frozenset({"relaxed", "timed", "speed"})
+_RESULT_FIELDS = frozenset(
+    {
+        "level_key",
+        "score",
+        "total",
+        "time_seconds",
+        "score_multiplier",
+        "max_streak",
+        "challenge_mode",
+        "quiz_mode",
+        "fastest_answer",
+        "earned_base",
+    }
+)
+_ACHIEVEMENT_FIELDS = frozenset(
+    {
+        "total_tests",
+        "perfect_count",
+        "max_streak_ever",
+        "daily_activity_streak",
+        "challenge_streak_count",
+    }
+)
 
 
 class LegacyResultFinalizationPending(RuntimeError):
@@ -55,6 +82,21 @@ def _validated_completed_at(base: dict) -> str:
 
 def _award_date(completed_at: str) -> str:
     return datetime.fromisoformat(completed_at).strftime("%d.%m.%Y")
+
+
+def _nonnegative_int(value, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise LegacyResultStoreUnavailable(f"durable {field} is invalid")
+    return value
+
+
+def _nonnegative_number(value, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise LegacyResultStoreUnavailable(f"durable {field} is invalid")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise LegacyResultStoreUnavailable(f"durable {field} is invalid")
+    return number
 
 
 def _claim_achievements(
@@ -88,30 +130,72 @@ def _finish_recovery_session(data: dict, user_id: int) -> bool:
     return finished is not None
 
 
+def _receipt(base: dict) -> dict:
+    receipt = base.get("receipt")
+    if not isinstance(receipt, dict) or not receipt:
+        raise LegacyResultStoreUnavailable("durable result receipt is missing")
+    return receipt
+
+
 def _durable_result(base: dict) -> dict:
-    receipt = base.get("receipt") or {}
-    stored = receipt.get("result") if isinstance(receipt, dict) else None
-    if isinstance(stored, dict) and stored:
-        return stored
-    stored = base.get("result")
-    return stored if isinstance(stored, dict) else {}
+    receipt = _receipt(base)
+    stored = receipt.get("result")
+    if not isinstance(stored, dict) or not stored:
+        raise LegacyResultStoreUnavailable("durable result snapshot is missing")
+    missing = _RESULT_FIELDS.difference(stored)
+    if missing:
+        raise LegacyResultStoreUnavailable(
+            f"durable result snapshot is incomplete: {','.join(sorted(missing))}"
+        )
+
+    level_key = stored["level_key"]
+    if not isinstance(level_key, str) or not level_key:
+        raise LegacyResultStoreUnavailable("durable result level_key is invalid")
+    score = _nonnegative_int(stored["score"], "result score")
+    total = _nonnegative_int(stored["total"], "result total")
+    if total <= 0 or score > total:
+        raise LegacyResultStoreUnavailable("durable result score/total is inconsistent")
+    _nonnegative_number(stored["time_seconds"], "result time_seconds")
+    _nonnegative_number(stored["score_multiplier"], "result score_multiplier")
+    max_streak = _nonnegative_int(stored["max_streak"], "result max_streak")
+    if max_streak > total:
+        raise LegacyResultStoreUnavailable("durable result max_streak exceeds total")
+    _nonnegative_int(stored["earned_base"], "result earned_base")
+
+    challenge_mode = stored["challenge_mode"]
+    if challenge_mode is not None and challenge_mode not in _CHALLENGE_MODES:
+        raise LegacyResultStoreUnavailable("durable result challenge_mode is invalid")
+    quiz_mode = stored["quiz_mode"]
+    if quiz_mode is not None and quiz_mode not in _QUIZ_MODES:
+        raise LegacyResultStoreUnavailable("durable result quiz_mode is invalid")
+    fastest_answer = stored["fastest_answer"]
+    if fastest_answer is not None:
+        _nonnegative_number(fastest_answer, "result fastest_answer")
+
+    return dict(stored)
 
 
 def _achievement_state(base: dict) -> dict:
-    receipt = base.get("receipt") or {}
-    stored = receipt.get("achievement_state") if isinstance(receipt, dict) else None
-    if isinstance(stored, dict) and stored:
-        return stored
-    user_doc = base.get("user")
-    return user_doc if isinstance(user_doc, dict) else {}
+    receipt = _receipt(base)
+    stored = receipt.get("achievement_state")
+    if not isinstance(stored, dict) or not stored:
+        raise LegacyResultStoreUnavailable("durable achievement snapshot is missing")
+    missing = _ACHIEVEMENT_FIELDS.difference(stored)
+    if missing:
+        raise LegacyResultStoreUnavailable(
+            f"durable achievement snapshot is incomplete: {','.join(sorted(missing))}"
+        )
+    validated = dict(stored)
+    for field in _ACHIEVEMENT_FIELDS:
+        validated[field] = _nonnegative_int(stored[field], f"achievement {field}")
+    return validated
 
 
 def _policy_data(data: dict, durable: dict) -> dict:
     """Use result-time policy inputs on retries instead of mutable handler state."""
     policy = dict(data)
-    for key in ("quiz_mode", "fastest_answer"):
-        if key in durable:
-            policy[key] = durable[key]
+    policy["quiz_mode"] = durable["quiz_mode"]
+    policy["fastest_answer"] = durable["fastest_answer"]
     return policy
 
 
@@ -155,15 +239,18 @@ def finalize_normal_result(
             fastest_answer=data.get("fastest_answer"),
         )
         completed_at = _validated_completed_at(base)
-        receipt = base.get("receipt") or {}
+        receipt = _receipt(base)
         durable = _durable_result(base)
         achievement_state = _achievement_state(base)
+        if durable["challenge_mode"] is not None:
+            raise LegacyResultStoreUnavailable("normal result has Challenge durable mode")
         day = result_day(completed_at)
+        daily_streak = _nonnegative_int(receipt.get("daily_streak"), "daily_streak")
         daily_bonus = claim_daily_bonus_for_result(
             user_id=user_id,
             result_id=result_id,
             day=day,
-            daily_streak=int(receipt.get("daily_streak", 0) or 0),
+            daily_streak=daily_streak,
         )
         keys = general_achievement_candidates(
             achievement_state,
@@ -221,9 +308,11 @@ def finalize_challenge_result(
         completed_at = _validated_completed_at(base)
         durable = _durable_result(base)
         achievement_state = _achievement_state(base)
-        mode = str(durable.get("challenge_mode") or requested_mode)
-        durable_score = int(durable.get("score", score) or 0)
-        durable_time = max(0.0, float(durable.get("time_seconds", time_seconds) or 0.0))
+        mode = durable["challenge_mode"]
+        if mode not in _CHALLENGE_MODES:
+            raise LegacyResultStoreUnavailable("Challenge durable mode is missing")
+        durable_score = _nonnegative_int(durable["score"], "result score")
+        durable_time = _nonnegative_number(durable["time_seconds"], "result time_seconds")
         day = result_day(completed_at)
 
         bonus = claim_challenge_bonus_for_result(
