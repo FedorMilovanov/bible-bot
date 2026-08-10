@@ -15,6 +15,8 @@ class FakeBattleCollection:
         self.claim_filter = None
         self.claim_update = None
         self.claim_result = None
+        self.find_filter = None
+        self.find_result = None
         self.delete_filter = None
         self.deleted_count = 0
 
@@ -22,6 +24,10 @@ class FakeBattleCollection:
         self.claim_filter = query
         self.claim_update = update
         return self.claim_result
+
+    def find_one(self, query):
+        self.find_filter = query
+        return self.find_result
 
     def delete_one(self, query):
         self.delete_filter = query
@@ -69,6 +75,29 @@ def test_participant_result_write_is_owner_scoped_and_once(monkeypatch):
         "creator_score": 9,
         "creator_time": 42.5,
         "creator_points": 130,
+        "creator_finished": True,
+    }
+
+
+def test_participant_result_retry_returns_existing_snapshot_without_rewrite(monkeypatch):
+    collection = FakeBattleCollection()
+    collection.claim_result = None
+    collection.find_result = {
+        "_id": "b1",
+        "creator_id": 10,
+        "creator_finished": True,
+        "creator_score": 9,
+    }
+    monkeypatch.setattr(database, "battles_collection", collection)
+
+    result = record_battle_result(
+        "b1", 10, "creator", score=10, time_seconds=1.0, points=999
+    )
+
+    assert result == collection.find_result
+    assert collection.find_filter == {
+        "_id": "b1",
+        "creator_id": 10,
         "creator_finished": True,
     }
 
