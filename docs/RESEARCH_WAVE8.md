@@ -1,6 +1,6 @@
 # Research WAVE 8 — Render-friendly Telegram webhook transport
 
-Date: 2026-08-09
+Date: 2026-08-10
 
 ## Goal
 
@@ -18,10 +18,12 @@ Webhook mode does **not** start PTB's optional webhook web server and therefore 
 2. `keep_alive()` starts Waitress on Render's public port.
 3. `bot.py` builds the same PTB `Application`, handlers and JobQueue as before.
 4. The final launcher delegates to `run_telegram_application(...)`.
-5. In webhook mode, the runner initializes PTB, registers the Telegram webhook, starts the PTB application, and leaves Waitress as the only socket owner.
-6. `POST /telegram/webhook` validates Telegram's secret header before parsing JSON.
-7. Valid Telegram `Update` JSON is decoded with PTB and forwarded from the Waitress thread into `Application.update_queue` with `asyncio.run_coroutine_threadsafe`.
-8. PTB's normal update processor and existing handler graph consume the queue.
+5. In webhook mode, the runner initializes PTB and registers the Telegram webhook.
+6. PTB `Application.start()` starts the update processor and JobQueue.
+7. Only **after** PTB is running does the bridge become ready for HTTP submissions.
+8. `POST /telegram/webhook` validates Telegram's secret header before parsing JSON.
+9. Valid Telegram `Update` JSON is decoded with PTB and forwarded from the Waitress thread into `Application.update_queue` with `asyncio.run_coroutine_threadsafe`.
+10. On shutdown the bridge first stops accepting new submissions, drains already-started submissions with a bounded timeout, stops PTB, and only then persists the in-memory quiz sessions.
 
 This follows PTB's documented custom-webhook architecture while preserving the large stateful handler graph.
 
@@ -39,14 +41,17 @@ The ingress verifies `X-Telegram-Bot-Api-Secret-Token` before parsing the reques
 
 An explicit `TELEGRAM_WEBHOOK_SECRET` is supported only if it matches `[A-Za-z0-9_-]{16,256}`. If no explicit secret is configured, the service deterministically derives a 64-character hexadecimal secret from `BOT_TOKEN`. This avoids adding another mandatory production secret while remaining inside Telegram's allowed character set.
 
+For a planned `BOT_TOKEN` rotation, an explicit stable `TELEGRAM_WEBHOOK_SECRET` is preferable: the derived secret changes with the bot token. Without an explicit secret there can be a short transition window where the old webhook delivery receives a non-2xx response until the new process successfully re-registers the webhook. Telegram retries unsuccessful webhook deliveries.
+
 ### Fail-closed responses
 
 - polling mode: webhook route returns `404`;
 - invalid/missing secret: `401`;
 - non-JSON: `415`;
 - malformed/non-object JSON: `400`;
-- malformed Telegram Update: `400`;
-- PTB bridge not ready during cold start: `503`, allowing Telegram to retry;
+- malformed Telegram Update or invalid/missing `update_id`: `400`;
+- PTB bridge not ready during cold start or shutdown: `503`, allowing Telegram to retry;
+- queue submission failure: `503`;
 - accepted queue submission: `200`.
 
 Webhook responses are `no-store`.
@@ -55,25 +60,50 @@ Webhook responses are `no-store`.
 
 Webhook mode uses the PTB `Application` lifecycle directly:
 
-- initialize through the async application context;
-- register the webhook;
-- require `setWebhook` to return `True`, otherwise startup fails;
-- `Application.start()` runs PTB's update processor and JobQueue;
-- wait for SIGINT/SIGTERM;
-- run the existing `_save_all_sessions` shutdown hook;
-- `Application.stop()` and application shutdown.
+1. initialize through the async application context;
+2. register the webhook and require `setWebhook` to return `True`;
+3. call `Application.start()` so the PTB update processor and JobQueue are active;
+4. expose the Waitress-to-PTB bridge only after start succeeds;
+5. wait for SIGINT/SIGTERM;
+6. deactivate the bridge so new webhook requests receive retryable `503`;
+7. wait up to 3 seconds for submissions that had already crossed the HTTP boundary to finish their queue handoff;
+8. call `Application.stop()`;
+9. run the existing `_save_all_sessions` hook **after** PTB has stopped changing application state;
+10. exit the application context and complete PTB shutdown.
 
 The webhook is intentionally **not deleted on normal Render shutdown/sleep**. Keeping it registered allows the next Telegram HTTP request to reach and wake the sleeping service.
 
-## Polling rollback
+PTB documents that `Application.stop()` no longer fetches new updates from `update_queue` once stop begins. The drain barrier therefore closes a real boundary race: a Waitress request that had passed readiness immediately before shutdown must finish `queue.put` before PTB is stopped.
+
+## Telegram update allowlist
+
+The legacy handler graph was inspected directly. It registers handlers for:
+
+- messages (commands, text and report photos);
+- callback queries;
+- inline queries.
+
+It does not register ChatMember, poll, shipping, pre-checkout or generic `TypeHandler(Update, ...)` handlers.
+
+The webhook therefore requests only:
+
+- `message`;
+- `callback_query`;
+- `inline_query`.
+
+This avoids asking Telegram to deliver update classes the application would ignore.
+
+## Polling rollback and legacy signal ownership
 
 `TELEGRAM_TRANSPORT=polling` delegates to the original PTB `application.run_polling()` behavior. PTB's polling bootstrap removes an existing webhook before starting `getUpdates`, so rollback does not require a separate manual webhook deletion command.
 
 Telegram itself does not allow `getUpdates` while a webhook is configured, which is why transport selection is explicit rather than simultaneous.
 
+`bot.py` still contains the older SIGTERM/SIGINT handler used to run `_save_all_sessions()` in polling mode. In webhook mode the asyncio transport owns the Unix signals and performs the stronger ordered shutdown above. The legacy signal block is deliberately not deleted in this wave because doing so without migrating polling shutdown persistence to PTB `post_stop` would weaken the rollback path. A future cleanup can move polling persistence to `post_stop` and then remove the old signal handler in one atomic change.
+
 ## Delivery concurrency
 
-Telegram's Bot API supports `max_connections` from 1 to 100 and defaults to 40. PTB recommends reducing it to limit server load.
+Telegram's Bot API supports `max_connections` from 1 to 100 and defaults to 40. Lower values limit server load.
 
 The deployment explicitly sets:
 
@@ -118,8 +148,12 @@ Transport tests cover:
 - webhook URL derivation and HTTPS validation;
 - webhook secret derivation and validation;
 - webhook connection-limit validation;
+- exact Telegram update-type allowlist;
 - real minimal Telegram `Update` decoding and queue submission;
-- PTB webhook lifecycle and shutdown hook;
+- rejection of missing, boolean or negative `update_id` values;
+- PTB bridge remaining unavailable until `Application.start()` has succeeded;
+- bridge deactivation rejecting new submissions while draining an already-started submission;
+- shutdown order `deactivate/drain -> Application.stop() -> save sessions -> Application.shutdown()`;
 - startup failure when Telegram rejects `setWebhook`;
 - webhook route authentication before JSON parsing;
 - invalid JSON / invalid update handling;
@@ -130,7 +164,7 @@ Transport tests cover:
 - exact bot launcher contract;
 - no PTB webhook-extra dependency.
 
-The standard branch CI additionally runs the entire inherited hardening suite, Node Mini App tests, Docker build and built-container runtime smoke. PyPA `pip-audit` remains an independent gate.
+The standard branch CI additionally runs the entire inherited hardening suite, Node Mini App tests, Docker build and built-container runtime smoke. PyPA `pip-audit` remains an independent gate. Stacked PRs additionally run Python and JavaScript/TypeScript CodeQL through `.github/workflows/codeql-stacked.yml`.
 
 ## Delivery semantics / accepted residual risk
 
@@ -138,14 +172,17 @@ The official PTB custom-webhook pattern places a validated update in `Applicatio
 
 A successful `200` therefore means the update was accepted into the **in-memory PTB queue**, not durably committed to an external broker. There is a very small crash window between HTTP acknowledgement and handler completion. Adding Mongo/Kafka/Redis-backed webhook ingestion now would materially increase architecture and failure modes for a small single-process bot, so it is deliberately not added without production evidence that durable ingress is needed.
 
+The new shutdown drain closes the separate race between an in-flight Waitress submission and `Application.stop()`; it does not attempt to turn the PTB in-memory queue into durable storage.
+
 Telegram `update_id` is suitable for detecting repeated webhook updates. If real duplicate-handler side effects appear under production delivery/retry conditions, bounded deduplication can be added as an isolated follow-up without changing the transport topology.
 
 ## Primary sources
 
-- Telegram Bot API — `setWebhook`, `getUpdates`, secret token, `max_connections`: https://core.telegram.org/bots/api#setwebhook
+- Telegram Bot API — `setWebhook`, retry behavior, secret token, `max_connections`, `allowed_updates`: https://core.telegram.org/bots/api#setwebhook
 - Telegram Bot API — `Update.update_id`: https://core.telegram.org/bots/api#update
 - python-telegram-bot 20.7 — custom webhook example: https://docs.python-telegram-bot.org/en/v20.7/examples.customwebhookbot.html
-- python-telegram-bot 20.7 — `Application.start()` / update queue processing: https://docs.python-telegram-bot.org/en/v20.7/telegram.ext.application.html
+- python-telegram-bot 20.7 — `Application.start()` / `Application.stop()` / update queue processing: https://docs.python-telegram-bot.org/en/v20.7/telegram.ext.application.html
+- python-telegram-bot 20.7 — polling lifecycle and `post_stop`: https://docs.python-telegram-bot.org/en/v20.7/telegram.ext.application.html#telegram.ext.Application.run_polling
 - python-telegram-bot 20.7 — `Bot.set_webhook`: https://docs.python-telegram-bot.org/en/v20.7/telegram.bot.html#telegram.Bot.set_webhook
 - Render — Free web services: https://render.com/docs/free
 - Render — default environment variables / `RENDER_EXTERNAL_URL`: https://render.com/docs/environment-variables#default-environment-variables
@@ -153,13 +190,17 @@ Telegram `update_id` is suitable for detecting repeated webhook updates. If real
 
 ## Remaining work before merge/deploy
 
-1. Let the final stacked-PR CI and security audit finish on the documentation head.
-2. Perform a real Render + Telegram smoke using production secrets:
-   - deploy the stacked branch;
-   - confirm `/live` is healthy;
-   - inspect Telegram `getWebhookInfo`;
-   - send `/start`, callback buttons, quiz answers, inline query, report flow and Challenge 20 through Telegram;
-   - verify cold-start delivery after the Free service has slept;
-   - verify Mongo/session continuity;
-   - verify shutdown/redeploy does not delete the webhook.
-3. Keep PR #1 mergeable independently. Merge/deploy the transport change only after the external webhook smoke succeeds.
+All repository-side gates are green on the latest transport code before this documentation update: CI, Security Audit, stacked CodeQL, Docker build/runtime smoke and the inherited hardening suite.
+
+The remaining blocker is the **real Render + Telegram smoke using production secrets**:
+
+1. deploy the stacked branch;
+2. confirm `/live` is healthy;
+3. inspect Telegram `getWebhookInfo`;
+4. send `/start`, callback buttons, quiz answers, inline query, report flow and Challenge 20 through Telegram;
+5. verify cold-start delivery after the Free service has slept;
+6. verify Mongo/session continuity across restart;
+7. verify shutdown/redeploy does not delete the webhook;
+8. test rollback by switching `TELEGRAM_TRANSPORT=polling` and confirm polling resumes and sessions still save.
+
+Secrets must not be committed or pasted into the PR.
