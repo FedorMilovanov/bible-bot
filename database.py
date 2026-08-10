@@ -142,12 +142,6 @@ def _ensure_indexes():
     if quiz_sessions_collection is not None:
         try:
             quiz_sessions_collection.create_index(
-                [("updated_at_dt", ASCENDING)],
-                expireAfterSeconds=21600,
-                name="ttl_updated_at",
-                background=True,
-            )
-            quiz_sessions_collection.create_index(
                 [("user_id", ASCENDING), ("status", ASCENDING)],
                 name="idx_user_status",
                 background=True,
@@ -157,12 +151,6 @@ def _ensure_indexes():
 
     if battles_collection is not None:
         try:
-            battles_collection.create_index(
-                [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=2592000,
-                name="ttl_battles_created_at",
-                background=True,
-            )
             battles_collection.create_index(
                 [("status", ASCENDING), ("created_at_dt", DESCENDING)],
                 background=True,
@@ -188,17 +176,6 @@ def _ensure_indexes():
             )
         except Exception as e:
             logger.warning("leaderboard index: %s", e)
-
-    if reports_collection is not None:
-        try:
-            reports_collection.create_index(
-                [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=7776000,
-                name="ttl_reports_created_at",
-                background=True,
-            )
-        except Exception as e:
-            logger.warning("reports index: %s", e)
 
     if weekly_lb_collection is not None:
         try:
