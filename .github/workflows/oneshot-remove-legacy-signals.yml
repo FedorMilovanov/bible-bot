@@ -1,0 +1,96 @@
+name: One-shot remove legacy signal handlers
+
+on:
+  push:
+    branches:
+      - agent/bible-bot-webhook-transport
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/bible-bot-webhook-transport
+          fetch-depth: 0
+
+      - name: Remove only obsolete signal ownership
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("bot.py")
+          data = path.read_bytes()
+          eol = b"\r\n" if b"\r\n" in data else b"\n"
+
+          header = eol.join([
+              b"# ------------------------------------------------",
+              b"# GRACEFUL SHUTDOWN (6.6)",
+              b"# ------------------------------------------------",
+          ])
+          # The repository uses box-drawing dashes in the real header. Locate
+          # the import relative to the stable function name instead of relying
+          # on those display bytes.
+          import_target = b"import signal" + eol + eol + b"async def _save_all_sessions():"
+          if data.count(import_target) != 1:
+              raise SystemExit("expected exactly one legacy signal import before _save_all_sessions")
+          data = data.replace(
+              import_target,
+              b"async def _save_all_sessions():",
+              1,
+          )
+
+          handler_lines = [
+              b"",
+              b"",
+              b"def _handle_shutdown(signum, frame):",
+              b"    loop = asyncio.get_event_loop()",
+              b"    if loop.is_running():",
+              b"        loop.create_task(_save_all_sessions())",
+              b"    else:",
+              b"        loop.run_until_complete(_save_all_sessions())",
+              b"",
+              b"",
+              b"signal.signal(signal.SIGTERM, _handle_shutdown)",
+              b"signal.signal(signal.SIGINT,  _handle_shutdown)",
+          ]
+          handler_target = eol.join(handler_lines)
+          if data.count(handler_target) != 1:
+              raise SystemExit("expected exactly one legacy _handle_shutdown block")
+          data = data.replace(handler_target, b"", 1)
+
+          if b"def _handle_shutdown" in data or b"signal.signal(signal.SIG" in data:
+              raise SystemExit("legacy signal ownership still present after patch")
+          if data.count(b"async def _save_all_sessions():") != 1:
+              raise SystemExit("session persistence function changed unexpectedly")
+
+          path.write_bytes(data)
+
+      - name: Guard diff scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          test "$changed" = "bot.py"
+          read -r added deleted file < <(git diff --numstat -- bot.py)
+          test "$file" = "bot.py"
+          test "$added" = "0"
+          test "$deleted" -ge 8
+          test "$deleted" -le 20
+          grep -q 'async def _save_all_sessions' bot.py
+          ! grep -q 'def _handle_shutdown' bot.py
+          ! grep -q 'signal.signal(signal.SIG' bot.py
+
+      - name: Commit exact cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot.py
+          git commit -m "cleanup: remove obsolete bot signal handlers"
+          git push origin HEAD:agent/bible-bot-webhook-transport
