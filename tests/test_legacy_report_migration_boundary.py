@@ -15,6 +15,7 @@ def test_durable_report_migration_is_all_or_nothing():
     migration_markers = (
         "from legacy_report_submit import",
         "accept_report_draft_once(",
+        "accept_inaccuracy_report_once(",
         "from legacy_delivery_drain import",
         "drain_pending_deliveries(",
     )
@@ -41,11 +42,8 @@ def test_durable_report_migration_is_all_or_nothing():
     assert "ADMIN_USER_ID" not in confirm
     assert "drain_pending_deliveries(" in BOT
 
-    # The inline “inaccuracy” button is a second report ingress path. It must not
-    # remain an ephemeral direct Telegram send after the main report path becomes
-    # durable; use the generic store or a dedicated stable-id acceptance helper.
+    # The inline “inaccuracy” button has its own deterministic identity helper.
+    # Do not replace the direct send with a generic acceptance call using a fresh
+    # random id on every retry: the same attempt/question click must be idempotent.
     assert "ADMIN_USER_ID" not in inaccuracy
-    assert (
-        "accept_report_once(" in inaccuracy
-        or "accept_inaccuracy_report_once(" in inaccuracy
-    )
+    assert "accept_inaccuracy_report_once(" in inaccuracy
