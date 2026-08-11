@@ -197,7 +197,8 @@ def claim_durable_battle_opponent(
     max_age_minutes = _required_positive_int(max_age_minutes, "max_age_minutes")
     database = _database()
     collection = _battle_collection()
-    cutoff = database._now_utc() - timedelta(minutes=max_age_minutes)
+    now = database._now_utc()
+    cutoff = now - timedelta(minutes=max_age_minutes)
     try:
         return collection.find_one_and_update(
             {
@@ -214,6 +215,8 @@ def claim_durable_battle_opponent(
                     "opponent_id": user_id,
                     "opponent_name": user_name,
                     "status": "in_progress",
+                    "joined_at_dt": now,
+                    "updated_at": now.isoformat(),
                 }
             },
             return_document=ReturnDocument.AFTER,
