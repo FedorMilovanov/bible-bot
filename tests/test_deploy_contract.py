@@ -29,6 +29,14 @@ def test_single_process_start_contract_is_consistent():
     assert "healthCheckPath: /live" in render
 
 
+def test_readme_documents_same_production_entrypoint_and_preflight_runbook():
+    readme = read("README.md")
+    assert "python telegram_production.py" in readme
+    assert "python bot.py" not in readme
+    assert "docs/DEPLOYMENT_PREFLIGHTS.md" in readme
+    assert "telegram_production.py` — единственный production Telegram composition root" in readme
+
+
 def test_render_uses_current_runtime_field_and_resource_bounds():
     render = read("render.yaml")
     assert "runtime: python" in render
