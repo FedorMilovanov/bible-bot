@@ -1,5 +1,7 @@
 import uuid
 
+import pytest
+
 import database
 
 
@@ -27,17 +29,25 @@ def create_session():
     )
 
 
-def test_disabled_session_store_returns_no_recovery_id(monkeypatch):
+def test_disabled_session_store_fails_before_ram_can_use_phantom_id(monkeypatch):
     monkeypatch.setattr(database, "quiz_sessions_collection", None)
 
-    assert create_session() is None
+    with pytest.raises(
+        database.LegacyQuizSessionPersistenceUnavailable,
+        match="storage is unavailable",
+    ):
+        create_session()
 
 
-def test_failed_insert_returns_no_phantom_recovery_id(monkeypatch):
+def test_failed_insert_is_explicit_and_never_returns_phantom_id(monkeypatch):
     collection = RecordingQuizSessions(fail=True)
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
 
-    assert create_session() is None
+    with pytest.raises(
+        database.LegacyQuizSessionPersistenceUnavailable,
+        match="insert failed",
+    ):
+        create_session()
     assert collection.inserted == []
 
 
@@ -47,7 +57,6 @@ def test_successful_insert_returns_the_persisted_uuid(monkeypatch):
 
     session_id = create_session()
 
-    assert session_id is not None
     assert str(uuid.UUID(session_id)) == session_id
     assert len(collection.inserted) == 1
     assert collection.inserted[0]["_id"] == session_id
