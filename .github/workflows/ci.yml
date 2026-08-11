@@ -61,7 +61,7 @@ jobs:
           web_api
           keep_alive.py
           intro.py
-          telegram_controller.py
+          telegram_*.py
           battle_integrity.py
           session_integrity.py
           report_integrity.py
@@ -84,6 +84,8 @@ jobs:
         run: node --test tests/js/*.test.js
       - name: Build production container
         run: docker build --tag bible-bot-ci .
+      - name: Verify production controller imports in built image
+        run: docker run --rm bible-bot-ci python -c "import telegram_production; print('production-import-ok')"
       - name: Smoke test built web container
         shell: bash
         run: |
