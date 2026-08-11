@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """Production Telegram UI adapter for crash-safe user reports.
 
 The historical report handlers in ``bot.py`` remove their only RAM draft before
