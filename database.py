@@ -264,13 +264,23 @@ def get_quiz_session(session_id: str):
 def update_quiz_session(session_id: str, fields: dict):
     if quiz_sessions_collection is None:
         return
+    if not isinstance(fields, dict):
+        raise ValueError("quiz session fields must be a dict")
+    allowed_fields = {"question_sent_at", "status", "end_time"}
+    forbidden = set(fields) - allowed_fields
+    if forbidden:
+        raise ValueError(
+            "generic quiz session update cannot mutate durable progress/spec fields: "
+            + ", ".join(sorted(forbidden))
+        )
     now = _now_utc()
-    fields["updated_at"] = now.isoformat()
-    fields["updated_at_dt"] = now
+    safe_fields = dict(fields)
+    safe_fields["updated_at"] = now.isoformat()
+    safe_fields["updated_at_dt"] = now
     try:
         quiz_sessions_collection.update_one(
             {"_id": session_id},
-            {"$set": fields}
+            {"$set": safe_fields}
         )
     except Exception as e:
         logger.error("update_quiz_session error: %s", e)
