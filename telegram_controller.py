@@ -29,6 +29,7 @@ from telegram.ext import (
 )
 
 import bot as legacy
+import telegram_report_controller as reports
 from legacy_live_answer import (
     LegacyLiveAnswerStale,
     LegacyLiveStateInvalid,
@@ -1807,7 +1808,7 @@ def main():
     app.add_handler(CommandHandler("random", random_command))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("cancelreport", legacy.cancel_report_command))
+    app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))
     app.add_handler(CommandHandler("admin", legacy.admin_command))
     app.add_handler(CommandHandler("broadcast", legacy.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
@@ -1828,7 +1829,7 @@ def main():
 
     app.add_handler(
         CallbackQueryHandler(
-            legacy.report_inaccuracy_handler,
+            reports.report_inaccuracy_handler,
             pattern=r"^report_inaccuracy_",
         )
     )
@@ -1841,30 +1842,30 @@ def main():
 
     report_conv = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(legacy.report_start, pattern="^report_start_")
+            CallbackQueryHandler(reports.report_start, pattern="^report_start_")
         ],
         states={
             REPORT_TEXT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    legacy.report_receive_text,
+                    reports.report_receive_text,
                 )
             ],
             REPORT_PHOTO: [
-                MessageHandler(filters.PHOTO, legacy.report_receive_photo),
+                MessageHandler(filters.PHOTO, reports.report_receive_photo),
                 CallbackQueryHandler(
-                    legacy.report_skip_photo,
+                    reports.report_skip_photo,
                     pattern="^report_skip_photo$",
                 ),
-                CallbackQueryHandler(legacy.report_cancel, pattern="^report_cancel$"),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
             ],
             REPORT_CONFIRM: [
-                CallbackQueryHandler(legacy.report_confirm, pattern="^report_confirm$"),
-                CallbackQueryHandler(legacy.report_cancel, pattern="^report_cancel$"),
+                CallbackQueryHandler(reports.report_confirm, pattern="^report_confirm$"),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
             ],
         },
         fallbacks=[
-            CommandHandler("cancelreport", legacy.cancel_report_command),
+            CommandHandler("cancelreport", reports.cancel_report_command),
             CommandHandler("reset", reset_command),
         ],
         allow_reentry=True,
@@ -1940,6 +1941,11 @@ def main():
             remind_unfinished_tests_job,
             interval=7200,
             first=7200,
+        )
+        app.job_queue.run_repeating(
+            reports.report_delivery_job,
+            interval=60,
+            first=10,
         )
 
     app.add_error_handler(legacy.on_error)
