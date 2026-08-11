@@ -52,6 +52,7 @@ from legacy_restart_policy import (
     classify_restart_session,
     restart_timeout_route,
 )
+from legacy_retry_policy import LegacyRetryPolicyInvalid, persisted_is_retry
 from legacy_session_access import (
     QuizSessionAccessSchemaInvalid,
     QuizSessionAccessUnavailable,
@@ -126,6 +127,12 @@ def _hydrate_session(
 ) -> dict:
     """Rebuild runtime/UI fields from one validated durable session snapshot."""
     fields = recovery_fields(session)
+    try:
+        is_retry = persisted_is_retry(session)
+    except LegacyRetryPolicyInvalid as exc:
+        raise LegacyPersistedSessionStateInvalid(
+            "persisted retry policy is invalid"
+        ) from exc
     resolved_chat = chat_id if chat_id is not None else fields.get("quiz_chat_id")
     data = legacy._create_session_data(
         user_id=user_id,
@@ -142,6 +149,7 @@ def _hydrate_session(
         last_activity=time.time(),
         is_battle=False,
         battle_points=0,
+        is_retry=is_retry,
         is_challenge=fields["is_challenge"],
         challenge_mode=fields["challenge_mode"],
         challenge_time_limit=fields["challenge_time_limit"],
@@ -167,10 +175,11 @@ def _hydrate_session(
 
 def _lifecycle_keyboard(session: dict, *, include_cancel: bool = True) -> InlineKeyboardMarkup:
     payloads = session_action_payloads(session)
-    rows = [
-        [InlineKeyboardButton("▶️ Продолжить", callback_data=payloads["res"])],
-        [InlineKeyboardButton("🔁 Начать заново", callback_data=payloads["rst"])],
-    ]
+    rows = [[InlineKeyboardButton("▶️ Продолжить", callback_data=payloads["res"])]]
+    # Retry-error practice is deliberately non-scoring. Do not expose Restart:
+    # a replacement attempt must never accidentally lose the persisted policy.
+    if session.get("is_retry") is not True:
+        rows.append([InlineKeyboardButton("🔁 Начать заново", callback_data=payloads["rst"])])
     if include_cancel:
         rows.append([InlineKeyboardButton("❌ Отменить", callback_data=payloads["can"])])
     return InlineKeyboardMarkup(rows)
@@ -187,10 +196,14 @@ def _session_progress(session: dict) -> tuple[int, int, str]:
 
 async def _show_active_attempt(target: Any, session: dict, *, edit: bool) -> None:
     current, total, level_name = _session_progress(session)
+    if session.get("is_retry") is True:
+        actions = "Продолжить или отменить повторение ошибок?"
+    else:
+        actions = "Продолжить, начать заново или отменить текущую попытку?"
     text = (
         f"⏸ *Тест уже идёт: {min(current + 1, max(total, 1))}/{max(total, 1)}*\n"
         f"_{level_name}_\n\n"
-        "Продолжить, начать заново или отменить текущую попытку?"
+        f"{actions}"
     )
     keyboard = _lifecycle_keyboard(session)
     if edit:
@@ -247,7 +260,15 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
             continue
     data["wrong_answers"] = wrong
 
-    if outcome.is_challenge:
+    if result.get("practice"):
+        retry_drill = True
+        text = (
+            "🔁 *ПОВТОРЕНИЕ ОШИБОК ЗАВЕРШЕНО*\n\n"
+            f"*Правильно:* {score}/{total} ({percentage}%)\n"
+            f"*Время:* {legacy.format_time(time_seconds)}\n\n"
+            "Это тренировочный режим — баллы, бонусы и достижения не начисляются."
+        )
+    elif outcome.is_challenge:
         mode = data.get("challenge_mode") or data.get("level_key")
         mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
         base = int(result.get("earned_base", 0) or 0)
@@ -421,6 +442,7 @@ async def _launch_attempt(
     level_key: str,
     level_name: str,
     time_limit: int | None,
+    is_retry: bool = False,
     retry_after_finalize: bool = True,
 ) -> dict | None:
     question_ids = [legacy.get_qid(question) for question in questions]
@@ -434,6 +456,7 @@ async def _launch_attempt(
             level_name=level_name,
             time_limit=time_limit,
             chat_id=chat_id,
+            is_retry=is_retry,
         )
     except LegacySessionLaunchActiveAttempt as exc:
         await bot.send_message(
@@ -465,6 +488,7 @@ async def _launch_attempt(
             level_key=level_key,
             level_name=level_name,
             time_limit=time_limit,
+            is_retry=is_retry,
             retry_after_finalize=False,
         )
     except LegacySessionLaunchUnavailable:
@@ -690,7 +714,7 @@ async def challenge_start(update: Update, context):
         parse_mode="Markdown",
     )
     await send_challenge_question(context.bot, update.effective_user.id)
-    return ANSWERING
+    return ANSWING
 
 
 def _time_limit(data: dict) -> int | None:
@@ -1178,6 +1202,17 @@ async def restart_session_handler(update: Update, context):
         return
 
     session = resolved.session
+    try:
+        if persisted_is_retry(session):
+            await query.answer(
+                "Повторение ошибок нельзя перезапускать. Отмени его и запусти заново из результатов.",
+                show_alert=True,
+            )
+            return
+    except LegacyRetryPolicyInvalid:
+        await query.answer("⚠️ Политика сохранённой попытки повреждена.", show_alert=True)
+        return
+
     mode = session.get("mode")
     total = len(session.get("questions_data", []))
     if mode in {"random20", "hardcore20"}:
@@ -1530,7 +1565,8 @@ async def test_command(update: Update, context):
 
 async def retry_errors(update: Update, context):
     query = update.callback_query
-    user_id = query.from_user.id
+    user = query.from_user
+    user_id = user.id
     try:
         target_id = int((query.data or "").replace("retry_errors_", "", 1))
     except (TypeError, ValueError):
@@ -1544,34 +1580,33 @@ async def retry_errors(update: Update, context):
     for item in previous.get("answered_questions", []):
         try:
             if legacy._is_wrong(item):
-                wrong.append(item["question_obj"])
+                question = item.get("question_obj") if isinstance(item, dict) else None
+                if isinstance(question, dict):
+                    wrong.append(question)
         except Exception:
             continue
     if not wrong:
         await query.answer("Ошибок нет!", show_alert=True)
         return ConversationHandler.END
+
     await query.answer()
-    user_data[user_id] = legacy._create_session_data(
-        user_id=user_id,
-        session_id=None,
-        questions=wrong,
-        level_name=f"🔁 Повторение ошибок ({previous.get('level_name', 'Тест')})",
+    data = await _launch_attempt(
+        user=user,
+        bot=context.bot,
         chat_id=query.message.chat_id,
-        level_key=previous.get("level_key"),
-        correct_answers=0,
-        start_time=time.time(),
-        last_activity=time.time(),
-        is_battle=False,
-        battle_points=0,
+        mode="level",
+        questions=wrong,
+        level_key="retry_errors",
+        level_name=f"🔁 Повторение ошибок ({previous.get('level_name', 'Тест')})",
+        time_limit=None,
         is_retry=True,
-        username=query.from_user.username,
-        first_name=query.from_user.first_name,
-        quiz_mode=previous.get("quiz_mode"),
-        score_multiplier=1.0,
-        quiz_time_limit=None,
     )
+    if data is None:
+        return ConversationHandler.END
     await query.edit_message_text(
-        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong)}",
+        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\n"
+        f"Вопросов: {len(wrong)}\n"
+        "Тренировочный режим: баллы и достижения не начисляются.",
         parse_mode="Markdown",
     )
     await send_question(context.bot, user_id)
