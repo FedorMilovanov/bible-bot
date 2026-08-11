@@ -85,7 +85,13 @@ jobs:
       - name: Build production container
         run: docker build --tag bible-bot-ci .
       - name: Verify production controller imports in built image
-        run: docker run --rm bible-bot-ci python -c "import telegram_production; print('production-import-ok')"
+        run: >-
+          docker run --rm
+          -e ADMIN_USER_ID=1
+          -e BOT_TOKEN=123456:TEST_TOKEN
+          -e DISABLE_WEB_SERVER=true
+          bible-bot-ci
+          python -c "import telegram_production; print('production-import-ok')"
       - name: Smoke test built web container
         shell: bash
         run: |
