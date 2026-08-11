@@ -325,7 +325,7 @@ def test_invalid_receipt_marker_is_retryable(monkeypatch):
         _apply_battle_outcome_once("b1", 10, "win", first_name="Player")
 
 
-def test_delete_is_scoped_to_participant_and_cannot_remove_final_outbox(monkeypatch):
+def test_delete_is_scoped_to_participant_and_cannot_remove_durable_result_evidence(monkeypatch):
     collection = FakeBattleCollection()
     collection.deleted_count = 1
     monkeypatch.setattr(database, "battles_collection", collection)
@@ -334,5 +334,7 @@ def test_delete_is_scoped_to_participant_and_cannot_remove_final_outbox(monkeypa
     assert collection.delete_filter == {
         "_id": "b1",
         "$or": [{"creator_id": 20}, {"opponent_id": 20}],
+        "creator_finished": {"$ne": True},
+        "opponent_finished": {"$ne": True},
         "final_claimed": {"$ne": True},
     }
