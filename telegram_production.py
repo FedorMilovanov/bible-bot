@@ -18,6 +18,7 @@ import bot as legacy
 import telegram_battle_controller as battles
 import telegram_controller as quiz
 import telegram_report_controller as reports
+import telegram_retry_controller as retry
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def main() -> None:
         entry_points=[
             CommandHandler("test", quiz.test_command),
             CallbackQueryHandler(legacy.level_selected, pattern="^level_"),
-            CallbackQueryHandler(quiz.retry_errors, pattern="^retry_errors_"),
+            CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"),
             CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"),
         ],
         states={
