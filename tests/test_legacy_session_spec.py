@@ -24,6 +24,25 @@ def test_normal_level_accepts_only_product_timer_modes(time_limit):
     assert result["mode"] == "level"
     assert result["level_key"] == "easy"
     assert result["time_limit"] == time_limit
+    assert result["is_retry"] is False
+
+
+def test_normal_level_can_persist_non_scoring_retry_practice():
+    result = _spec(is_retry=True)
+    assert result["mode"] == "level"
+    assert result["is_retry"] is True
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", []])
+def test_retry_policy_must_be_boolean(value):
+    with pytest.raises(ValueError, match="is_retry must be a boolean"):
+        _spec(is_retry=value)
+
+
+@pytest.mark.parametrize("mode", ["random20", "hardcore20"])
+def test_challenge_cannot_be_retry_error_practice(mode):
+    with pytest.raises(ValueError, match="cannot be retry-error practice"):
+        _spec(mode=mode, level_key=mode, time_limit=10, is_retry=True)
 
 
 @pytest.mark.parametrize("time_limit", [1, 10, 45])
@@ -36,6 +55,7 @@ def test_challenge_keeps_positive_legacy_timer_compatibility(time_limit):
     assert result["mode"] == "hardcore20"
     assert result["level_key"] == "hardcore20"
     assert result["time_limit"] == time_limit
+    assert result["is_retry"] is False
 
 
 def test_normal_level_rejects_missing_or_challenge_level_key():
