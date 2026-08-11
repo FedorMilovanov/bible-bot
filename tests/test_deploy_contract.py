@@ -68,5 +68,15 @@ def test_docker_context_excludes_local_secrets_and_dev_tree():
     assert "docs" in ignored
 
 
+def test_production_requires_ptb_job_queue_for_recovery_jobs():
+    requirements = read("requirements.txt")
+    source = read("telegram_production.py")
+    assert "python-telegram-bot[job-queue]==20.7" in requirements
+    assert "if app.job_queue is None:" in source
+    assert "if app.job_queue is not None:" not in source
+    assert "reports.report_delivery_job" in source
+    assert "battles.battle_maintenance_job" in source
+
+
 def test_legacy_render_worker_config_is_gone():
     assert not (ROOT / "render.yaml.txt").exists()
