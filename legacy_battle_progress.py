@@ -402,7 +402,6 @@ def record_battle_answer_once(
             stored.get("qid") != answer["qid"]
             or stored.get("user_answer") != user_answer
             or stored.get("is_correct") is not is_correct
-            or stored.get("points") != points
         ):
             raise LegacyBattleProgressConflict("another battle answer occupies this question")
         return {
