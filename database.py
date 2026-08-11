@@ -268,7 +268,7 @@ def get_quiz_session(session_id: str):
 
 def update_quiz_session(session_id: str, fields: dict):
     if quiz_sessions_collection is None:
-        return
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
     if not isinstance(fields, dict):
         raise ValueError("quiz session fields must be a dict")
     allowed_fields = {"question_sent_at", "status", "end_time"}
@@ -289,6 +289,7 @@ def update_quiz_session(session_id: str, fields: dict):
         )
     except Exception as e:
         logger.error("update_quiz_session error: %s", e)
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session update failed") from e
 
 
 def advance_quiz_session(session_id: str, qid: str, user_answer: str,
