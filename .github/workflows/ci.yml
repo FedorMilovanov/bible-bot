@@ -61,6 +61,7 @@ jobs:
           web_api
           keep_alive.py
           intro.py
+          telegram_controller.py
           battle_integrity.py
           session_integrity.py
           report_integrity.py
