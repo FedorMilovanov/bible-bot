@@ -20,6 +20,7 @@ import telegram_battle_share_controller as battle_share
 import telegram_controller as quiz
 import telegram_report_controller as reports
 import telegram_retry_controller as retry
+from legacy_session_access import ensure_active_session_unique_index
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ async def _start(update, context):
 def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
+    ensure_active_session_unique_index()
 
     app = (
         Application.builder()
