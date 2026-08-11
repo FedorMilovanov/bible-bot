@@ -152,7 +152,7 @@ def test_authenticated_questions_never_expose_answer_or_explanation(client):
     assert all("explanation" not in q for q in questions)
 
 
-def test_starting_new_quiz_abandons_previous_active_session(client, monkeypatch):
+def test_conflicting_new_quiz_preserves_previous_active_session(client, monkeypatch):
     http, token = client
     sessions = FakeCollection()
     monkeypatch.setattr(quiz_module, "miniapp_sessions", lambda: sessions)
@@ -171,11 +171,9 @@ def test_starting_new_quiz_abandons_previous_active_session(client, monkeypatch)
         headers=auth,
         json={"pool_key": "medium_p1", "mode": "relaxed", "count": 10},
     )
-    assert second.status_code == 200
-    second_id = second.get_json()["session_id"]
-    assert first_id != second_id
-    assert sessions.docs[first_id]["status"] == "abandoned"
-    assert sessions.docs[second_id]["status"] == "in_progress"
+    assert second.status_code == 409
+    assert sessions.docs[first_id]["status"] == "in_progress"
+    assert len(sessions.docs) == 1
 
 
 def test_server_authoritative_quiz_and_idempotent_replay(client, monkeypatch):
