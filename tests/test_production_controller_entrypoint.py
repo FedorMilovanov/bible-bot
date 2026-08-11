@@ -8,18 +8,21 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 RENDER = (ROOT / "render.yaml").read_text(encoding="utf-8")
-CONTROLLER = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
+QUIZ = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
 
 
-def test_runtime_surfaces_run_strict_telegram_controller():
-    assert 'CMD ["python", "telegram_controller.py"]' in DOCKERFILE
+def test_runtime_surfaces_run_explicit_production_composition_root():
+    assert 'CMD ["python", "telegram_production.py"]' in DOCKERFILE
     assert 'CMD ["python", "bot.py"]' not in DOCKERFILE
-    assert "startCommand: python telegram_controller.py" in RENDER
+    assert 'CMD ["python", "telegram_controller.py"]' not in DOCKERFILE
+    assert "startCommand: python telegram_production.py" in RENDER
     assert "startCommand: python bot.py" not in RENDER
+    assert "startCommand: python telegram_controller.py" not in RENDER
 
 
-def test_production_controller_is_valid_python_and_owns_quiz_state():
-    ast.parse(CONTROLLER, filename="telegram_controller.py")
+def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
+    ast.parse(QUIZ, filename="telegram_controller.py")
     for marker in (
         "launch_quiz_attempt(",
         "apply_live_answer_once(",
@@ -28,10 +31,10 @@ def test_production_controller_is_valid_python_and_owns_quiz_state():
         "cancel_current_incomplete_session(",
         "resolve_session_action(",
     ):
-        assert marker in CONTROLLER
+        assert marker in QUIZ
 
 
-def test_production_controller_imports_with_runtime_dependencies():
+def test_production_composition_imports_with_runtime_dependencies():
     env = os.environ.copy()
     env.update(
         {
@@ -45,10 +48,15 @@ def test_production_controller_imports_with_runtime_dependencies():
             sys.executable,
             "-c",
             (
-                "import telegram_controller as controller; "
-                "assert callable(controller.main); "
-                "assert callable(controller.show_results); "
-                "assert callable(controller.quiz_inline_answer)"
+                "import telegram_production as production; "
+                "import telegram_controller as quiz; "
+                "import telegram_report_controller as reports; "
+                "import telegram_battle_controller as battles; "
+                "assert callable(production.main); "
+                "assert callable(quiz.show_results); "
+                "assert callable(quiz.quiz_inline_answer); "
+                "assert callable(reports.report_confirm); "
+                "assert callable(battles.battle_answer)"
             ),
         ],
         cwd=ROOT,
@@ -61,15 +69,20 @@ def test_production_controller_imports_with_runtime_dependencies():
     assert result.returncode == 0, result.stderr
 
 
-def test_legacy_bot_is_helper_only_for_quiz_runtime():
+def test_production_composition_does_not_register_legacy_state_writers():
+    ast.parse(PRODUCTION, filename="telegram_production.py")
     for forbidden in (
         "legacy.main()",
         "legacy.quiz_inline_answer",
         "legacy.challenge_inline_answer",
         "legacy.show_results",
         "legacy.show_challenge_results",
-        "legacy.resume_session_handler",
-        "legacy.restart_session_handler",
-        "legacy.cancel_session_handler",
+        "legacy.start_battle_questions",
+        "legacy.battle_answer",
+        "legacy.create_battle",
+        "legacy.join_battle",
+        "legacy.cancel_battle",
+        "legacy.report_confirm",
+        "legacy.report_inaccuracy_handler",
     ):
-        assert forbidden not in CONTROLLER
+        assert forbidden not in PRODUCTION
