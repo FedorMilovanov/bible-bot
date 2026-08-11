@@ -1,4 +1,4 @@
-"""Strict creation/discovery/join policy for durable PvP question progress."""
+"""Strict creation/discovery/join/access policy for durable PvP question progress."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -6,6 +6,7 @@ from datetime import timedelta
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
+from legacy_battle_callback_protocol import callback_matches_battle
 from legacy_battle_progress import battle_question_id
 from legacy_battle_protocols import BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE
 
@@ -15,7 +16,7 @@ class LegacyBattleSessionUnavailable(RuntimeError):
 
 
 class LegacyBattleSessionConflict(RuntimeError):
-    """Raised when a durable PvP create/join request loses a state race."""
+    """Raised when a durable PvP create/join/access request loses a state race."""
 
 
 def _database():
@@ -63,6 +64,15 @@ def _validated_questions(value) -> list[dict]:
         battle_question_id(question)
         questions.append(question)
     return questions
+
+
+def _open_participant_filter(user_id: int) -> dict:
+    return {
+        "$or": [{"creator_id": user_id}, {"opponent_id": user_id}],
+        "question_progress_protocol": BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE,
+        "status": {"$in": ["waiting", "in_progress"]},
+        "final_claimed": {"$ne": True},
+    }
 
 
 def create_durable_battle(
@@ -132,6 +142,44 @@ def get_waiting_durable_battles(*, limit: int = 10, max_age_minutes: int = 10) -
         return list(cursor)
     except PyMongoError as exc:
         raise LegacyBattleSessionUnavailable("waiting battle lookup failed") from exc
+
+
+def get_owned_open_durable_battle(battle_id: str, user_id: int) -> dict | None:
+    """Load one open durable battle only when the caller is a persisted participant."""
+    battle_id = _required_battle_id(battle_id)
+    user_id = _required_user_id(user_id, "user_id")
+    collection = _battle_collection()
+    try:
+        return collection.find_one({"_id": battle_id, **_open_participant_filter(user_id)})
+    except PyMongoError as exc:
+        raise LegacyBattleSessionUnavailable("owned battle lookup failed") from exc
+
+
+def resolve_owned_open_battle_callback(user_id: int, callback_token: str) -> dict:
+    """Resolve one semantic callback token to exactly one open owned battle.
+
+    Telegram callbacks carry only a compact battle fingerprint. After a process
+    restart there is deliberately no RAM battle id to trust, so the durable
+    participant set is queried first and the fingerprint is matched in-process.
+    Ambiguous/corrupt matches fail closed instead of picking an arbitrary battle.
+    """
+    user_id = _required_user_id(user_id, "user_id")
+    if not isinstance(callback_token, str) or not callback_token:
+        raise ValueError("callback_token is required")
+    collection = _battle_collection()
+    try:
+        candidates = list(collection.find(_open_participant_filter(user_id)).limit(100))
+    except PyMongoError as exc:
+        raise LegacyBattleSessionUnavailable("battle callback lookup failed") from exc
+    matches = [
+        battle
+        for battle in candidates
+        if isinstance(battle, dict)
+        and callback_matches_battle(battle.get("_id"), callback_token)
+    ]
+    if len(matches) != 1:
+        raise LegacyBattleSessionConflict("battle callback is stale or ambiguous")
+    return matches[0]
 
 
 def claim_durable_battle_opponent(
