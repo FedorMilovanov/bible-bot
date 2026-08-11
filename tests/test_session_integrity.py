@@ -37,6 +37,38 @@ class FakeQuizSessionCollection:
         return deepcopy(self.claimed_session)
 
 
+def _resumable_session(*, current_index=0):
+    answers = []
+    correct_count = 0
+    if current_index:
+        answers = [
+            {
+                "index": 0,
+                "qid": "q1",
+                "user_answer": "A",
+                "is_correct": True,
+                "question_obj": {"id": "q1"},
+                "ts": "2026-08-10T12:00:01",
+            }
+        ]
+        correct_count = 1
+    return {
+        "_id": "s1",
+        "attempt_id": "s1",
+        "user_id": "42",
+        "status": "in_progress",
+        "mode": "level",
+        "level_key": "easy",
+        "question_ids": ["q1", "q2"],
+        "questions_data": [{"id": "q1"}, {"id": "q2"}],
+        "current_index": current_index,
+        "correct_count": correct_count,
+        "answered_questions": answers,
+        "time_limit": None,
+        "start_time": 0.0,
+    }
+
+
 def _answer(collection, *, expected_attempt_id="s1", expected_index=0, **overrides):
     kwargs = {
         "question_id": "q1",
@@ -57,11 +89,30 @@ def _answer(collection, *, expected_attempt_id="s1", expected_index=0, **overrid
 
 def test_owned_session_lookup_scopes_by_session_and_canonical_user_id(monkeypatch):
     collection = FakeQuizSessionCollection()
-    collection.session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
+    collection.session = _resumable_session(current_index=1)
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
 
     assert get_owned_quiz_session("s1", 42) == collection.session
     assert collection.find_filter == {"_id": "s1", "user_id": "42"}
+
+
+def test_owned_resume_refuses_exact_completed_session(monkeypatch):
+    collection = FakeQuizSessionCollection()
+    session = _resumable_session(current_index=1)
+    session["question_ids"] = ["q1"]
+    session["questions_data"] = [{"id": "q1"}]
+    collection.session = session
+    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
+
+    assert get_owned_quiz_session("s1", 42) is None
+
+
+def test_owned_resume_refuses_contradictory_session(monkeypatch):
+    collection = FakeQuizSessionCollection()
+    collection.session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
+    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
+
+    assert get_owned_quiz_session("s1", 42) is None
 
 
 def test_owned_answer_first_apply_uses_owner_attempt_index_and_question_cas(monkeypatch):
