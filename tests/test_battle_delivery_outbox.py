@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import database
 from battle_integrity import (
+    BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT,
+    BATTLE_DELIVERY_PROTOCOL_OUTBOX,
     claim_battle_result_delivery,
     mark_battle_result_delivered,
     release_battle_result_delivery,
@@ -91,7 +93,7 @@ class DeliveryCollection:
         return SimpleNamespace(modified_count=1)
 
 
-def _finalized():
+def _finalized(*, protocol=BATTLE_DELIVERY_PROTOCOL_OUTBOX):
     return {
         "_id": "b1",
         "creator_id": 10,
@@ -102,6 +104,7 @@ def _finalized():
         "opponent_finished": True,
         "final_claimed": True,
         "status": "finalized",
+        "result_delivery_protocol": protocol,
         "result_delivery": {
             "creator": {"delivered": False, "attempts": 0},
             "opponent": {"delivered": False, "attempts": 0},
@@ -200,3 +203,15 @@ def test_nonparticipant_cannot_claim_or_ack_delivery(monkeypatch):
 
     assert claim_battle_result_delivery("b1", 99) is None
     assert mark_battle_result_delivered("b1", 99, "token") is False
+
+
+def test_legacy_direct_or_unversioned_finalized_battle_is_not_claimable(monkeypatch):
+    for protocol in (BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT, None):
+        doc = _finalized(protocol=protocol)
+        if protocol is None:
+            doc.pop("result_delivery_protocol")
+        collection = DeliveryCollection(doc)
+        monkeypatch.setattr(database, "battles_collection", collection)
+
+        assert claim_battle_result_delivery("b1", 10) is None
+        assert mark_battle_result_delivered("b1", 10, "token") is False
