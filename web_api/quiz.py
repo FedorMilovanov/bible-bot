@@ -136,6 +136,36 @@ def _current_question_payload(session: dict) -> dict | None:
     }
 
 
+def _matching_active_start_payload(
+    session: dict,
+    *,
+    pool_key: str,
+    mode: str,
+    is_challenge: bool,
+    count: int,
+) -> dict | None:
+    """Return a resumable current payload only for the exact requested quiz spec."""
+    if (
+        session.get("status") != "in_progress"
+        or session.get("pool_key") != pool_key
+        or session.get("mode") != mode
+        or session.get("is_challenge") is not is_challenge
+        or session.get("question_count") != count
+    ):
+        return None
+    current = _current_question_payload(session)
+    if current is None:
+        return None
+    return {
+        "session_id": str(session["_id"]),
+        "pool_key": pool_key,
+        "mode": mode,
+        "challenge": is_challenge,
+        "resumed": True,
+        **current,
+    }
+
+
 def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
     pool_key = str(payload.get("pool_key", "")).strip()
     mode = str(payload.get("mode", "relaxed")).strip()
@@ -179,15 +209,35 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     if sessions is None:
         return None, "database unavailable", 503
 
-    now = _now()
+    user_id = str(user["id"])
     try:
-        sessions.update_many(
-            {"user_id": str(user["id"]), "status": "in_progress"},
-            {"$set": {"status": "abandoned", "updated_at_dt": now}},
-        )
+        active = sessions.find_one({"user_id": user_id, "status": "in_progress"})
+    except PyMongoError:
+        logger.exception("failed to resolve active Mini App session")
+        return None, "database temporarily unavailable", 503
     except Exception:
-        logger.exception("failed to abandon previous Mini App sessions")
-        return None, "could not prepare quiz session", 503
+        logger.exception("unexpected active Mini App session lookup failure")
+        return None, "could not resolve active quiz session", 500
+
+    if active:
+        resumed = _matching_active_start_payload(
+            active,
+            pool_key=pool_key,
+            mode=mode,
+            is_challenge=is_challenge,
+            count=count,
+        )
+        if resumed is not None:
+            return resumed, None, 200
+
+        active_total = int(active.get("question_count") or len(active.get("questions") or []))
+        active_index = int(active.get("current_index", 0))
+        if active_total > 0 and active_index == active_total:
+            finalized = _finalize_quiz(active, user)
+            if finalized is None:
+                return None, "previous quiz result finalization is incomplete", 503
+        else:
+            return None, "another active quiz is in progress; finish it before starting another", 409
 
     try:
         from database import get_user_stats, init_user_stats
@@ -218,7 +268,7 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     session_id = str(uuid.uuid4())
     document = {
         "_id": session_id,
-        "user_id": str(user["id"]),
+        "user_id": user_id,
         "username": user.get("username", ""),
         "first_name": user.get("first_name", ""),
         "status": "in_progress",
@@ -243,6 +293,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     try:
         sessions.insert_one(document)
     except DuplicateKeyError:
+        # A concurrent start won after the pre-read. Never abandon it and never
+        # invent a second attempt; the caller can repeat the same start request.
         logger.info("active Mini App session already exists for user %s", user["id"])
         return None, "another active quiz already exists; retry start", 409
     except PyMongoError:
@@ -253,7 +305,14 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         return None, "could not create quiz session", 500
 
     current = _current_question_payload(document)
-    return {"session_id": session_id, "mode": mode, **current}, None, 200
+    return {
+        "session_id": session_id,
+        "pool_key": pool_key,
+        "mode": mode,
+        "challenge": is_challenge,
+        "resumed": False,
+        **current,
+    }, None, 200
 
 
 def get_current_question(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
