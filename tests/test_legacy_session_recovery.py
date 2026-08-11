@@ -32,6 +32,19 @@ def _session(**overrides):
         "time_limit": None,
     }
     base.update(overrides)
+    answered = base.get("answered_questions")
+    question_ids = base.get("question_ids")
+    if isinstance(answered, list):
+        for index, item in enumerate(answered):
+            if not isinstance(item, dict):
+                continue
+            item.setdefault("user_answer", f"answer-{index}")
+            question_id = (
+                question_ids[index]
+                if isinstance(question_ids, list) and index < len(question_ids)
+                else f"q{index + 1}"
+            )
+            item.setdefault("question_obj", {"id": question_id})
     return base
 
 
@@ -239,6 +252,47 @@ def test_completed_result_inputs_refuse_qid_or_index_mismatch():
 
     assert completed_result_inputs(bad_qid) is None
     assert completed_result_inputs(bad_index) is None
+
+
+def test_completed_result_inputs_refuse_missing_qid():
+    session = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+
+    assert completed_result_inputs(session) is None
+
+
+def test_completed_result_inputs_refuse_missing_answer_payload():
+    missing_user_answer = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+    missing_user_answer["answered_questions"][1].pop("user_answer")
+
+    missing_question_obj = _session(
+        current_index=3,
+        correct_count=2,
+        answered_questions=[
+            {"index": 0, "qid": "q1", "is_correct": True, "ts": "2026-08-10T12:00:10"},
+            {"index": 1, "qid": "q2", "is_correct": False, "ts": "2026-08-10T12:00:20"},
+            {"index": 2, "qid": "q3", "is_correct": True, "ts": "2026-08-10T12:00:45"},
+        ],
+    )
+    missing_question_obj["answered_questions"][1].pop("question_obj")
+
+    assert completed_result_inputs(missing_user_answer) is None
+    assert completed_result_inputs(missing_question_obj) is None
 
 
 def test_completed_result_inputs_refuse_missing_last_answer_timestamp():
