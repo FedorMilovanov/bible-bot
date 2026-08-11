@@ -175,7 +175,8 @@ def resolve_owned_open_battle_callback(user_id: int, callback_token: str) -> dic
         battle
         for battle in candidates
         if isinstance(battle, dict)
-        and callback_matches_battle(battle.get("_id"), callback_token)
+        and isinstance(battle.get("_id"), str)
+        and callback_matches_battle(battle["_id"], callback_token)
     ]
     if len(matches) != 1:
         raise LegacyBattleSessionConflict("battle callback is stale or ambiguous")
