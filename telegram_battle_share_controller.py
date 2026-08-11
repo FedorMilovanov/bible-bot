@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """Durable PvP sharing and Telegram start-deep-link adapter."""
 from __future__ import annotations
 
