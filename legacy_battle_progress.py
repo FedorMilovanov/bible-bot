@@ -317,6 +317,25 @@ def mark_battle_question_sent(
         raise LegacyBattleProgressUnavailable("battle timer write failed") from exc
 
 
+def _semantic_replay(
+    progress: dict,
+    question: dict,
+    expected_index: int,
+    user_answer: str,
+) -> dict:
+    if progress["current_index"] != expected_index + 1:
+        raise LegacyBattleProgressConflict("battle answer is not the immediate durable replay")
+    stored = progress["answers"][expected_index]
+    expected_correct = user_answer == question["options"][question["correct"]]
+    if (
+        stored.get("qid") != battle_question_id(question)
+        or stored.get("user_answer") != user_answer
+        or stored.get("is_correct") is not expected_correct
+    ):
+        raise LegacyBattleProgressConflict("another battle answer occupies this question")
+    return stored
+
+
 def record_battle_answer_once(
     battle_id: str,
     user_id: int,
@@ -340,16 +359,26 @@ def record_battle_answer_once(
     try:
         battle = _load_owned_battle(collection, battle_id, user_id, role)
         questions = _validated_questions(battle)
-        progress = _validated_progress(battle, role)
-        if expected_index >= len(questions) or progress["current_index"] != expected_index:
+        if expected_index >= len(questions):
             raise LegacyBattleProgressConflict("battle answer targets another question")
+        progress = _validated_progress(battle, role)
         question = questions[expected_index]
         if user_answer not in question["options"]:
             raise LegacyBattleProgressConflict("battle answer option is stale")
+        if progress["current_index"] == expected_index + 1:
+            stored = _semantic_replay(progress, question, expected_index, user_answer)
+            return {
+                "applied": False,
+                "battle": battle,
+                "progress": progress,
+                "answer": stored,
+            }
+        if progress["current_index"] != expected_index:
+            raise LegacyBattleProgressConflict("battle answer targets another question")
+
         sent_at = progress.get("question_sent_at")
         if not isinstance(sent_at, datetime):
             raise LegacyBattleProgressInvalid("battle answer has no durable timer marker")
-
         now = database._now_utc()
         elapsed = (now - sent_at).total_seconds()
         if not math.isfinite(elapsed) or elapsed < 0:
@@ -395,15 +424,7 @@ def record_battle_answer_once(
 
         existing = _load_owned_battle(collection, battle_id, user_id, role)
         validated = _validated_progress(existing, role)
-        if validated["current_index"] != expected_index + 1:
-            raise LegacyBattleProgressConflict("battle answer is not the immediate durable replay")
-        stored = validated["answers"][expected_index]
-        if (
-            stored.get("qid") != answer["qid"]
-            or stored.get("user_answer") != user_answer
-            or stored.get("is_correct") is not is_correct
-        ):
-            raise LegacyBattleProgressConflict("another battle answer occupies this question")
+        stored = _semantic_replay(validated, question, expected_index, user_answer)
         return {
             "applied": False,
             "battle": existing,
