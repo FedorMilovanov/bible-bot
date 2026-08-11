@@ -63,16 +63,10 @@ def main() -> None:
         entry_points=[
             CommandHandler("test", quiz.test_command),
             CallbackQueryHandler(legacy.level_selected, pattern="^level_"),
-            CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"),
-            CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"),
         ],
         states={
             quiz.CHOOSING_LEVEL: [
                 CallbackQueryHandler(legacy.level_selected, pattern=r"^level_")
-            ],
-            quiz.ANSWERING: [
-                CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, quiz.text_answer_fallback),
             ],
         },
         fallbacks=[
@@ -95,6 +89,8 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", legacy.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
 
+    app.add_handler(CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"))
+    app.add_handler(CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"))
     app.add_handler(CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:"))
     app.add_handler(CallbackQueryHandler(quiz.challenge_inline_answer, pattern=r"^cha:"))
     app.add_handler(CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"))
