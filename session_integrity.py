@@ -93,9 +93,26 @@ def _ledger_length_filter(expected_index: int) -> dict:
 
 
 def get_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
+    """Return only a safely resumable owned session for the historical UI path.
+
+    The current controller uses this helper exclusively from
+    ``resume_session_handler``. Refuse completed or contradictory evidence before
+    the legacy handler can rebuild RAM from it. Full attempt-token lifecycle
+    migration will eventually replace this compatibility boundary.
+    """
     collection = _quiz_session_collection()
     try:
-        return collection.find_one({"_id": session_id, "user_id": _owner_id(user_id)})
+        session = collection.find_one({"_id": session_id, "user_id": _owner_id(user_id)})
+        if session is None or session.get("status") != "in_progress":
+            return None
+        try:
+            decision = classify_restart_session(session)
+        except LegacyRestartStateInvalid:
+            logger.warning("refusing resume of contradictory quiz session %s", session_id)
+            return None
+        if decision.action != "resume":
+            return None
+        return session
     except PyMongoError as exc:
         logger.exception("failed to load owned quiz session %s", session_id)
         raise QuizSessionStoreUnavailable("quiz session lookup failed") from exc
