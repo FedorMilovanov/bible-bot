@@ -1,4 +1,3 @@
-# ruff: noqa: RUF001
 """Single production composition root for Telegram quiz, reports and durable PvP."""
 from __future__ import annotations
 
