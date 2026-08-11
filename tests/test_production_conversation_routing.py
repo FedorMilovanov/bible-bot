@@ -1,5 +1,7 @@
+import asyncio
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("ADMIN_USER_ID", "1")
 os.environ.setdefault("DISABLE_WEB_SERVER", "true")
@@ -40,6 +42,38 @@ def test_report_text_state_accepts_the_cancel_button_it_renders():
         "reports.REPORT_PHOTO:", 1
     )[0]
     assert 'CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$")' in report_text_block
+
+
+def test_active_report_conversation_precedes_same_group_global_commands():
+    report_registration = SOURCE.index("app.add_handler(report_conv)")
+    global_cancel = SOURCE.index(
+        'app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))'
+    )
+    global_reset = SOURCE.index(
+        'app.add_handler(CommandHandler("reset", quiz.reset_command))'
+    )
+    assert report_registration < global_cancel
+    assert report_registration < global_reset
+    assert 'CommandHandler("reset", _reset_during_report)' in SOURCE
+
+
+def test_reset_during_report_drops_only_local_draft_before_quiz_reset(monkeypatch):
+    calls = []
+    production.legacy.report_drafts[42] = {"report_id": "r1"}
+
+    async def fake_reset(update, context):
+        calls.append((update, context, 42 in production.legacy.report_drafts))
+        return "reset-result"
+
+    monkeypatch.setattr(production.quiz, "reset_command", fake_reset)
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = object()
+
+    result = asyncio.run(production._reset_during_report(update, context))
+
+    assert result == "reset-result"
+    assert calls == [(update, context, False)]
+    assert 42 not in production.legacy.report_drafts
 
 
 def test_production_module_imports_for_routing_contract():
