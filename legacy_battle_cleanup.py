@@ -26,10 +26,11 @@ def _battle_collection():
 def cleanup_stale_waiting_battles(*, max_age_minutes: int = 10) -> int:
     """Delete only abandoned pre-progress battles, never recovery evidence.
 
-    Waiting or joined ``in_progress`` battles are disposable after the expiry
-    only while neither participant has a durable final result, no final claim
-    exists, and the durable per-question progress layer has never started.
-    Any recovery evidence makes the document intentionally ineligible.
+    Waiting battles expire from creation. Joined ``in_progress`` battles receive
+    a fresh grace window from the atomic opponent claim. Older documents created
+    before ``joined_at_dt`` existed fall back to creation time so they cannot
+    become immortal. Any durable progress/finalization evidence makes a document
+    intentionally ineligible for cleanup.
     """
     if (
         isinstance(max_age_minutes, bool)
@@ -42,8 +43,21 @@ def cleanup_stale_waiting_battles(*, max_age_minutes: int = 10) -> int:
     collection = _battle_collection()
     cutoff = database._now_utc() - timedelta(minutes=max_age_minutes)
     query = {
-        "status": {"$in": ["waiting", "in_progress"]},
-        "created_at_dt": {"$lt": cutoff},
+        "$or": [
+            {
+                "status": "waiting",
+                "created_at_dt": {"$lt": cutoff},
+            },
+            {
+                "status": "in_progress",
+                "joined_at_dt": {"$lt": cutoff},
+            },
+            {
+                "status": "in_progress",
+                "joined_at_dt": None,
+                "created_at_dt": {"$lt": cutoff},
+            },
+        ],
         "creator_finished": {"$ne": True},
         "opponent_finished": {"$ne": True},
         "final_claimed": {"$ne": True},
