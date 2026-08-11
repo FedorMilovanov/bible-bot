@@ -16,6 +16,7 @@ def test_battle_outbox_migration_is_all_or_nothing():
         "from legacy_delivery_drain import",
         "drain_pending_deliveries(",
         "deliver_battle_recipient_once(",
+        "BATTLE_DELIVERY_PROTOCOL_OUTBOX",
     )
     if not any(marker in BOT for marker in migration_markers):
         # The controller still uses the historical direct battle-result sender.
@@ -24,8 +25,15 @@ def test_battle_outbox_migration_is_all_or_nothing():
 
     finish = async_function("finish_battle_for_user")
     show = async_function("show_battle_results")
+    compact_finish = "".join(finish.split())
 
     assert "drain_pending_deliveries(" in BOT
+    assert "BATTLE_DELIVERY_PROTOCOL_OUTBOX" in BOT
+    assert "claim_final_battle(" in finish
+    assert (
+        "delivery_protocol=BATTLE_DELIVERY_PROTOCOL_OUTBOX"
+        in compact_finish
+    )
     assert "await show_battle_results(bot, final_battle)" not in finish
 
     # The historical helper sends both recipients in one ephemeral loop. Keeping
