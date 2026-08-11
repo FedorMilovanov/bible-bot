@@ -80,6 +80,10 @@ def resolve_session_action(
         raise LegacySessionActionStale(
             "session button targets contradictory durable state"
         ) from exc
+    if decision.action != "resume":
+        raise LegacySessionActionStale(
+            "session button is no longer actionable for this durable attempt"
+        )
     return ResolvedSessionAction(
         action=action,
         session_id=session_id,
