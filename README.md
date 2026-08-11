@@ -7,15 +7,21 @@ Telegram-бот и Telegram Mini App для изучения 1-го послан
 В проекте один deployable-сервис:
 
 ```text
-Telegram Bot API ← polling ← bot.py
+Telegram Bot API ← polling ← telegram_production.py
                          │
-                         ├─ MongoDB Atlas
+                         ├─ durable quiz / retry / report / PvP adapters
+                         │                  │
+                         │                  └─ MongoDB Atlas
                          │
-                         └─ keep_alive.py → Waitress → Mini App + /api/*
-                                                  └─ miniapp/
+                         └─ transitional bot.py helpers
+                                            │
+                                            └─ keep_alive.py → Waitress → Mini App + /api/*
+                                                                              └─ miniapp/
 ```
 
-`bot.py` остаётся источником полной Telegram-логики и сохранён byte-for-byte относительно `main`. При импорте `keep_alive()` запускает production WSGI-сервер Waitress в отдельном потоке. Поэтому `python bot.py` одновременно поднимает бота, Mini App и API — без второго Render worker и без Flask development server.
+**`telegram_production.py` — production composition root.** Он регистрирует Mongo-authoritative quiz/retry/report/PvP handlers и не регистрирует исторические state-writers из `bot.py`. `bot.py` остаётся transitional compatibility/presentation library для ещё не вынесенных меню, статистики и вспомогательных действий.
+
+При импорте legacy helper слой запускает `keep_alive()`; production WSGI-сервер Waitress поэтому остаётся в том же процессе, без второго Render worker и без Flask development server. Docker и Render запускают именно `python telegram_production.py`.
 
 Старый импорт `from intro import ...` поддерживается маленьким `intro.py`, который только реэкспортирует данные из `questions.intro`; вопросы не дублируются.
 
@@ -25,11 +31,14 @@ Mini App не доверяет клиенту результаты квиза: �
 
 ```bash
 cp .env.example .env
-# заполни BOT_TOKEN, ADMIN_USER_ID, MONGO_URL, BOT_USERNAME
+# обязательно заполни BOT_TOKEN, ADMIN_USER_ID, MONGO_URL
+# BOT_USERNAME нужен для Mini App/bot-info UI, если используется соответствующий entrypoint
 pip install -r requirements-dev.txt
 pytest -q
-python bot.py
+python telegram_production.py
 ```
+
+Production startup fail-closed проверяет наличие `BOT_TOKEN` и `MONGO_URL`, а также safety-critical session indexes **до начала polling**. Отсутствующий или несовместимый storage contract не должен превращаться в «здоровый», но фактически недолговечный бот.
 
 После запуска:
 
@@ -43,7 +52,7 @@ python bot.py
 
 ## Telegram Mini App
 
-После деплоя укажи `BOT_USERNAME` и HTTPS-адрес сервиса. В `@BotFather` настрой **Menu Button** на этот HTTPS URL — это основной нативный вход в Mini App. Legacy `bot.py` специально не переписывается тысячами строк ради ещё одной inline-кнопки.
+После деплоя укажи `BOT_USERNAME` и HTTPS-адрес сервиса. В `@BotFather` настрой **Menu Button** на этот HTTPS URL — это основной нативный вход в Mini App.
 
 Клиент использует официальные Telegram CSS variables для цветов и safe-area, поэтому интерфейс адаптируется к теме Telegram и вырезам/системным панелям устройства. Для `prefers-reduced-motion` отключаются лишние анимации.
 
@@ -62,10 +71,11 @@ python bot.py
 - размер теста задаёт сервер: 10 обычный / 20 Challenge;
 - сервер не начинает тест, если выбранный пул физически меньше требуемого размера;
 - повтор старого ответа идемпотентно возвращает уже сохранённый результат и не двигает сессию;
-- новый тест явно помечает прежнюю незавершённую Mini App-сессию как `abandoned`;
-- MongoDB partial unique index дополнительно гарантирует максимум одну `in_progress` Mini App-сессию на пользователя;
+- новый тест не может обойти MongoDB open-session uniqueness;
+- Mini App open-session contract включает `in_progress`, `finalizing`, `score_error` — эти состояния защищены одним partial unique index на пользователя;
+- исторический generic TTL не имеет права удалять open/recovery states; retention применяется только к terminal Mini App sessions (`finished | abandoned`);
 - leaderboard с именами пользователей доступен только после Telegram-аутентификации;
-- Mini App сессии хранятся отдельно от Telegram-bot quiz sessions и имеют TTL;
+- Mini App сессии хранятся отдельно от Telegram-bot quiz sessions;
 - финальная запись статистики проверяется чтением MongoDB; при неподтверждённой записи сервер не показывает выдуманные баллы.
 
 Development-only header `X-Debug-User-Id` работает только когда одновременно выставлены:
@@ -115,15 +125,27 @@ POST /api/quiz/answer
 
 ## Деплой
 
+Перед rollout обязательно пройди постоянный read-only runbook: **[`docs/DEPLOYMENT_PREFLIGHTS.md`](docs/DEPLOYMENT_PREFLIGHTS.md)**.
+
+Он отдельно проверяет:
+
+1. duplicate `in_progress` Telegram quiz sessions;
+2. duplicate open Mini App sessions;
+3. exact unique-index contracts обоих session stores;
+4. terminal-only retention/TTL для Telegram sessions, Mini App, battles и reports;
+5. BSON/result-receipt growth и Mongo topology.
+
+Preflight-команды не удаляют строки и не чинят индексы автоматически. Unsafe (`exit 1`) и unavailable (`exit 2`) требуют остановить rollout и разобраться до deploy.
+
 ### Render
 
 `render.yaml` создаёт **один Web Service** и запускает:
 
 ```text
-python bot.py
+python telegram_production.py
 ```
 
-Blueprint использует актуальное поле `runtime: python`. Render health check смотрит `/live`; проблемы MongoDB видны отдельно на `/ready` и не вызывают бессмысленный restart всего процесса.
+`autoDeploy` намеренно выключен. Render health check смотрит `/live`; проблемы текущей Mongo connectivity видны отдельно на `/ready` и не вызывают бессмысленный restart всего процесса. При этом production startup fail-closed проверяет обязательный Mongo config и safety-critical session/index contracts до polling.
 
 > Free Render Web Service подходит для разработки/демо, но не для 24/7 бота: бесплатный instance может засыпать после периода без входящего HTTP/WebSocket-трафика. Для постоянно доступного бота используй always-on тариф/хостинг. Это ограничение платформы, а не задача `keep_alive`.
 
@@ -134,24 +156,36 @@ docker build -t bible-bot .
 docker run --env-file .env -p 8080:8080 bible-bot
 ```
 
+Docker image запускает `telegram_production.py`; CI отдельно проверяет import реального production composition root и `/live` smoke в собранном image.
+
 ## Структура
 
-- `bot.py` — неизменённая legacy Telegram-логика: тесты, битвы, challenge, админка
-- `intro.py` — явный compatibility import без дублирования данных
-- `database.py` — MongoDB, статистика, bot sessions, achievements
+- `telegram_production.py` — единственный production Telegram composition root
+- `telegram_controller.py` — Mongo-authoritative quiz lifecycle/result controller
+- `telegram_retry_controller.py` + `legacy_retry_source.py` — restart-safe retry-error practice
+- `telegram_report_controller.py` — durable report acceptance/outbox UI adapter
+- `telegram_battle_controller.py` — durable PvP progress/finalization/delivery adapter
+- `telegram_battle_share_controller.py` — exact-id PvP sharing/deep-link join
+- `telegram_admin_controller.py` — recovery-safe production admin cleanup
+- `bot.py` — transitional legacy presentation/read/process-local helpers; не production state authority
+- `database.py` — MongoDB, статистика и compatibility storage helpers
 - `questions/` — канонические данные вопросов
-- `keep_alive.py` — загрузка `.env` и lifecycle Waitress внутри процесса бота
-- `web_api/` — auth, HTTP routes, rate limiting, DB invariants и server-authoritative quiz API
+- `keep_alive.py` — lifecycle Waitress внутри процесса
+- `web_api/` — auth, HTTP routes, rate limiting, Mini App DB invariants и server-authoritative quiz API
 - `miniapp/` — HTML/CSS/JS клиент
+- `scripts/check_*.py` — read-only deployment/data-safety preflights
 - `utils.py` — PNG/GIF результатов
-- `tests/` — API/auth/session/hardening regression tests
-- `.github/workflows/ci.yml` — compile + pytest + JS syntax check; actions pinned by full SHA
+- `tests/` — API/auth/session/hardening/regression contracts
+- `.github/workflows/ci.yml` — actionlint/dependency/secret guards, Ruff, compile, pytest, Mini App JS, production Docker/import/smoke
 - `.github/dependabot.yml` — контролируемые dependency updates
-- `docs/RESEARCH_WAVE2.md` — решения Wave 2 и 40+ первичных источников
+- `docs/DEPLOYMENT_PREFLIGHTS.md` — обязательный pre-deploy runbook
+- `docs/RESEARCH_WAVE*.md` — research/integrity trail предыдущих волн
 
 ## Важный принцип данных
 
 `questions/` — единственный источник истины для вопросов. Дублирующий `miniapp/demo_questions.json` удалён: он быстро расходился бы с основной базой и позволял клиенту видеть правильные ответы. Если backend недоступен, Mini App показывает ошибку и не подделывает «офлайн-результат».
+
+Durable scoring/result receipts intentionally не являются обычным cache: они предотвращают повторное начисление при replay после crash/retry. Не очищай их вручную только ради уменьшения документа без отдельной миграционной модели идемпотентности.
 
 ## Обновление зависимостей
 
@@ -159,10 +193,14 @@ Dependabot еженедельно проверяет pip и GitHub Actions. Mino
 
 ## Проверка перед релизом
 
+Локальные code checks:
+
 ```bash
 python -m compileall -q .
 pytest -q
 node --check miniapp/app.js
 ```
 
-CI запускает те же проверки на push и pull request. Полный research trail текущей волны — в `docs/RESEARCH_WAVE2.md`.
+Перед production rollout дополнительно выполни все команды из [`docs/DEPLOYMENT_PREFLIGHTS.md`](docs/DEPLOYMENT_PREFLIGHTS.md) в авторизованной среде с production `MONGO_URL`.
+
+CI также проверяет maintained Python layer, full pytest, Mini App JavaScript, Security Audit, CodeQL, production Docker build, built-image production import и `/live` smoke.
