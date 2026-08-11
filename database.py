@@ -203,7 +203,7 @@ _ensure_indexes()
 # ═══════════════════════════════════════════════
 
 class LegacyQuizSessionPersistenceUnavailable(RuntimeError):
-    """Legacy controller cannot create a durable quiz session."""
+    """Legacy controller cannot create or reliably resolve a durable quiz session."""
 
 
 def create_quiz_session(user_id: int, mode: str, question_ids: list,
@@ -247,13 +247,14 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
 
 def get_active_quiz_session(user_id: int):
     if quiz_sessions_collection is None:
-        return None
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
     try:
         return quiz_sessions_collection.find_one(
             {"user_id": _uid(user_id), "status": "in_progress"}
         )
-    except Exception:
-        return None
+    except Exception as e:
+        logger.error("get_active_quiz_session error: %s", e)
+        raise LegacyQuizSessionPersistenceUnavailable("active quiz session lookup failed") from e
 
 
 def get_quiz_session(session_id: str):
