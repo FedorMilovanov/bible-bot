@@ -36,18 +36,26 @@ def test_production_root_does_not_register_legacy_ram_battle_writers():
         assert marker not in SOURCE
 
 
-def test_production_root_keeps_quiz_and_report_adapters_explicit():
+def test_production_root_keeps_quiz_report_and_retry_adapters_explicit():
     required = (
         "import telegram_controller as quiz",
         "import telegram_report_controller as reports",
+        "import telegram_retry_controller as retry",
         "quiz.quiz_inline_answer",
         "quiz.challenge_inline_answer",
+        "retry.retry_errors",
+        'pattern="^retry_errors_"',
         "reports.report_inaccuracy_handler",
         "reports.report_confirm",
         "reports.report_delivery_job",
     )
     for marker in required:
         assert marker in SOURCE
+
+
+def test_production_root_does_not_register_ram_retry_source_handler():
+    assert "quiz.retry_errors" not in SOURCE
+    assert "legacy.retry_errors" not in SOURCE
 
 
 def test_generic_legacy_button_router_cannot_capture_battle_menu():
