@@ -1,6 +1,5 @@
 from copy import deepcopy
 
-import pytest
 from pymongo.errors import PyMongoError
 
 import database
