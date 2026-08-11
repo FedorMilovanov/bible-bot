@@ -58,6 +58,10 @@ def main() -> None:
         .post_shutdown(quiz._save_all_sessions)
         .build()
     )
+    if app.job_queue is None:
+        raise RuntimeError(
+            "python-telegram-bot JobQueue is required for recovery delivery and maintenance"
+        )
 
     # Register the only remaining PTB conversation first. While a report is active,
     # its own cancel/reset fallbacks must win over same-group global commands.
@@ -193,27 +197,26 @@ def main() -> None:
         )
     )
 
-    if app.job_queue is not None:
-        app.job_queue.run_repeating(
-            legacy.cleanup_stale_userdata_job,
-            interval=legacy.GC_INTERVAL,
-            first=legacy.GC_INTERVAL,
-        )
-        app.job_queue.run_repeating(
-            quiz.remind_unfinished_tests_job,
-            interval=7200,
-            first=7200,
-        )
-        app.job_queue.run_repeating(
-            reports.report_delivery_job,
-            interval=60,
-            first=10,
-        )
-        app.job_queue.run_repeating(
-            battles.battle_maintenance_job,
-            interval=60,
-            first=10,
-        )
+    app.job_queue.run_repeating(
+        legacy.cleanup_stale_userdata_job,
+        interval=legacy.GC_INTERVAL,
+        first=legacy.GC_INTERVAL,
+    )
+    app.job_queue.run_repeating(
+        quiz.remind_unfinished_tests_job,
+        interval=7200,
+        first=7200,
+    )
+    app.job_queue.run_repeating(
+        reports.report_delivery_job,
+        interval=60,
+        first=10,
+    )
+    app.job_queue.run_repeating(
+        battles.battle_maintenance_job,
+        interval=60,
+        first=10,
+    )
 
     app.add_error_handler(legacy.on_error)
     logger.info("Production Telegram composition root started")
