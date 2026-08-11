@@ -16,11 +16,18 @@ from telegram.ext import (
 
 import bot as legacy
 import telegram_battle_controller as battles
+import telegram_battle_share_controller as battle_share
 import telegram_controller as quiz
 import telegram_report_controller as reports
 import telegram_retry_controller as retry
 
 logger = logging.getLogger(__name__)
+
+
+async def _start(update, context):
+    if await battle_share.handle_start_deep_link(update, context):
+        return
+    await quiz.start(update, context)
 
 
 def main() -> None:
@@ -58,7 +65,7 @@ def main() -> None:
     )
     app.add_handler(quiz_conv)
 
-    app.add_handler(CommandHandler("start", quiz.start))
+    app.add_handler(CommandHandler("start", _start))
     app.add_handler(CommandHandler("menu", quiz.start))
     app.add_handler(CommandHandler("stats", legacy.stats_command))
     app.add_handler(CommandHandler("random", quiz.random_command))
@@ -75,7 +82,7 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(battles.battle_answer, pattern=r"^bq:"))
     app.add_handler(CallbackQueryHandler(battles.start_battle_questions, pattern=r"^start_battle_"))
-    app.add_handler(CallbackQueryHandler(battles.create_battle, pattern="^create_battle$"))
+    app.add_handler(CallbackQueryHandler(battle_share.create_battle, pattern="^create_battle$"))
     app.add_handler(CallbackQueryHandler(battles.join_battle, pattern="^join_battle_"))
     app.add_handler(CallbackQueryHandler(battles.cancel_battle, pattern="^cancel_battle_"))
     app.add_handler(CallbackQueryHandler(battles.show_battle_menu, pattern="^battle_menu$"))
