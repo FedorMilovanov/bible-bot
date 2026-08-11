@@ -9,8 +9,11 @@ import database
 class FakeQuizSessions:
     def __init__(self):
         self.calls = []
+        self.error = None
 
     def update_one(self, query, update):
+        if self.error is not None:
+            raise self.error
         self.calls.append((deepcopy(query), deepcopy(update)))
 
 
@@ -87,3 +90,28 @@ def test_legacy_terminal_status_update_remains_allowed(monkeypatch):
     assert stored["status"] == "finished"
     assert stored["end_time"] == now
     assert stored["updated_at_dt"] == now
+
+
+def test_generic_update_fails_closed_when_storage_is_unavailable(monkeypatch):
+    monkeypatch.setattr(database, "quiz_sessions_collection", None)
+
+    with pytest.raises(
+        database.LegacyQuizSessionPersistenceUnavailable,
+        match="storage is unavailable",
+    ):
+        database.update_quiz_session("s1", {"question_sent_at": 123.5})
+
+
+def test_generic_update_surfaces_storage_write_failure(monkeypatch):
+    collection = FakeQuizSessions()
+    collection.error = RuntimeError("mongo down")
+    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
+
+    with pytest.raises(
+        database.LegacyQuizSessionPersistenceUnavailable,
+        match="update failed",
+    ) as exc_info:
+        database.update_quiz_session("s1", {"status": "finished"})
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert collection.calls == []
