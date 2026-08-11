@@ -69,6 +69,44 @@ def test_production_composition_imports_with_runtime_dependencies():
     assert result.returncode == 0, result.stderr
 
 
+def test_production_startup_requires_explicit_mongo_url():
+    assert '_required_env("BOT_TOKEN")' in PRODUCTION
+    assert '_required_env("MONGO_URL")' in PRODUCTION
+    assert "- key: MONGO_URL" in RENDER
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "ADMIN_USER_ID": "1",
+            "BOT_TOKEN": "123456:TEST_TOKEN",
+            "DISABLE_WEB_SERVER": "true",
+        }
+    )
+    env.pop("MONGO_URL", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os; import telegram_production as production; "
+                "missing = False; "
+                "\ntry:\n production._required_env('MONGO_URL')\n"
+                "except ValueError as exc:\n missing = 'MONGO_URL' in str(exc)\n"
+                "assert missing; "
+                "os.environ['MONGO_URL'] = 'mongodb://configured'; "
+                "assert production._required_env('MONGO_URL') == 'mongodb://configured'"
+            ),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_production_composition_does_not_register_legacy_state_writers():
     ast.parse(PRODUCTION, filename="telegram_production.py")
     for forbidden in (
