@@ -13,6 +13,7 @@ def _battle(**overrides):
     value = {
         "_id": "battle-1", "creator_id": 10, "opponent_id": 20,
         "final_claimed": True, "status": "finalized",
+        "result_delivery_protocol": flow.BATTLE_DELIVERY_PROTOCOL_OUTBOX,
     }
     value.update(overrides)
     return value
@@ -67,6 +68,8 @@ def test_existing_lease_is_pending_not_success(monkeypatch):
     (_battle(opponent_id=10), "identical"),
     (_battle(final_claimed=False), "not a retained"),
     (_battle(status="completed"), "not a retained"),
+    (_battle(result_delivery_protocol="legacy_direct_v1"), "not outbox-authoritative"),
+    (_battle(result_delivery_protocol=None), "not outbox-authoritative"),
 ])
 def test_invalid_final_snapshot_fails_before_delivery(monkeypatch, battle, message):
     monkeypatch.setattr(flow, "deliver_battle_recipient_once", lambda *_args, **_kwargs: pytest.fail("must not deliver"))
