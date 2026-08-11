@@ -126,7 +126,7 @@ class FakeDB:
         return self.collection
 
 
-def test_miniapp_db_indexes_include_unique_active_user(monkeypatch):
+def test_miniapp_db_indexes_include_unique_open_user(monkeypatch):
     collection = FakeCollection()
     monkeypatch.setattr(database, "db", FakeDB(collection), raising=False)
     monkeypatch.setattr(db_hardening, "_INDEXES_READY", False)
@@ -136,7 +136,7 @@ def test_miniapp_db_indexes_include_unique_active_user(monkeypatch):
     assert unique == {
         "key": [("user_id", 1)],
         "unique": True,
-        "partialFilterExpression": {"status": "in_progress"},
+        "partialFilterExpression": db_hardening.OPEN_FILTER,
     }
     terminal = collection.indexes[db_hardening.TERMINAL_TTL_NAME]
     assert terminal["key"] == [("updated_at_dt", 1)]
