@@ -714,7 +714,7 @@ async def challenge_start(update: Update, context):
         parse_mode="Markdown",
     )
     await send_challenge_question(context.bot, update.effective_user.id)
-    return ANSWING
+    return ANSWERING
 
 
 def _time_limit(data: dict) -> int | None:
