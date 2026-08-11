@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """Production Telegram adapter for Mongo-authoritative durable PvP battles."""
 from __future__ import annotations
 
@@ -294,7 +295,10 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
         rows = [[InlineKeyboardButton(str(i + 1), callback_data=cb) for i, cb in enumerate(callbacks)]]
     else:
         options_text = ""
-        rows = [[InlineKeyboardButton(option, callback_data=cb)] for option, cb in zip(shuffled, callbacks)]
+        rows = [
+            [InlineKeyboardButton(option, callback_data=cb)]
+            for option, cb in zip(shuffled, callbacks, strict=True)
+        ]
     rows.append([InlineKeyboardButton("⬅️ В меню", callback_data="battle_menu")])
     text = (
         f"⚔️ *Вопрос {index + 1}/{len(questions)}* {legacy.build_progress_bar(index + 1, len(questions))}\n"
