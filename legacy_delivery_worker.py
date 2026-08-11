@@ -16,8 +16,10 @@ from battle_integrity import (
     mark_battle_result_delivered,
     release_battle_result_delivery,
 )
+from legacy_report_delivery_migration import (
+    claim_report_delivery_stage_compatible as claim_report_delivery_stage,
+)
 from report_integrity import (
-    claim_report_delivery_stage,
     get_report_delivery_stage_state,
     mark_report_delivery_stage_delivered,
     release_report_delivery_stage,
