@@ -115,6 +115,7 @@ def create_quiz_session_strict(
     level_name: str | None = None,
     time_limit: int | None = None,
     chat_id: int | None = None,
+    is_retry: bool = False,
 ) -> dict:
     """Create one durable session/attempt or raise; never return phantom success."""
     spec = validated_session_spec(
@@ -125,6 +126,7 @@ def create_quiz_session_strict(
         level_name=level_name,
         time_limit=time_limit,
         chat_id=chat_id,
+        is_retry=is_retry,
     )
 
     ensure_active_session_unique_index()
@@ -137,9 +139,6 @@ def create_quiz_session_strict(
         "_id": session_id,
         "user_id": uid,
         "session_id": session_id,
-        # On first creation the logical attempt id equals the container id.
-        # Atomic in-place restart later assigns a fresh attempt id while keeping
-        # this durable container/owner identity stable.
         "attempt_id": session_id,
         "status": "in_progress",
         **spec,
