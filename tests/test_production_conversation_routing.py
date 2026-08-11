@@ -22,6 +22,20 @@ def test_choosing_level_state_matches_only_level_callbacks():
     assert "quiz.CHOOSING_LEVEL: [CallbackQueryHandler(legacy.level_selected)]" not in SOURCE
 
 
+def test_live_quiz_runtime_is_not_owned_by_conversation_state():
+    assert "quiz.ANSWERING:" not in SOURCE
+    assert (
+        'app.add_handler(CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"))'
+        in SOURCE
+    )
+    assert (
+        'app.add_handler(CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"))'
+        in SOURCE
+    )
+    assert 'CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:")' in SOURCE
+    assert 'CallbackQueryHandler(quiz.challenge_inline_answer, pattern=r"^cha:")' in SOURCE
+
+
 def test_back_to_main_fallback_explicitly_leaves_conversation_state():
     assert 'CallbackQueryHandler(_back_to_main, pattern="^back_to_main$")' in SOURCE
 
