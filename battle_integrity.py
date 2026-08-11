@@ -503,7 +503,7 @@ def get_pending_final_battles(limit: int = 50) -> list[dict]:
 
 
 def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
-    """Delete a battle only when the requesting user is one of its persisted participants."""
+    """Delete only a participant battle that has no durable participant result yet."""
     collection = _battle_collection()
     try:
         result = collection.delete_one(
@@ -513,8 +513,11 @@ def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
                     {"creator_id": user_id},
                     {"opponent_id": user_id},
                 ],
-                # Retained finalized battles are delivery evidence/outbox state,
-                # not user-cancellable game sessions.
+                # Once either participant result is durable, the shared battle
+                # is recovery evidence and must survive until finalization/outbox
+                # delivery. Do not invent forfeit semantics by deleting it.
+                "creator_finished": {"$ne": True},
+                "opponent_finished": {"$ne": True},
                 "final_claimed": {"$ne": True},
             }
         )
