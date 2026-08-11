@@ -17,9 +17,13 @@ _INDEXES_READY = False
 LEGACY_TTL_NAME = "ttl_miniapp_updated_at"
 TERMINAL_TTL_NAME = "ttl_miniapp_terminal_updated_at"
 TERMINAL_RETENTION_SECONDS = 90 * 24 * 60 * 60
-UNIQUE_ACTIVE_NAME = "uniq_miniapp_active_user"
+UNIQUE_ACTIVE_NAME = "uniq_miniapp_active_user"  # Historical index name retained for migration.
 TERMINAL_FILTER = {"status": {"$in": ["finished", "abandoned"]}}
-ACTIVE_FILTER = {"status": "in_progress"}
+OPEN_STATUSES = ("in_progress", "finalizing", "score_error")
+OPEN_FILTER = {"status": {"$in": list(OPEN_STATUSES)}}
+# Compatibility name retained for tests/callers; uniqueness now covers every
+# unfinished state, not only the question-answering phase.
+ACTIVE_FILTER = OPEN_FILTER
 
 
 class MiniAppIndexSafetyUnavailable(RuntimeError):
@@ -86,13 +90,13 @@ def _ensure_index(
 
 
 def find_duplicate_active_users(sessions, *, limit: int = 20) -> list[dict]:
-    """Read-only duplicate preflight; never chooses or mutates a winner."""
+    """Read-only unfinished-session preflight; never chooses or mutates a winner."""
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
         raise ValueError("limit must be a positive integer")
     return list(
         sessions.aggregate(
             [
-                {"$match": {"status": "in_progress"}},
+                {"$match": {"status": {"$in": list(OPEN_STATUSES)}}},
                 {
                     "$group": {
                         "_id": "$user_id",
@@ -158,11 +162,11 @@ def ensure_miniapp_indexes() -> bool:
             duplicates = find_duplicate_active_users(sessions, limit=20)
             if duplicates:
                 logger.error(
-                    "Mini App unique-index migration blocked by duplicate active users: %s",
+                    "Mini App unique-index migration blocked by duplicate open sessions: %s",
                     [group.get("_id") for group in duplicates],
                 )
                 raise MiniAppIndexSafetyUnavailable(
-                    "duplicate active Mini App sessions require operator review"
+                    "duplicate open Mini App sessions require operator review"
                 )
 
             info = sessions.index_information()
@@ -171,7 +175,7 @@ def ensure_miniapp_indexes() -> bool:
                 info,
                 name=UNIQUE_ACTIVE_NAME,
                 key=[("user_id", 1)],
-                partial_filter=ACTIVE_FILTER,
+                partial_filter=OPEN_FILTER,
                 unique=True,
             )
 
@@ -191,10 +195,10 @@ def ensure_miniapp_indexes() -> bool:
             if not _index_matches(
                 final_info.get(UNIQUE_ACTIVE_NAME),
                 key=[("user_id", 1)],
-                partial_filter=ACTIVE_FILTER,
+                partial_filter=OPEN_FILTER,
                 unique=True,
             ):
-                raise MiniAppIndexSafetyUnavailable("Mini App active uniqueness is not safe")
+                raise MiniAppIndexSafetyUnavailable("Mini App open-session uniqueness is not safe")
 
             _INDEXES_READY = True
             return True
