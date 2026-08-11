@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from .db_hardening import ensure_miniapp_indexes
+from .db_hardening import OPEN_STATUSES, ensure_miniapp_indexes
 from .result_store import apply_challenge_result_once, apply_regular_result_once
 
 logger = logging.getLogger(__name__)
@@ -212,33 +212,41 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
 
     user_id = str(user["id"])
     try:
-        active = sessions.find_one({"user_id": user_id, "status": "in_progress"})
+        open_session = sessions.find_one(
+            {"user_id": user_id, "status": {"$in": list(OPEN_STATUSES)}}
+        )
     except PyMongoError:
-        logger.exception("failed to resolve active Mini App session")
+        logger.exception("failed to resolve open Mini App session")
         return None, "database temporarily unavailable", 503
     except Exception:
-        logger.exception("unexpected active Mini App session lookup failure")
-        return None, "could not resolve active quiz session", 500
+        logger.exception("unexpected open Mini App session lookup failure")
+        return None, "could not resolve open quiz session", 500
 
-    if active:
-        resumed = _matching_active_start_payload(
-            active,
-            pool_key=pool_key,
-            mode=mode,
-            is_challenge=is_challenge,
-            count=count,
+    if open_session:
+        if open_session.get("status") == "in_progress":
+            resumed = _matching_active_start_payload(
+                open_session,
+                pool_key=pool_key,
+                mode=mode,
+                is_challenge=is_challenge,
+                count=count,
+            )
+            if resumed is not None:
+                return resumed, None, 200
+
+        open_total = int(
+            open_session.get("question_count")
+            or len(open_session.get("questions") or [])
         )
-        if resumed is not None:
-            return resumed, None, 200
+        open_index = int(open_session.get("current_index", 0))
+        if open_total <= 0 or open_index != open_total:
+            if open_session.get("status") == "in_progress":
+                return None, "another active quiz is in progress; finish it before starting another", 409
+            return None, "unfinished quiz result state is inconsistent", 409
 
-        active_total = int(active.get("question_count") or len(active.get("questions") or []))
-        active_index = int(active.get("current_index", 0))
-        if active_total > 0 and active_index == active_total:
-            finalized = _finalize_quiz(active, user)
-            if finalized is None:
-                return None, "previous quiz result finalization is incomplete", 503
-        else:
-            return None, "another active quiz is in progress; finish it before starting another", 409
+        finalized = _finalize_quiz(open_session, user)
+        if finalized is None:
+            return None, "previous quiz result finalization is incomplete", 503
 
     try:
         from database import get_user_stats, init_user_stats
@@ -296,10 +304,10 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     try:
         sessions.insert_one(document)
     except DuplicateKeyError:
-        # A concurrent start won after the pre-read. Never abandon it and never
-        # invent a second attempt; the caller can repeat the same start request.
-        logger.info("active Mini App session already exists for user %s", user["id"])
-        return None, "another active quiz already exists; retry start", 409
+        # A concurrent open session won after the pre-read. Never abandon it and
+        # never invent a second attempt; the caller can repeat the start request.
+        logger.info("open Mini App session already exists for user %s", user["id"])
+        return None, "another unfinished quiz already exists; retry start", 409
     except PyMongoError:
         logger.exception("database unavailable while creating Mini App quiz session")
         return None, "database temporarily unavailable", 503
