@@ -24,6 +24,27 @@ def test_mongo_authoritative_result_migration_is_all_or_nothing():
         # Once result migration starts, every invariant below becomes mandatory.
         return
 
+    # Result finalization spans several durable stages before the completed
+    # session is closed. Historical global cancellation could destroy that
+    # completion evidence after preflight but before the final close, leaving a
+    # partially credited result that cannot be resumed. Therefore scoring
+    # migration is permitted only after the completion-safe lifecycle boundary
+    # is already active across the controller.
+    for marker in (
+        "launch_quiz_attempt(",
+        "restart_owned_quiz_attempt(",
+        "cancel_current_incomplete_session(",
+        "resolve_session_action(",
+        "session_action_payloads(",
+    ):
+        assert marker in BOT
+    for destructive in (
+        "create_quiz_session(",
+        "cancel_active_quiz_session(",
+        "cancel_quiz_session(",
+    ):
+        assert destructive not in BOT
+
     normal = async_function("show_results")
     challenge = async_function("show_challenge_results")
 
