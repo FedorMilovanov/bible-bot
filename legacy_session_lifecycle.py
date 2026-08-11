@@ -108,6 +108,20 @@ def _restart_replay(session: dict, expected_attempt_id: str) -> dict | None:
         attempt_id = persisted_attempt_id(session)
     except ValueError as exc:
         raise QuizSessionLifecycleConflict("quiz attempt identity is invalid") from exc
+    if attempt_id == expected_attempt_id:
+        raise QuizSessionLifecycleConflict(
+            "restart replay did not advance the durable attempt identity"
+        )
+    try:
+        decision = classify_restart_session(session)
+    except LegacyRestartStateInvalid as exc:
+        raise QuizSessionLifecycleConflict(
+            "restart replay replacement state is contradictory"
+        ) from exc
+    if decision.action != "resume":
+        raise QuizSessionLifecycleConflict(
+            "restart replay replacement is not a resumable attempt"
+        )
     return {
         "applied": False,
         "session": session,
