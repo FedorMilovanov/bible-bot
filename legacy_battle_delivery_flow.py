@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from battle_integrity import BATTLE_DELIVERY_PROTOCOL_OUTBOX
 from legacy_delivery_worker import deliver_battle_recipient_once
 
 
@@ -37,6 +38,10 @@ def _battle_identity(battle: dict) -> tuple[str, int, int]:
         raise LegacyBattleDeliveryStateInvalid("final battle participants are identical")
     if battle.get("final_claimed") is not True or battle.get("status") != "finalized":
         raise LegacyBattleDeliveryStateInvalid("battle is not a retained finalized result")
+    if battle.get("result_delivery_protocol") != BATTLE_DELIVERY_PROTOCOL_OUTBOX:
+        raise LegacyBattleDeliveryStateInvalid(
+            "battle is not outbox-authoritative for result delivery"
+        )
     return battle_id, creator_id, opponent_id
 
 
