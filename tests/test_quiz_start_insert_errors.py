@@ -27,12 +27,12 @@ def _start_with_insert_error(monkeypatch, error):
     )
 
 
-def test_duplicate_active_session_insert_is_conflict(monkeypatch):
+def test_duplicate_open_session_insert_is_conflict(monkeypatch):
     body, message, status = _start_with_insert_error(monkeypatch, DuplicateKeyError("duplicate"))
 
     assert body is None
     assert status == 409
-    assert message == "another active quiz already exists; retry start"
+    assert message == "another unfinished quiz already exists; retry start"
 
 
 def test_mongo_insert_outage_is_retryable_service_error(monkeypatch):
