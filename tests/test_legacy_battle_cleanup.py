@@ -25,8 +25,9 @@ def install(monkeypatch, collection, now):
     monkeypatch.setattr(cleanup, "_database", lambda: SimpleNamespace(_now_utc=lambda: now))
 
 
-def test_cleanup_deletes_only_expired_pre_progress_battles(monkeypatch):
+def test_cleanup_expires_waiting_from_creation_and_joined_from_join_time(monkeypatch):
     now = datetime(2026, 8, 11, 12, 0, 0)
+    cutoff = now - timedelta(minutes=10)
     collection = FakeCollection(deleted_count=3)
     install(monkeypatch, collection, now)
 
@@ -34,13 +35,40 @@ def test_cleanup_deletes_only_expired_pre_progress_battles(monkeypatch):
 
     assert deleted == 3
     assert collection.calls == [{
-        "status": {"$in": ["waiting", "in_progress"]},
-        "created_at_dt": {"$lt": now - timedelta(minutes=10)},
+        "$or": [
+            {
+                "status": "waiting",
+                "created_at_dt": {"$lt": cutoff},
+            },
+            {
+                "status": "in_progress",
+                "joined_at_dt": {"$lt": cutoff},
+            },
+            {
+                "status": "in_progress",
+                "joined_at_dt": None,
+                "created_at_dt": {"$lt": cutoff},
+            },
+        ],
         "creator_finished": {"$ne": True},
         "opponent_finished": {"$ne": True},
         "final_claimed": {"$ne": True},
         "live_progress": {"$exists": False},
     }]
+
+
+def test_cleanup_keeps_recovery_evidence_guards_at_top_level(monkeypatch):
+    now = datetime(2026, 8, 11, 12, 0, 0)
+    collection = FakeCollection()
+    install(monkeypatch, collection, now)
+
+    cleanup.cleanup_stale_waiting_battles()
+
+    query = collection.calls[0]
+    assert query["creator_finished"] == {"$ne": True}
+    assert query["opponent_finished"] == {"$ne": True}
+    assert query["final_claimed"] == {"$ne": True}
+    assert query["live_progress"] == {"$exists": False}
 
 
 @pytest.mark.parametrize("value", [0, -1, True, 1.5, "10"])
