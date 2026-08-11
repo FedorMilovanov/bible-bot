@@ -59,10 +59,10 @@ class _Client:
 def _safe_indexes():
     return {
         "quiz_sessions": {
-            legacy_access.ACTIVE_SESSION_INDEX: {
+            legacy_access._ACTIVE_INDEX: {
                 "key": [("user_id", 1)],
                 "unique": True,
-                "partialFilterExpression": legacy_access.ACTIVE_SESSION_FILTER,
+                "partialFilterExpression": legacy_access._ACTIVE_FILTER,
             }
         },
         "miniapp_sessions": {
@@ -79,10 +79,10 @@ def test_preflight_contract_matches_runtime_session_guards():
     legacy_spec, miniapp_spec = preflight.EXPECTED
     assert legacy_spec == (
         "quiz_sessions",
-        legacy_access.ACTIVE_SESSION_INDEX,
+        legacy_access._ACTIVE_INDEX,
         [("user_id", 1)],
         True,
-        legacy_access.ACTIVE_SESSION_FILTER,
+        legacy_access._ACTIVE_FILTER,
     )
     assert miniapp_spec == (
         "miniapp_sessions",
