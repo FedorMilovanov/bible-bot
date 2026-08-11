@@ -49,6 +49,12 @@ def _required_name(value, field: str) -> str:
     return value.strip()
 
 
+def _required_positive_int(value, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return value
+
+
 def _validated_questions(value) -> list[dict]:
     if not isinstance(value, list) or not value:
         raise ValueError("battle questions are required")
@@ -110,12 +116,7 @@ def get_waiting_durable_battles(*, limit: int = 10, max_age_minutes: int = 10) -
     """List only waiting battles that were created under durable-progress v1."""
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0 or limit > 100:
         raise ValueError("limit must be an integer between 1 and 100")
-    if (
-        isinstance(max_age_minutes, bool)
-        or not isinstance(max_age_minutes, int)
-        or max_age_minutes <= 0
-    ):
-        raise ValueError("max_age_minutes must be a positive integer")
+    max_age_minutes = _required_positive_int(max_age_minutes, "max_age_minutes")
     database = _database()
     collection = _battle_collection()
     cutoff = database._now_utc() - timedelta(minutes=max_age_minutes)
@@ -137,18 +138,24 @@ def claim_durable_battle_opponent(
     battle_id: str,
     user_id: int,
     user_name: str,
+    *,
+    max_age_minutes: int = 10,
 ) -> dict | None:
-    """Atomically claim the opponent slot only on durable-progress battles."""
+    """Atomically claim a non-expired opponent slot on durable-progress v1."""
     battle_id = _required_battle_id(battle_id)
     user_id = _required_user_id(user_id, "user_id")
     user_name = _required_name(user_name, "user_name")
+    max_age_minutes = _required_positive_int(max_age_minutes, "max_age_minutes")
+    database = _database()
     collection = _battle_collection()
+    cutoff = database._now_utc() - timedelta(minutes=max_age_minutes)
     try:
         return collection.find_one_and_update(
             {
                 "_id": battle_id,
                 "status": "waiting",
                 "question_progress_protocol": BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE,
+                "created_at_dt": {"$gte": cutoff},
                 "opponent_id": None,
                 "creator_id": {"$ne": user_id},
                 "final_claimed": {"$ne": True},
