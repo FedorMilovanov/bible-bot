@@ -40,6 +40,7 @@ def _session(**overrides):
         "chat_id": 42,
         "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
         "time_limit": None,
+        "is_retry": False,
     }
     session.update(overrides)
     return session
@@ -77,6 +78,82 @@ def test_completed_normal_session_uses_persisted_result_inputs(monkeypatch):
     assert captured["data"]["first_name"] == "Test"
     assert captured["data"]["result_pending"] is True
     assert captured["data"]["result_completed_at"] == "2026-08-10T12:00:20"
+    assert captured["data"]["is_retry"] is False
+
+
+def test_completed_retry_practice_closes_without_entering_scoring(monkeypatch):
+    closed = []
+    monkeypatch.setattr(
+        recovery,
+        "finalize_normal_result",
+        lambda **_: pytest.fail("retry practice must never enter normal scoring"),
+    )
+    monkeypatch.setattr(
+        recovery,
+        "finalize_challenge_result",
+        lambda **_: pytest.fail("retry practice must never enter Challenge scoring"),
+    )
+    monkeypatch.setattr(
+        recovery,
+        "finish_completed_owned_quiz_session",
+        lambda session_id, user_id: closed.append((session_id, user_id)) or {"status": "finished"},
+    )
+
+    result = recovery.finalize_completed_session(
+        user_id=42,
+        session=_session(is_retry=True),
+        username="tester",
+        first_name="Test",
+        achievement_rewards={"first_steps": 10},
+    )
+
+    assert closed == [("session-1", 42)]
+    assert result == {
+        "scored": False,
+        "practice": True,
+        "earned_base": 0,
+        "daily_bonus": {"bonus": 0, "eligible": False, "claimed_now": False},
+        "new_achievements": [],
+        "session_finished": True,
+    }
+
+
+def test_retry_practice_requires_exact_completion_before_close(monkeypatch):
+    monkeypatch.setattr(
+        recovery,
+        "finish_completed_owned_quiz_session",
+        lambda *_args: pytest.fail("incomplete retry practice must not close"),
+    )
+
+    with pytest.raises(recovery.LegacyCompletedSessionEvidenceIncomplete):
+        recovery.finalize_completed_session(
+            user_id=42,
+            session=_session(is_retry=True, current_index=1),
+            username="tester",
+            first_name="Test",
+            achievement_rewards={},
+        )
+
+
+def test_retry_policy_rejects_non_boolean_or_challenge_evidence(monkeypatch):
+    monkeypatch.setattr(
+        recovery,
+        "finish_completed_owned_quiz_session",
+        lambda *_args: pytest.fail("invalid retry policy must fail before close"),
+    )
+
+    for session in (
+        _session(is_retry="yes"),
+        _session(is_retry=True, mode="hardcore20", level_key="hardcore20", time_limit=10),
+    ):
+        with pytest.raises(recovery.LegacyCompletedSessionEvidenceIncomplete):
+            recovery.finalize_completed_session(
+                user_id=42,
+                session=session,
+                username="tester",
+                first_name="Test",
+                achievement_rewards={},
+            )
 
 
 def test_legacy_session_without_attempt_id_recovers_with_container_identity(monkeypatch):
