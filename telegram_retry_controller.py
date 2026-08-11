@@ -1,4 +1,3 @@
-# ruff: noqa: RUF001
 """Telegram adapter for restart-safe retry-error practice."""
 from __future__ import annotations
 
