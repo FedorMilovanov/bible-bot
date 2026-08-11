@@ -21,6 +21,7 @@ import telegram_controller as quiz
 import telegram_report_controller as reports
 import telegram_retry_controller as retry
 from legacy_session_access import ensure_active_session_unique_index
+from web_api.db_hardening import MiniAppIndexSafetyUnavailable, ensure_miniapp_indexes
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
     ensure_active_session_unique_index()
+    if ensure_miniapp_indexes() is not True:
+        raise MiniAppIndexSafetyUnavailable("Mini App index safety is unavailable")
 
     app = (
         Application.builder()
