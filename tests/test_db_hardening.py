@@ -47,7 +47,7 @@ class FakeDB:
         return self.sessions
 
 
-def test_duplicate_preflight_reports_all_active_sessions_without_mutation():
+def test_duplicate_preflight_reports_all_open_sessions_without_mutation():
     sessions = FakeSessions(
         [
             {
@@ -75,7 +75,9 @@ def test_duplicate_preflight_pipeline_never_selects_a_winner():
     assert hardening.find_duplicate_active_users(sessions) == []
 
     pipeline = sessions.events[0][1]
-    assert pipeline[0] == {"$match": {"status": "in_progress"}}
+    assert pipeline[0] == {
+        "$match": {"status": {"$in": list(hardening.OPEN_STATUSES)}}
+    }
     assert pipeline[1] == {
         "$group": {
             "_id": "$user_id",
@@ -107,10 +109,10 @@ def test_unique_index_is_created_only_after_duplicate_preflight(monkeypatch):
     assert terminal["partialFilterExpression"] == hardening.TERMINAL_FILTER
     unique = sessions.indexes[hardening.UNIQUE_ACTIVE_NAME]
     assert unique["unique"] is True
-    assert unique["partialFilterExpression"] == hardening.ACTIVE_FILTER
+    assert unique["partialFilterExpression"] == hardening.OPEN_FILTER
 
 
-def test_duplicate_active_sessions_block_unique_index_without_auto_repair(monkeypatch):
+def test_duplicate_open_sessions_block_unique_index_without_auto_repair(monkeypatch):
     sessions = FakeSessions([
         {"_id": "user-1", "session_ids": ["a", "b"], "count": 2},
     ])
