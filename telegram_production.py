@@ -24,6 +24,13 @@ import telegram_retry_controller as retry
 logger = logging.getLogger(__name__)
 
 
+def _required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Required production environment variable is missing: {name}")
+    return value
+
+
 async def _start(update, context):
     if await battle_share.handle_start_deep_link(update, context):
         return
@@ -31,9 +38,8 @@ async def _start(update, context):
 
 
 def main() -> None:
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise ValueError("❌ Не задана переменная окружения BOT_TOKEN.")
+    token = _required_env("BOT_TOKEN")
+    _required_env("MONGO_URL")
 
     app = (
         Application.builder()
