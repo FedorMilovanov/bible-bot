@@ -1,3 +1,4 @@
+import inspect
 import json
 from copy import deepcopy
 
@@ -14,6 +15,15 @@ def _safe_indexes():
                 "expireAfterSeconds": 7776000,
                 "partialFilterExpression": {
                     "status": {"$in": ["finished", "cancelled"]}
+                },
+            }
+        },
+        "miniapp_sessions": {
+            "ttl_miniapp_terminal_updated_at": {
+                "key": [("updated_at_dt", 1)],
+                "expireAfterSeconds": 7776000,
+                "partialFilterExpression": {
+                    "status": {"$in": ["finished", "abandoned"]}
                 },
             }
         },
@@ -38,6 +48,22 @@ def _safe_indexes():
     }
 
 
+def test_retention_preflight_source_is_read_only():
+    source = inspect.getsource(preflight)
+    assert "import database" not in source
+    for forbidden in (
+        ".create_index(",
+        ".drop_index(",
+        ".insert_one(",
+        ".update_one(",
+        ".update_many(",
+        ".delete_one(",
+        ".delete_many(",
+        ".find_one_and_update(",
+    ):
+        assert forbidden not in source
+
+
 def test_retention_preflight_is_zero_for_exact_state_aware_indexes(monkeypatch, capsys):
     monkeypatch.setattr(preflight, "_load_index_information", _safe_indexes)
 
@@ -54,6 +80,13 @@ def test_retention_preflight_reports_legacy_and_wrong_target(monkeypatch, capsys
         "key": [("updated_at_dt", 1)],
         "expireAfterSeconds": 21600,
     }
+    info["miniapp_sessions"]["ttl_miniapp_updated_at"] = {
+        "key": [("updated_at_dt", 1)],
+        "expireAfterSeconds": 21600,
+    }
+    info["miniapp_sessions"]["ttl_miniapp_terminal_updated_at"][
+        "partialFilterExpression"
+    ] = {"status": "finished"}
     info["battles"]["ttl_battles_delivered_created_at"]["key"] = [
         ("updated_at_dt", 1)
     ]
@@ -64,6 +97,16 @@ def test_retention_preflight_reports_legacy_and_wrong_target(monkeypatch, capsys
     errors = {problem["error"] for problem in payload["problems"]}
     assert "unsafe_legacy_ttl_present" in errors
     assert "state_aware_ttl_wrong_key" in errors
+    assert "state_aware_ttl_wrong_filter" in errors
+    miniapp_problems = [
+        problem
+        for problem in payload["problems"]
+        if problem["collection"] == "miniapp_sessions"
+    ]
+    assert {problem["error"] for problem in miniapp_problems} == {
+        "unsafe_legacy_ttl_present",
+        "state_aware_ttl_wrong_filter",
+    }
 
 
 def test_retention_preflight_unavailable_is_distinct_failure(monkeypatch, capsys):
