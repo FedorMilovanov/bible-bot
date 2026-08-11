@@ -1,6 +1,9 @@
 import asyncio
+import os
 from datetime import UTC, datetime
 from types import SimpleNamespace
+
+os.environ.setdefault("ADMIN_USER_ID", "1")
 
 import telegram_retry_controller as retry
 from legacy_retry_source import (
