@@ -39,6 +39,12 @@ async def _start(update, context):
     await quiz.start(update, context)
 
 
+async def _back_to_main(update, context):
+    """Render legacy main-menu UI and explicitly leave PTB conversation state."""
+    await legacy.back_to_main(update, context)
+    return ConversationHandler.END
+
+
 def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
@@ -61,7 +67,9 @@ def main() -> None:
             CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"),
         ],
         states={
-            quiz.CHOOSING_LEVEL: [CallbackQueryHandler(legacy.level_selected)],
+            quiz.CHOOSING_LEVEL: [
+                CallbackQueryHandler(legacy.level_selected, pattern=r"^level_")
+            ],
             quiz.ANSWERING: [
                 CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, quiz.text_answer_fallback),
@@ -70,7 +78,7 @@ def main() -> None:
         fallbacks=[
             CommandHandler("cancel", quiz.cancel),
             CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"),
-            CallbackQueryHandler(legacy.back_to_main, pattern="^back_to_main$"),
+            CallbackQueryHandler(_back_to_main, pattern="^back_to_main$"),
         ],
         allow_reentry=True,
     )
