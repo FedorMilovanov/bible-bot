@@ -137,21 +137,30 @@ def test_unique_open_index_is_exact_and_partial(monkeypatch):
     }
 
 
-def test_old_in_progress_only_unique_index_is_replaced(monkeypatch):
+def test_old_in_progress_only_unique_index_is_preserved_for_operator_migration(monkeypatch):
+    old_unique = {
+        "key": [("user_id", 1)],
+        "unique": True,
+        "partialFilterExpression": {"status": "in_progress"},
+    }
     sessions = FakeSessions(indexes={
         "_id_": {"key": [("_id", 1)]},
-        hardening.UNIQUE_ACTIVE_NAME: {
-            "key": [("user_id", 1)],
-            "unique": True,
-            "partialFilterExpression": {"status": "in_progress"},
-        },
+        hardening.UNIQUE_ACTIVE_NAME: deepcopy(old_unique),
     })
     install(monkeypatch, sessions)
 
-    assert hardening.ensure_miniapp_indexes() is True
+    with pytest.raises(
+        hardening.MiniAppIndexSafetyUnavailable,
+        match="operator migration",
+    ):
+        hardening.ensure_miniapp_indexes()
 
-    assert hardening.UNIQUE_ACTIVE_NAME in sessions.dropped
-    assert sessions.indexes[hardening.UNIQUE_ACTIVE_NAME]["partialFilterExpression"] == hardening.OPEN_FILTER
+    assert hardening.UNIQUE_ACTIVE_NAME not in sessions.dropped
+    assert sessions.indexes[hardening.UNIQUE_ACTIVE_NAME] == old_unique
+    assert all(
+        kwargs.get("name") != hardening.UNIQUE_ACTIVE_NAME
+        for _key, kwargs in sessions.created
+    )
 
 
 def test_index_metadata_failure_is_explicit(monkeypatch):
