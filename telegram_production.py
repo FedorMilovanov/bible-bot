@@ -39,6 +39,12 @@ async def _start(update, context):
     await quiz.start(update, context)
 
 
+async def _reset_during_report(update, context):
+    """Drop only the process-local report draft, then run the durable-safe quiz reset."""
+    legacy.report_drafts.pop(update.effective_user.id, None)
+    return await quiz.reset_command(update, context)
+
+
 def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
@@ -52,6 +58,41 @@ def main() -> None:
         .post_shutdown(quiz._save_all_sessions)
         .build()
     )
+
+    # Register the only remaining PTB conversation first. While a report is active,
+    # its own cancel/reset fallbacks must win over same-group global commands.
+    report_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(reports.report_start, pattern="^report_start_")
+        ],
+        states={
+            reports.REPORT_TEXT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    reports.report_receive_text,
+                ),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
+            ],
+            reports.REPORT_PHOTO: [
+                MessageHandler(filters.PHOTO, reports.report_receive_photo),
+                CallbackQueryHandler(
+                    reports.report_skip_photo,
+                    pattern="^report_skip_photo$",
+                ),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
+            ],
+            reports.REPORT_CONFIRM: [
+                CallbackQueryHandler(reports.report_confirm, pattern="^report_confirm$"),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancelreport", reports.cancel_report_command),
+            CommandHandler("reset", _reset_during_report),
+        ],
+        allow_reentry=True,
+    )
+    app.add_handler(report_conv)
 
     app.add_handler(CommandHandler("start", _start))
     app.add_handler(CommandHandler("menu", quiz.start))
@@ -102,39 +143,6 @@ def main() -> None:
             pattern=r"^admin_(hard_questions|active_sessions|broadcast_prompt|back)$",
         )
     )
-
-    report_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(reports.report_start, pattern="^report_start_")
-        ],
-        states={
-            reports.REPORT_TEXT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    reports.report_receive_text,
-                ),
-                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
-            ],
-            reports.REPORT_PHOTO: [
-                MessageHandler(filters.PHOTO, reports.report_receive_photo),
-                CallbackQueryHandler(
-                    reports.report_skip_photo,
-                    pattern="^report_skip_photo$",
-                ),
-                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
-            ],
-            reports.REPORT_CONFIRM: [
-                CallbackQueryHandler(reports.report_confirm, pattern="^report_confirm$"),
-                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
-            ],
-        },
-        fallbacks=[
-            CommandHandler("cancelreport", reports.cancel_report_command),
-            CommandHandler("reset", quiz.reset_command),
-        ],
-        allow_reentry=True,
-    )
-    app.add_handler(report_conv)
 
     app.add_handler(CallbackQueryHandler(legacy.back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(legacy.chapter_1_menu, pattern="^chapter_1_menu$"))
