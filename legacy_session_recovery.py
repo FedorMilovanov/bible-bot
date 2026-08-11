@@ -248,10 +248,11 @@ def completed_result_inputs(session: dict) -> dict | None:
     """Return authoritative scoring inputs for a completed persisted session.
 
     Recovery is intentionally strict. The completed index, answer ledger and
-    aggregate correct counter must agree, every answer must carry a boolean
-    correctness flag, and the full timestamp chronology must prove the original
-    duration and completion-time boundary. Any inconsistent legacy/corrupt
-    document stays pending rather than receiving guessed statistics.
+    aggregate correct counter must agree, every answer must carry the full
+    persisted payload plus a boolean correctness flag, and the full timestamp
+    chronology must prove the original duration and completion-time boundary.
+    Any inconsistent legacy/corrupt document stays pending rather than receiving
+    guessed statistics.
     """
     if not session_is_complete(session):
         return None
@@ -280,7 +281,7 @@ def completed_result_inputs(session: dict) -> dict | None:
     for index, item in enumerate(answered):
         if not isinstance(item, dict) or not isinstance(item.get("is_correct"), bool):
             return None
-        if item.get("qid") is not None and item.get("qid") != question_ids[index]:
+        if item.get("qid") != question_ids[index]:
             return None
         stored_index = item.get("index", index)
         if (
@@ -288,6 +289,10 @@ def completed_result_inputs(session: dict) -> dict | None:
             or not isinstance(stored_index, int)
             or stored_index != index
         ):
+            return None
+        if not isinstance(item.get("user_answer"), str):
+            return None
+        if not isinstance(item.get("question_obj"), dict):
             return None
         score_from_answers += int(item["is_correct"])
 
