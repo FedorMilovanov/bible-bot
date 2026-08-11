@@ -113,7 +113,7 @@ def test_unexpected_classifier_runtime_error_is_not_masked_as_stale(monkeypatch)
         actions.resolve_session_action(payload, "res", 42)
 
 
-def test_completed_button_resolves_to_finalize_not_cancel(monkeypatch):
+def test_completed_button_is_stale_and_cannot_reopen_result(monkeypatch):
     session = {
         "_id": _SESSION,
         "attempt_id": "attempt-1",
@@ -141,5 +141,5 @@ def test_completed_button_resolves_to_finalize_not_cancel(monkeypatch):
     payload = actions.session_action_payloads(session)["can"]
     monkeypatch.setattr(actions, "get_quiz_session_strict", lambda *_args, **_kwargs: session)
 
-    result = actions.resolve_session_action(payload, "can", 42)
-    assert result.decision.action == "finalize"
+    with pytest.raises(actions.LegacySessionActionStale, match="no longer actionable"):
+        actions.resolve_session_action(payload, "can", 42)
