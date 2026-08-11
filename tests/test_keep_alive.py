@@ -27,7 +27,15 @@ class FakeCollection:
 
     @staticmethod
     def _matches(doc, query):
-        return all(doc.get(key) == value for key, value in query.items())
+        for key, expected in query.items():
+            actual = doc.get(key)
+            if isinstance(expected, dict) and set(expected) == {"$in"}:
+                if actual not in expected["$in"]:
+                    return False
+                continue
+            if actual != expected:
+                return False
+        return True
 
     def find_one(self, query):
         for doc in self.docs.values():
