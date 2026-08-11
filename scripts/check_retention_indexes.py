@@ -26,6 +26,14 @@ EXPECTED = (
         {"status": {"$in": ["finished", "cancelled"]}},
     ),
     (
+        "miniapp_sessions",
+        "ttl_miniapp_updated_at",
+        "ttl_miniapp_terminal_updated_at",
+        [("updated_at_dt", 1)],
+        90 * 24 * 60 * 60,
+        {"status": {"$in": ["finished", "abandoned"]}},
+    ),
+    (
         "battles",
         "ttl_battles_created_at",
         "ttl_battles_delivered_created_at",
