@@ -8,8 +8,8 @@ class FailingInsertSessions:
     def __init__(self, error):
         self.error = error
 
-    def update_many(self, *_args, **_kwargs):
-        return object()
+    def find_one(self, _query):
+        return None
 
     def insert_one(self, _document):
         raise self.error
