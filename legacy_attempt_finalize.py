@@ -71,17 +71,11 @@ def finalize_normal_result(
     time_seconds: float,
     achievement_rewards: Mapping[str, int],
 ) -> dict:
-    if data.get("is_retry"):
-        # Memory-only error review intentionally has no durable attempt.
-        return _finalize_normal_result(
-            user_id=user_id,
-            data=data,
-            score=score,
-            total=total,
-            time_seconds=time_seconds,
-            achievement_rewards=achievement_rewards,
-        )
-    _prove_current_attempt(user_id, data)
+    # Historical memory-only retry drills had no durable session. Keep that
+    # compatibility path unscored, but persisted retry attempts must prove the
+    # same attempt/completion boundary as every other durable result.
+    if not (data.get("is_retry") and not data.get("session_id")):
+        _prove_current_attempt(user_id, data)
     return _finalize_normal_result(
         user_id=user_id,
         data=data,
