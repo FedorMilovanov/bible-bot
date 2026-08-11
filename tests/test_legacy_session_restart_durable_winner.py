@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import pytest
+
 import database
 import legacy_session_lifecycle as lifecycle
 
@@ -36,11 +38,9 @@ class LostResponseReplacement:
         raise AssertionError("lost-response replay must not reset the durable winner")
 
 
-def test_restart_replay_returns_durable_winner_when_retry_spec_differs(monkeypatch):
-    collection = LostResponseReplacement()
+def _restart(collection, monkeypatch):
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
-
-    result = lifecycle.restart_owned_quiz_attempt(
+    return lifecycle.restart_owned_quiz_attempt(
         "container-1",
         42,
         expected_attempt_id="attempt-old",
@@ -52,6 +52,12 @@ def test_restart_replay_returns_durable_winner_when_retry_spec_differs(monkeypat
         time_limit=20,
     )
 
+
+def test_restart_replay_returns_durable_winner_when_retry_spec_differs(monkeypatch):
+    collection = LostResponseReplacement()
+
+    result = _restart(collection, monkeypatch)
+
     assert result["applied"] is False
     assert result["attempt_id"] == "attempt-new"
     assert result["previous_attempt_id"] == "attempt-old"
@@ -60,4 +66,24 @@ def test_restart_replay_returns_durable_winner_when_retry_spec_differs(monkeypat
         {"id": "winner-q1"},
         {"id": "winner-q2"},
     ]
+    assert collection.update_called is False
+
+
+def test_restart_replay_rejects_old_attempt_as_replacement(monkeypatch):
+    collection = LostResponseReplacement()
+    collection.doc["attempt_id"] = "attempt-old"
+
+    with pytest.raises(lifecycle.QuizSessionLifecycleConflict, match="did not advance"):
+        _restart(collection, monkeypatch)
+
+    assert collection.update_called is False
+
+
+def test_restart_replay_rejects_contradictory_durable_winner(monkeypatch):
+    collection = LostResponseReplacement()
+    collection.doc["mode"] = "unknown"
+
+    with pytest.raises(lifecycle.QuizSessionLifecycleConflict, match="replacement state"):
+        _restart(collection, monkeypatch)
+
     assert collection.update_called is False
