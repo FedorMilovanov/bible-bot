@@ -16,6 +16,7 @@ def validated_session_spec(
     level_name: str | None,
     time_limit: int | None,
     chat_id: int | None,
+    is_retry: bool = False,
 ) -> dict:
     if mode not in _ALLOWED_MODES:
         raise ValueError("unsupported persisted quiz session mode")
@@ -41,14 +42,19 @@ def validated_session_spec(
         raise ValueError("time_limit must be a positive integer or None")
     if chat_id is not None and (isinstance(chat_id, bool) or not isinstance(chat_id, int)):
         raise ValueError("chat_id must be an integer or None")
+    if not isinstance(is_retry, bool):
+        raise ValueError("is_retry must be a boolean")
 
     if mode == "level":
         if not isinstance(level_key, str) or not level_key or level_key in _CHALLENGE_MODES:
             raise ValueError("level mode requires a normal level_key")
         if time_limit not in {None, TIMED_MODE_TIMEOUT, SPEED_MODE_TIMEOUT}:
             raise ValueError("level mode time_limit is not a recognized product timer")
-    elif level_key not in {None, mode}:
-        raise ValueError("Challenge level_key must be None or match mode")
+    else:
+        if level_key not in {None, mode}:
+            raise ValueError("Challenge level_key must be None or match mode")
+        if is_retry:
+            raise ValueError("Challenge sessions cannot be retry-error practice")
 
     return {
         "mode": mode,
@@ -58,4 +64,5 @@ def validated_session_spec(
         "questions_data": list(questions_data),
         "time_limit": time_limit,
         "chat_id": chat_id,
+        "is_retry": is_retry,
     }
