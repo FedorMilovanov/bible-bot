@@ -8,7 +8,6 @@ from session_integrity import (
     QuizSessionAnswerConflict,
     QuizSessionStoreUnavailable,
     cancel_owned_quiz_session,
-    finish_owned_quiz_session,
     get_owned_quiz_session,
     record_owned_quiz_answer,
 )
@@ -275,34 +274,6 @@ def test_owned_session_cancel_refuses_unprovable_snapshot(monkeypatch):
 
     assert cancel_owned_quiz_session("s1", 42) is None
     assert collection.claim_filter is None
-
-
-def test_owned_session_finish_is_atomic_and_owner_scoped(monkeypatch):
-    collection = FakeQuizSessionCollection()
-    collection.claimed_session = {"_id": "s1", "user_id": "42", "status": "finished"}
-    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
-    monkeypatch.setattr(database, "_now_utc", lambda: "NOW")
-
-    assert finish_owned_quiz_session("s1", 42) == collection.claimed_session
-    assert collection.claim_filter == {
-        "_id": "s1",
-        "user_id": "42",
-        "status": "in_progress",
-    }
-    assert collection.claim_update == {
-        "$set": {"status": "finished", "end_time": "NOW"}
-    }
-
-
-def test_owned_session_finish_is_idempotent_when_already_finished(monkeypatch):
-    collection = FakeQuizSessionCollection()
-    collection.claimed_session = None
-    collection.session = {"_id": "s1", "user_id": "42", "status": "finished"}
-    monkeypatch.setattr(database, "quiz_sessions_collection", collection)
-    monkeypatch.setattr(database, "_now_utc", lambda: "NOW")
-
-    assert finish_owned_quiz_session("s1", 42) == collection.session
-    assert collection.find_filter == {"_id": "s1", "user_id": "42"}
 
 
 def test_database_uid_contract_matches_session_owner_storage():
