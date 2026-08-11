@@ -9,6 +9,7 @@ from pymongo.errors import PyMongoError
 
 from legacy_attempt_identity import persisted_attempt_id
 from legacy_delivery_retention import ensure_state_aware_delivery_ttl
+from legacy_restart_policy import LegacyRestartStateInvalid, classify_restart_session
 from legacy_session_retention import ensure_state_aware_session_ttl
 
 logger = logging.getLogger(__name__)
@@ -249,11 +250,52 @@ def record_owned_quiz_answer(
 
 
 def cancel_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
-    """Atomically cancel and return the caller's active session snapshot."""
+    """Cancel only a proven incomplete owned session with exact-state CAS.
+
+    This compatibility helper is still called by the historical controller.
+    It therefore protects completed result evidence and the last-answer race even
+    before the controller migrates to attempt-token lifecycle callbacks. The
+    pre-read is classified fail-closed; the update then binds the same logical
+    attempt, counters, question ids and answer ledger so concurrent progress
+    makes cancellation miss instead of destroying newer durable evidence.
+    """
     collection = _quiz_session_collection()
+    owner_filter = {"_id": session_id, "user_id": _owner_id(user_id)}
     try:
+        existing = collection.find_one({**owner_filter, "status": "in_progress"})
+        if existing is None:
+            return None
+        try:
+            decision = classify_restart_session(existing)
+            attempt_id = persisted_attempt_id(existing)
+        except (LegacyRestartStateInvalid, ValueError):
+            logger.warning(
+                "refusing cancellation of contradictory quiz session %s",
+                session_id,
+            )
+            return None
+        if decision.action != "resume":
+            return None
+
+        attempt_filter = {
+            "$or": [
+                {"attempt_id": attempt_id},
+                {
+                    "attempt_id": {"$exists": False},
+                    "_id": attempt_id,
+                },
+            ]
+        }
         return collection.find_one_and_update(
-            {"_id": session_id, "user_id": _owner_id(user_id), "status": "in_progress"},
+            {
+                **owner_filter,
+                "status": "in_progress",
+                "current_index": existing.get("current_index"),
+                "correct_count": existing.get("correct_count"),
+                "question_ids": existing.get("question_ids"),
+                "answered_questions": existing.get("answered_questions"),
+                **attempt_filter,
+            },
             {"$set": {"status": "cancelled"}},
             return_document=ReturnDocument.BEFORE,
         )
