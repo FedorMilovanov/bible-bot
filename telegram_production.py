@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 import bot as legacy
+import telegram_admin_controller as admin
 import telegram_battle_controller as battles
 import telegram_battle_share_controller as battle_share
 import telegram_controller as quiz
@@ -107,10 +108,11 @@ def main() -> None:
             pattern=r"^report_inaccuracy_",
         )
     )
+    app.add_handler(CallbackQueryHandler(admin.admin_cleanup, pattern=r"^admin_cleanup$"))
     app.add_handler(
         CallbackQueryHandler(
             legacy.admin_callback_handler,
-            pattern=r"^admin_(hard_questions|active_sessions|cleanup|broadcast_prompt|back)$",
+            pattern=r"^admin_(hard_questions|active_sessions|broadcast_prompt|back)$",
         )
     )
 
