@@ -12,6 +12,12 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT = "legacy_direct_v1"
+BATTLE_DELIVERY_PROTOCOL_OUTBOX = "outbox_v1"
+_BATTLE_DELIVERY_PROTOCOLS = frozenset(
+    {BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT, BATTLE_DELIVERY_PROTOCOL_OUTBOX}
+)
+
 
 class BattleStoreUnavailable(RuntimeError):
     """Raised when the battle collection cannot complete an operation."""
@@ -273,17 +279,23 @@ def _apply_battle_outcome_once(
         raise BattleStoreUnavailable("battle outcome write failed") from exc
 
 
-def claim_final_battle(battle_id: str) -> dict | None:
-    """Apply both outcomes, then retain and atomically claim the final snapshot.
+def claim_final_battle(
+    battle_id: str,
+    *,
+    delivery_protocol: str = BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT,
+) -> dict | None:
+    """Apply outcomes, retain the final snapshot, and bind its delivery protocol.
 
-    The legacy implementation deleted the only shared battle document before the
-    two Telegram result messages were acknowledged. A process crash at that point
-    permanently lost delivery evidence. Final battles now remain in Mongo with a
-    per-recipient outbox state. The current handler still receives the snapshot
-    only once, preserving its no-duplicate behavior until it is wired to the
-    delivery-lease API below.
+    The historical controller still sends both participant messages directly, so
+    its default protocol is ``legacy_direct_v1``. A future outbox-authoritative
+    controller must opt into ``outbox_v1`` explicitly when it finalizes the
+    battle. Delivery workers ignore legacy/missing protocols, preventing a later
+    drain activation from re-sending ambiguous historical direct deliveries.
     """
     import database
+
+    if delivery_protocol not in _BATTLE_DELIVERY_PROTOCOLS:
+        raise ValueError("unsupported battle delivery protocol")
 
     collection = _battle_collection()
     try:
@@ -323,6 +335,7 @@ def claim_final_battle(battle_id: str) -> dict | None:
                     "final_claimed": True,
                     "status": "finalized",
                     "finalized_at": now,
+                    "result_delivery_protocol": delivery_protocol,
                     "result_delivery": {
                         "creator": {"delivered": False, "attempts": 0},
                         "opponent": {"delivered": False, "attempts": 0},
@@ -347,13 +360,7 @@ def claim_battle_result_delivery(
     *,
     lease_seconds: int = 120,
 ) -> dict | None:
-    """Lease one pending recipient delivery from a retained finalized battle.
-
-    Delivery is at-least-once: Telegram has no idempotency key for sendMessage,
-    so a process may still die after Telegram accepts a message but before the
-    acknowledgement write. The lease prevents concurrent workers from sending
-    the same recipient simultaneously and keeps durable retry evidence.
-    """
+    """Lease one pending recipient delivery from an outbox-authoritative battle."""
     import database
 
     if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
@@ -361,7 +368,13 @@ def claim_battle_result_delivery(
 
     collection = _battle_collection()
     try:
-        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        battle = collection.find_one(
+            {
+                "_id": battle_id,
+                "final_claimed": True,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
+            }
+        )
         role = battle_role_for_user(battle, user_id)
         if role is None:
             return None
@@ -374,6 +387,7 @@ def claim_battle_result_delivery(
             {
                 "_id": battle_id,
                 "final_claimed": True,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
                 f"{path}.delivered": {"$ne": True},
                 "$or": [
                     {f"{path}.lease_until": {"$exists": False}},
@@ -403,14 +417,20 @@ def mark_battle_result_delivered(
     user_id: int,
     claim_token: str,
 ) -> bool:
-    """Acknowledge one leased recipient delivery after Telegram send succeeds."""
+    """Acknowledge one leased outbox recipient after Telegram send succeeds."""
     import database
 
     if not isinstance(claim_token, str) or not claim_token:
         raise ValueError("claim_token is required")
     collection = _battle_collection()
     try:
-        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        battle = collection.find_one(
+            {
+                "_id": battle_id,
+                "final_claimed": True,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
+            }
+        )
         role = battle_role_for_user(battle, user_id)
         if role is None:
             return False
@@ -418,6 +438,7 @@ def mark_battle_result_delivered(
         result = collection.update_one(
             {
                 "_id": battle_id,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
                 f"{path}.delivered": {"$ne": True},
                 f"{path}.claim_token": claim_token,
             },
@@ -435,7 +456,13 @@ def mark_battle_result_delivered(
         )
         if result.modified_count == 1:
             return True
-        existing = collection.find_one({"_id": battle_id}, {f"{path}.delivered": 1})
+        existing = collection.find_one(
+            {
+                "_id": battle_id,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
+            },
+            {f"{path}.delivered": 1},
+        )
         delivered, exists = _entry_field(existing or {}, f"{path}.delivered")
         return exists and delivered is True
     except PyMongoError as exc:
@@ -450,12 +477,18 @@ def release_battle_result_delivery(
     *,
     error: str = "",
 ) -> bool:
-    """Release a failed delivery lease so a later worker can retry it."""
+    """Release a failed outbox delivery lease so a later worker can retry it."""
     if not isinstance(claim_token, str) or not claim_token:
         raise ValueError("claim_token is required")
     collection = _battle_collection()
     try:
-        battle = collection.find_one({"_id": battle_id, "final_claimed": True})
+        battle = collection.find_one(
+            {
+                "_id": battle_id,
+                "final_claimed": True,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
+            }
+        )
         role = battle_role_for_user(battle, user_id)
         if role is None:
             return False
@@ -463,6 +496,7 @@ def release_battle_result_delivery(
         result = collection.update_one(
             {
                 "_id": battle_id,
+                "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
                 f"{path}.delivered": {"$ne": True},
                 f"{path}.claim_token": claim_token,
             },
@@ -481,7 +515,7 @@ def release_battle_result_delivery(
 
 
 def get_pending_final_battles(limit: int = 50) -> list[dict]:
-    """Return retained finalized battles with at least one unacknowledged recipient."""
+    """Return only outbox-authoritative finalized battles still needing delivery."""
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
         raise ValueError("limit must be a positive integer")
     collection = _battle_collection()
@@ -490,6 +524,7 @@ def get_pending_final_battles(limit: int = 50) -> list[dict]:
             collection.find(
                 {
                     "status": "finalized",
+                    "result_delivery_protocol": BATTLE_DELIVERY_PROTOCOL_OUTBOX,
                     "$or": [
                         {"result_delivery.creator.delivered": {"$ne": True}},
                         {"result_delivery.opponent.delivered": {"$ne": True}},
