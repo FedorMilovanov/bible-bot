@@ -221,6 +221,26 @@ def _load_owned_battle(collection, battle_id: str, user_id: int, role: str) -> d
     return battle
 
 
+def _load_owned_battle_for_completion(
+    collection,
+    battle_id: str,
+    user_id: int,
+    role: str,
+) -> dict:
+    """Read durable completion evidence even after the shared battle finalizes."""
+    battle = collection.find_one(
+        {
+            "_id": battle_id,
+            _participant_field(role): user_id,
+            "question_progress_protocol": BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE,
+            "status": {"$in": ["waiting", "in_progress", "finalized"]},
+        }
+    )
+    if battle is None:
+        raise LegacyBattleProgressConflict("battle completion evidence is missing or not owned")
+    return battle
+
+
 def ensure_battle_progress(battle_id: str, user_id: int, role: str) -> dict:
     """Initialize one participant progress once; later starts return the durable winner."""
     battle_id = _required_battle_id(battle_id)
@@ -447,7 +467,7 @@ def completed_battle_result_inputs(battle_id: str, user_id: int, role: str) -> d
     role = _required_role(role)
     collection = _battle_collection()
     try:
-        battle = _load_owned_battle(collection, battle_id, user_id, role)
+        battle = _load_owned_battle_for_completion(collection, battle_id, user_id, role)
         questions = _validated_questions(battle)
         progress = _validated_progress(battle, role)
         if progress["current_index"] != len(questions):
