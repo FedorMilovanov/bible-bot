@@ -59,7 +59,14 @@ class FakeSessions:
         self.find_calls.append(deepcopy(query))
         if self.find_error is not None:
             raise self.find_error
-        if query == {"user_id": "101", "status": "in_progress"}:
+        if query.get("user_id") != "101" or set(query) != {"user_id", "status"}:
+            return None
+        status_filter = query["status"]
+        if isinstance(status_filter, dict) and set(status_filter) == {"$in"}:
+            if self.active and self.active.get("status") in status_filter["$in"]:
+                return deepcopy(self.active)
+            return None
+        if self.active and self.active.get("status") == status_filter:
             return deepcopy(self.active)
         return None
 
