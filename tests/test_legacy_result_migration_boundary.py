@@ -1,35 +1,19 @@
 from pathlib import Path
 
 
-BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8")
+CONTROLLER = (
+    Path(__file__).resolve().parents[1] / "telegram_controller.py"
+).read_text(encoding="utf-8")
 
 
 def async_function(name: str) -> str:
     marker = f"async def {name}"
-    start = BOT.index(marker)
-    next_async = BOT.find("\nasync def ", start + len(marker))
-    return BOT[start:] if next_async == -1 else BOT[start:next_async]
+    start = CONTROLLER.index(marker)
+    next_async = CONTROLLER.find("\nasync def ", start + len(marker))
+    return CONTROLLER[start:] if next_async == -1 else CONTROLLER[start:next_async]
 
 
-def test_mongo_authoritative_result_migration_is_all_or_nothing():
-    migration_markers = (
-        "from legacy_live_finalize import",
-        "finalize_live_persisted_attempt(",
-        "from legacy_attempt_finalize import",
-        "finalize_normal_result(",
-        "finalize_challenge_result(",
-    )
-    if not any(marker in BOT for marker in migration_markers):
-        # The controller is intentionally still on the historical scoring path.
-        # Once result migration starts, every invariant below becomes mandatory.
-        return
-
-    # Result finalization spans several durable stages before the completed
-    # session is closed. Historical global cancellation could destroy that
-    # completion evidence after preflight but before the final close, leaving a
-    # partially credited result that cannot be resumed. Therefore scoring
-    # migration is permitted only after the completion-safe lifecycle boundary
-    # is already active across the controller.
+def test_mongo_authoritative_result_is_the_only_production_path():
     for marker in (
         "launch_quiz_attempt(",
         "restart_owned_quiz_attempt(",
@@ -37,19 +21,20 @@ def test_mongo_authoritative_result_migration_is_all_or_nothing():
         "resolve_session_action(",
         "session_action_payloads(",
     ):
-        assert marker in BOT
+        assert marker in CONTROLLER
+
     for destructive in (
         "create_quiz_session(",
         "cancel_active_quiz_session(",
         "cancel_quiz_session(",
     ):
-        assert destructive not in BOT
+        assert destructive not in CONTROLLER
 
     normal = async_function("show_results")
     challenge = async_function("show_challenge_results")
 
-    assert "from legacy_live_finalize import" in BOT
-    assert "from legacy_attempt_finalize import" not in BOT
+    assert "from legacy_live_finalize import" in CONTROLLER
+    assert "from legacy_attempt_finalize import" not in CONTROLLER
 
     for source in (normal, challenge):
         assert "finalize_live_persisted_attempt(" in source
