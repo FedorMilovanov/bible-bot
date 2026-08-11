@@ -49,10 +49,12 @@ def test_production_composition_imports_with_runtime_dependencies():
             "-c",
             (
                 "import telegram_production as production; "
+                "import telegram_admin_controller as admin; "
                 "import telegram_controller as quiz; "
                 "import telegram_report_controller as reports; "
                 "import telegram_battle_controller as battles; "
                 "assert callable(production.main); "
+                "assert callable(admin.admin_cleanup); "
                 "assert callable(quiz.show_results); "
                 "assert callable(quiz.quiz_inline_answer); "
                 "assert callable(reports.report_confirm); "
@@ -108,6 +110,16 @@ def test_production_startup_requires_explicit_mongo_url():
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_production_composition_wires_recovery_safe_admin_cleanup():
+    assert "import telegram_admin_controller as admin" in PRODUCTION
+    assert 'CallbackQueryHandler(admin.admin_cleanup, pattern=r"^admin_cleanup$")' in PRODUCTION
+    assert (
+        'pattern=r"^admin_(hard_questions|active_sessions|broadcast_prompt|back)$"'
+        in PRODUCTION
+    )
+    assert "active_sessions|cleanup|broadcast_prompt" not in PRODUCTION
 
 
 def test_production_composition_does_not_register_legacy_state_writers():
