@@ -1,28 +1,68 @@
 """Read-only deployment preflight for duplicate active quiz sessions.
 
 Run before enabling the strict one-active-session unique index. The command
-never mutates MongoDB or chooses a "winner" among contradictory legacy rows.
+connects directly to MongoDB and only performs ``ping`` + ``aggregate`` reads;
+it never imports application database bootstrap code, mutates MongoDB, or
+chooses a "winner" among contradictory legacy rows.
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
-from legacy_session_access import (  # noqa: E402
-    QuizSessionAccessUnavailable,
-    find_duplicate_active_session_users,
-)
+_DB_NAME = "bible_bot_db"
+_COLLECTION_NAME = "quiz_sessions"
+_SERVER_SELECTION_TIMEOUT_MS = 5000
+_DEFAULT_LIMIT = 500
+
+
+class DuplicateSessionPreflightUnavailable(RuntimeError):
+    """MongoDB duplicate-session state cannot be read safely."""
+
+
+def _load_duplicates(limit: int = _DEFAULT_LIMIT) -> list[dict]:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+
+    mongo_url = os.getenv("MONGO_URL")
+    if not mongo_url:
+        raise DuplicateSessionPreflightUnavailable("MONGO_URL is not configured")
+
+    client = MongoClient(
+        mongo_url,
+        serverSelectionTimeoutMS=_SERVER_SELECTION_TIMEOUT_MS,
+    )
+    try:
+        client.admin.command("ping")
+        rows = client[_DB_NAME][_COLLECTION_NAME].aggregate(
+            [
+                {"$match": {"status": "in_progress"}},
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$match": {"count": {"$gt": 1}}},
+                {"$sort": {"count": -1, "_id": 1}},
+                {"$limit": limit},
+            ]
+        )
+        return [
+            {"user_id": row.get("_id"), "count": row.get("count")}
+            for row in rows
+        ]
+    except PyMongoError as exc:
+        raise DuplicateSessionPreflightUnavailable(
+            "active-session duplicate preflight failed"
+        ) from exc
+    finally:
+        client.close()
 
 
 def main() -> int:
     try:
-        duplicates = find_duplicate_active_session_users(limit=500)
-    except QuizSessionAccessUnavailable as exc:
+        duplicates = _load_duplicates()
+    except DuplicateSessionPreflightUnavailable as exc:
         print(
             json.dumps(
                 {"ok": False, "error": "preflight_unavailable", "detail": str(exc)},
