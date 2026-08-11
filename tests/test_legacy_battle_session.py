@@ -119,7 +119,8 @@ def test_waiting_discovery_excludes_legacy_unversioned_battles(monkeypatch):
     assert collection.cursor.limit_value == 5
 
 
-def test_opponent_claim_is_protocol_bound_and_owner_safe(monkeypatch):
+def test_opponent_claim_is_protocol_bound_owner_safe_and_records_join_time(monkeypatch):
+    now = datetime(2026, 8, 11, 12, 0, 0)
     collection = FakeCollection()
     collection.claim_result = {
         "_id": "battle-1",
@@ -128,7 +129,7 @@ def test_opponent_claim_is_protocol_bound_and_owner_safe(monkeypatch):
         "question_progress_protocol": BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE,
         "status": "in_progress",
     }
-    install(monkeypatch, collection, datetime(2026, 8, 11, 12, 0, 0))
+    install(monkeypatch, collection, now)
 
     claimed = session.claim_durable_battle_opponent("battle-1", 202, "Opponent")
 
@@ -138,6 +139,8 @@ def test_opponent_claim_is_protocol_bound_and_owner_safe(monkeypatch):
     assert query["creator_id"] == {"$ne": 202}
     assert query["opponent_id"] is None
     assert update["$set"]["status"] == "in_progress"
+    assert update["$set"]["joined_at_dt"] == now
+    assert update["$set"]["updated_at"] == now.isoformat()
 
 
 @pytest.mark.parametrize("creator_id", [True, 0, -1, "101"])
