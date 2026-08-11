@@ -268,18 +268,13 @@ def test_owned_answer_validates_attempt_index_and_latency_before_store(monkeypat
     assert collection.claim_filter is None
 
 
-def test_owned_session_cancel_is_atomic_and_returns_original_snapshot(monkeypatch):
+def test_owned_session_cancel_refuses_unprovable_snapshot(monkeypatch):
     collection = FakeQuizSessionCollection()
-    collection.claimed_session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
+    collection.session = {"_id": "s1", "user_id": "42", "status": "in_progress"}
     monkeypatch.setattr(database, "quiz_sessions_collection", collection)
 
-    assert cancel_owned_quiz_session("s1", 42) == collection.claimed_session
-    assert collection.claim_filter == {
-        "_id": "s1",
-        "user_id": "42",
-        "status": "in_progress",
-    }
-    assert collection.claim_update == {"$set": {"status": "cancelled"}}
+    assert cancel_owned_quiz_session("s1", 42) is None
+    assert collection.claim_filter is None
 
 
 def test_owned_session_finish_is_atomic_and_owner_scoped(monkeypatch):
