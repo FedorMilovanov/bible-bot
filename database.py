@@ -202,13 +202,17 @@ _ensure_indexes()
 # QUIZ SESSIONS — CRUD
 # ═══════════════════════════════════════════════
 
+class LegacyQuizSessionPersistenceUnavailable(RuntimeError):
+    """Legacy controller cannot create a durable quiz session."""
+
+
 def create_quiz_session(user_id: int, mode: str, question_ids: list,
                         questions_data: list,
                         level_key: str = None, level_name: str = None,
                         time_limit: int = None,
-                        chat_id: int = None) -> str | None:
+                        chat_id: int = None) -> str:
     if quiz_sessions_collection is None:
-        return None
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
     session_id = str(uuid.uuid4())
     now = _now_utc()
     doc = {
@@ -237,7 +241,7 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
         quiz_sessions_collection.insert_one(doc)
     except Exception as e:
         logger.error("create_quiz_session error: %s", e)
-        return None
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session insert failed") from e
     return session_id
 
 
