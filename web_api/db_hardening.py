@@ -22,6 +22,10 @@ TERMINAL_FILTER = {"status": {"$in": ["finished", "abandoned"]}}
 ACTIVE_FILTER = {"status": "in_progress"}
 
 
+class MiniAppIndexSafetyUnavailable(RuntimeError):
+    """Raised when Mini App retention/uniqueness safety cannot be proven."""
+
+
 def _key_spec(index: dict) -> list[tuple]:
     raw = index.get("key")
     if not isinstance(raw, list):
@@ -157,7 +161,9 @@ def ensure_miniapp_indexes() -> bool:
                     "Mini App unique-index migration blocked by duplicate active users: %s",
                     [group.get("_id") for group in duplicates],
                 )
-                return False
+                raise MiniAppIndexSafetyUnavailable(
+                    "duplicate active Mini App sessions require operator review"
+                )
 
             info = sessions.index_information()
             _ensure_index(
@@ -174,24 +180,26 @@ def ensure_miniapp_indexes() -> bool:
             # index raced into existence under the same name.
             final_info = sessions.index_information()
             if LEGACY_TTL_NAME in final_info:
-                return False
+                raise MiniAppIndexSafetyUnavailable("legacy Mini App TTL is still present")
             if not _index_matches(
                 final_info.get(TERMINAL_TTL_NAME),
                 key=[("updated_at_dt", 1)],
                 expire_after=TERMINAL_RETENTION_SECONDS,
                 partial_filter=TERMINAL_FILTER,
             ):
-                return False
+                raise MiniAppIndexSafetyUnavailable("Mini App terminal TTL is not safe")
             if not _index_matches(
                 final_info.get(UNIQUE_ACTIVE_NAME),
                 key=[("user_id", 1)],
                 partial_filter=ACTIVE_FILTER,
                 unique=True,
             ):
-                return False
+                raise MiniAppIndexSafetyUnavailable("Mini App active uniqueness is not safe")
 
             _INDEXES_READY = True
             return True
+        except MiniAppIndexSafetyUnavailable:
+            raise
         except Exception as exc:
             logger.warning("Mini App index hardening pending: %s", exc)
-            return False
+            raise MiniAppIndexSafetyUnavailable("Mini App index hardening failed") from exc
