@@ -1,8 +1,9 @@
+# ruff: noqa: RUF001
 """Production Telegram controller with Mongo-authoritative quiz state.
 
 The historical ``bot.py`` module still owns presentation helpers and non-quiz
 features, but it is no longer allowed to own quiz lifecycle, answer, timeout or
-result persistence.  This controller wires the strict, independently tested
+result persistence. This controller wires the strict, independently tested
 state-machine modules into python-telegram-bot and keeps Mongo as the authority
 for persisted quiz attempts.
 """
@@ -17,7 +18,6 @@ import time
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.error import BadRequest, ChatMigrated, NetworkError, RetryAfter, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -91,6 +91,14 @@ from session_integrity import QuizSessionAnswerConflict, QuizSessionStoreUnavail
 
 logger = logging.getLogger(__name__)
 
+# Importing bot.py intentionally reuses the mature presentation/non-quiz layer and
+# starts keep_alive(), but bot.py also installs an obsolete RAM->Mongo shutdown
+# signal handler at import time. Reset it here; python-telegram-bot owns process
+# signals when run_polling() starts, and our post_shutdown hook only cancels
+# process-local timers.
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+signal.signal(signal.SIGINT, signal.default_int_handler)
+
 CHOOSING_LEVEL = legacy.CHOOSING_LEVEL
 ANSWERING = legacy.ANSWERING
 BATTLE_ANSWERING = legacy.BATTLE_ANSWERING
@@ -100,10 +108,6 @@ REPORT_CONFIRM = legacy.REPORT_CONFIRM
 
 user_data = legacy.user_data
 
-
-# ---------------------------------------------------------------------------
-# Durable session -> runtime presentation state
-# ---------------------------------------------------------------------------
 
 def _achievement_rewards() -> dict[str, int]:
     return {
@@ -195,10 +199,6 @@ async def _show_active_attempt(target: Any, session: dict, *, edit: bool) -> Non
         await target.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
-# ---------------------------------------------------------------------------
-# Result finalization and presentation
-# ---------------------------------------------------------------------------
-
 async def _send_claimed_achievements(bot, chat_id: int, keys: list[str]) -> None:
     for key in keys:
         meta = legacy.ACHIEVEMENTS.get(key)
@@ -254,7 +254,14 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
         bonus_state = result.get("bonus") if isinstance(result.get("bonus"), dict) else {}
         bonus = int(bonus_state.get("bonus", 0) or 0)
         data["challenge_bonus"] = bonus
-        grade = "🌟 Идеально!" if percentage == 100 else "🔥 Отлично!" if percentage >= 90 else "👍 Хорошо" if percentage >= 75 else "📚 Нужно повторить"
+        if percentage == 100:
+            grade = "🌟 Идеально!"
+        elif percentage >= 90:
+            grade = "🔥 Отлично!"
+        elif percentage >= 75:
+            grade = "👍 Хорошо"
+        else:
+            grade = "📚 Нужно повторить"
         text = (
             f"━━━━━━━━━━━━━━━━\n{mode_name}\n━━━━━━━━━━━━━━━━\n"
             f"📊 *{score}/{total}* ({percentage}%) {grade}\n"
@@ -272,7 +279,14 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
     else:
         base = int(result.get("earned_base", 0) or 0)
         daily = result.get("daily_bonus") if isinstance(result.get("daily_bonus"), dict) else {}
-        grade = "Отлично! 🌟" if percentage >= 90 else "Хорошо! 👍" if percentage >= 70 else "Удовлетворительно 📖" if percentage >= 50 else "Нужно повторить 📚"
+        if percentage >= 90:
+            grade = "Отлично! 🌟"
+        elif percentage >= 70:
+            grade = "Хорошо! 👍"
+        elif percentage >= 50:
+            grade = "Удовлетворительно 📖"
+        else:
+            grade = "Нужно повторить 📚"
         text = (
             "🏆 *РЕЗУЛЬТАТЫ*\n\n"
             f"*Категория:* {data.get('level_name', 'Тест')}\n"
@@ -397,10 +411,6 @@ async def _finalize_active_session(bot, user, session: dict, chat_id: int) -> bo
     return not bool(user_data.get(user.id, {}).get("result_pending"))
 
 
-# ---------------------------------------------------------------------------
-# Safe launch
-# ---------------------------------------------------------------------------
-
 async def _launch_attempt(
     *,
     user,
@@ -484,7 +494,13 @@ async def _launch_attempt(
         return None
 
 
-async def _launch_level_from_query(update: Update, context, level_key: str, quiz_mode: str, time_limit: int | None) -> None:
+async def _launch_level_from_query(
+    update: Update,
+    context,
+    level_key: str,
+    quiz_mode: str,
+    time_limit: int | None,
+) -> None:
     query = update.callback_query
     cfg = legacy.LEVEL_CONFIG.get(level_key)
     if not cfg:
@@ -508,9 +524,13 @@ async def _launch_level_from_query(update: Update, context, level_key: str, quiz
     )
     if data is None:
         return
-    label = {"relaxed": "🧘 Без таймера", "timed": f"⏱ {legacy.TIMED_MODE_TIMEOUT} сек / ×1.5", "speed": f"⚡ {legacy.SPEED_MODE_TIMEOUT} сек / ×2"}.get(quiz_mode, "")
+    labels = {
+        "relaxed": "🧘 Без таймера",
+        "timed": f"⏱ {legacy.TIMED_MODE_TIMEOUT} сек / ×1.5",
+        "speed": f"⚡ {legacy.SPEED_MODE_TIMEOUT} сек / ×2",
+    }
     await query.edit_message_text(
-        f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} · {label}\nНачинаем!",
+        f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} · {labels.get(quiz_mode, '')}\nНачинаем!",
         parse_mode="Markdown",
     )
     await send_question(context.bot, update.effective_user.id)
@@ -519,7 +539,13 @@ async def _launch_level_from_query(update: Update, context, level_key: str, quiz
 async def relaxed_mode_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
-    await _launch_level_from_query(update, context, query.data.replace("relaxed_mode_", ""), "relaxed", None)
+    await _launch_level_from_query(
+        update,
+        context,
+        query.data.replace("relaxed_mode_", ""),
+        "relaxed",
+        None,
+    )
 
 
 async def timed_mode_handler(update: Update, context):
@@ -608,7 +634,10 @@ async def intro_start_handler(update: Update, context):
         await query.edit_message_text("⚠️ Уровень не найден.")
         return
     pool = legacy.get_pool_by_key(cfg["pool_key"])
-    questions = random.sample(pool, min(int(cfg.get("num_questions", 10)), len(pool))) if pool else []
+    questions = random.sample(
+        pool,
+        min(int(cfg.get("num_questions", 10)), len(pool)),
+    ) if pool else []
     if not questions:
         await query.edit_message_text("⚠️ Вопросы не найдены.")
         return
@@ -664,12 +693,10 @@ async def challenge_start(update: Update, context):
     return ANSWERING
 
 
-# ---------------------------------------------------------------------------
-# Question delivery, answer CAS and timeout CAS
-# ---------------------------------------------------------------------------
-
 def _time_limit(data: dict) -> int | None:
-    return data.get("challenge_time_limit") if data.get("is_challenge") else data.get("quiz_time_limit")
+    if data.get("is_challenge"):
+        return data.get("challenge_time_limit")
+    return data.get("quiz_time_limit")
 
 
 def _cancel_runtime_timer(data: dict) -> None:
@@ -688,7 +715,11 @@ async def _disable_question_keyboard(bot, data: dict) -> None:
     message_id = data.get("quiz_message_id")
     if chat_id and message_id:
         try:
-            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+            await bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=None,
+            )
         except Exception:
             pass
 
@@ -699,7 +730,7 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         return
     index = data.get("current_question", 0)
     questions = data.get("questions", [])
-    if not isinstance(index, int) or index < 0:
+    if not isinstance(index, int) or isinstance(index, bool) or index < 0:
         return
     if index >= len(questions):
         if data.get("is_challenge"):
@@ -711,14 +742,24 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
     question = questions[index]
     canonical = list(question.get("options", []))
     if not canonical:
-        await bot.send_message(chat_id=data.get("quiz_chat_id"), text="⚠️ У вопроса нет вариантов ответа.")
+        await bot.send_message(
+            chat_id=data.get("quiz_chat_id"),
+            text="⚠️ У вопроса нет вариантов ответа.",
+        )
         return
     shuffled = canonical[:]
     random.shuffle(shuffled)
     data["current_options"] = shuffled
     correct_index = question.get("correct")
-    if not isinstance(correct_index, int) or isinstance(correct_index, bool) or not 0 <= correct_index < len(canonical):
-        await bot.send_message(chat_id=data.get("quiz_chat_id"), text="⚠️ Вопрос повреждён. Продолжение остановлено.")
+    if (
+        not isinstance(correct_index, int)
+        or isinstance(correct_index, bool)
+        or not 0 <= correct_index < len(canonical)
+    ):
+        await bot.send_message(
+            chat_id=data.get("quiz_chat_id"),
+            text="⚠️ Вопрос повреждён. Продолжение остановлено.",
+        )
         return
     data["current_correct_text"] = canonical[correct_index]
 
@@ -730,19 +771,34 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         ]
     except (LegacyLiveAnswerStale, LegacyLiveStateInvalid, LegacyLiveQuestionStateInvalid, ValueError):
         logger.error("cannot build live question target for user %s", user_id, exc_info=True)
-        await bot.send_message(chat_id=data.get("quiz_chat_id"), text="⚠️ Состояние вопроса изменилось. Используй /status.")
+        await bot.send_message(
+            chat_id=data.get("quiz_chat_id"),
+            text="⚠️ Состояние вопроса изменилось. Используй /status.",
+        )
         return
 
-    options_text = "\n\n" + "\n".join(f"*{i + 1}.* {option}" for i, option in enumerate(shuffled))
-    buttons = [[InlineKeyboardButton(str(i + 1), callback_data=callback) for i, callback in enumerate(callbacks)]]
+    options_text = "\n\n" + "\n".join(
+        f"*{i + 1}.* {option}" for i, option in enumerate(shuffled)
+    )
+    buttons = [[
+        InlineKeyboardButton(str(i + 1), callback_data=callback)
+        for i, callback in enumerate(callbacks)
+    ]]
     buttons.append([
         InlineKeyboardButton("⚠️ Неточность?", callback_data=f"report_inaccuracy_{index}"),
         InlineKeyboardButton("↩️ выйти", callback_data="cancel_quiz"),
     ])
     limit = _time_limit(data)
     timer_text = f" • ⏱ {limit} сек" if limit else ""
-    progress = legacy.build_progress_bar(index + 1, len(questions), data.get("answered_questions", []))
-    text = f"*Вопрос {index + 1}/{len(questions)}*{timer_text}\n{progress}\n\n{question['question']}{options_text}"
+    progress = legacy.build_progress_bar(
+        index + 1,
+        len(questions),
+        data.get("answered_questions", []),
+    )
+    text = (
+        f"*Вопрос {index + 1}/{len(questions)}*{timer_text}\n"
+        f"{progress}\n\n{question['question']}{options_text}"
+    )
     chat_id = data.get("quiz_chat_id")
     if not chat_id:
         logger.error("quiz chat id missing for user %s", user_id)
@@ -763,8 +819,6 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         except Exception as exc:
             if "not modified" in str(exc).lower():
                 delivered = message_id
-            else:
-                delivered = None
     if delivered is None:
         try:
             message = await bot.send_message(
@@ -774,7 +828,6 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
                 parse_mode="Markdown",
             )
             data["quiz_message_id"] = message.message_id
-            delivered = message.message_id
         except Exception:
             logger.error("question Telegram delivery failed for user %s", user_id, exc_info=True)
             return
@@ -792,11 +845,18 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         LegacyQuestionTimerConflict,
         LegacyQuestionTimerUnavailable,
     ):
-        logger.warning("question delivered but durable timer marker failed for user %s", user_id, exc_info=True)
+        logger.warning(
+            "question delivered but durable timer marker failed for user %s",
+            user_id,
+            exc_info=True,
+        )
         await _disable_question_keyboard(bot, data)
         await bot.send_message(
             chat_id=chat_id,
-            text="⚠️ Вопрос показан, но база не подтвердила его состояние. Ответы отключены; используй /status для безопасного продолжения.",
+            text=(
+                "⚠️ Вопрос показан, но база не подтвердила его состояние. "
+                "Ответы отключены; используй /status для безопасного продолжения."
+            ),
         )
         return
 
@@ -805,12 +865,19 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         elapsed = max(0.0, time.time() - canonical_sent_at)
         remaining = max(0.0, float(limit) - elapsed)
         data["timer_task"] = asyncio.create_task(
-            _handle_question_timeout(bot, user_id, target.attempt_id, target.question_index, remaining, int(limit))
+            _handle_question_timeout(
+                bot,
+                user_id,
+                target.attempt_id,
+                target.question_index,
+                remaining,
+                int(limit),
+            )
         )
 
 
 async def send_question(bot, user_id: int, time_limit=None):
-    del time_limit  # persisted session spec is authoritative
+    del time_limit
     await _send_current_question(bot, user_id, "qa")
 
 
@@ -827,11 +894,10 @@ async def _after_answer(bot, user_id: int, outcome) -> None:
             await send_challenge_question(bot, user_id)
         else:
             await send_question(bot, user_id)
+    elif data.get("is_challenge"):
+        await show_challenge_results(bot, user_id)
     else:
-        if data.get("is_challenge"):
-            await show_challenge_results(bot, user_id)
-        else:
-            await show_results(bot, user_id)
+        await show_results(bot, user_id)
 
 
 async def _handle_inline_answer(update: Update, context, prefix: str):
@@ -839,7 +905,10 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
     user_id = query.from_user.id
     data = user_data.get(user_id)
     if not data:
-        await query.answer("⚠️ Сессия не загружена. Используй /status.", show_alert=True)
+        await query.answer(
+            "⚠️ Сессия не загружена. Используй /status.",
+            show_alert=True,
+        )
         return
 
     lock = legacy.user_locks.setdefault(user_id, asyncio.Lock())
@@ -856,11 +925,17 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
             await query.answer("Эта кнопка уже устарела.")
             return
         except (QuizSessionStoreUnavailable, QuizSessionAnswerConflict):
-            await query.answer("⚠️ Ответ не сохранён. Повтори через несколько секунд.", show_alert=True)
+            await query.answer(
+                "⚠️ Ответ не сохранён. Повтори через несколько секунд.",
+                show_alert=True,
+            )
             return
         except LegacyLiveStateInvalid:
             logger.error("live answer state invalid for user %s", user_id, exc_info=True)
-            await query.answer("⚠️ Состояние теста изменилось. Используй /status.", show_alert=True)
+            await query.answer(
+                "⚠️ Состояние теста изменилось. Используй /status.",
+                show_alert=True,
+            )
             return
 
         _cancel_runtime_timer(data)
@@ -879,7 +954,13 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
                 and query.message.reply_markup.inline_keyboard
                 and len(query.message.reply_markup.inline_keyboard[0]) > 1
             )
-            await legacy._animate_answer_buttons(query, option_index, correct_slot, is_numeric, shuffled)
+            await legacy._animate_answer_buttons(
+                query,
+                option_index,
+                correct_slot,
+                is_numeric,
+                shuffled,
+            )
         except Exception:
             logger.debug("answer animation failed", exc_info=True)
 
@@ -952,13 +1033,20 @@ async def _handle_question_timeout(
         except LegacyLiveAnswerStale:
             return
         except (QuizSessionStoreUnavailable, QuizSessionAnswerConflict):
-            logger.warning("timeout could not be durably recorded for user %s", user_id, exc_info=True)
+            logger.warning(
+                "timeout could not be durably recorded for user %s",
+                user_id,
+                exc_info=True,
+            )
             await _disable_question_keyboard(bot, data)
             chat_id = data.get("quiz_chat_id")
             if chat_id:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="⚠️ Время истекло, но база временно недоступна. Ответы отключены; /status продолжит безопасно.",
+                    text=(
+                        "⚠️ Время истекло, но база временно недоступна. "
+                        "Ответы отключены; /status продолжит безопасно."
+                    ),
                 )
             return
         except LegacyLiveStateInvalid:
@@ -978,10 +1066,18 @@ async def _handle_question_timeout(
 
         chat_id = data.get("quiz_chat_id")
         message_id = data.get("quiz_message_id")
-        text = f"⏱ *Время вышло ({timeout_seconds} сек)*\n✅ Правильный ответ: *{outcome.correct_text}*"
+        text = (
+            f"⏱ *Время вышло ({timeout_seconds} сек)*\n"
+            f"✅ Правильный ответ: *{outcome.correct_text}*"
+        )
         if chat_id and message_id:
             try:
-                await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="Markdown")
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    parse_mode="Markdown",
+                )
             except Exception:
                 pass
         data["quiz_message_id"] = None
@@ -996,23 +1092,20 @@ async def auto_timeout(bot, user_id, q_num_at_send):
     target = capture_live_question_target(data)
     if target.question_index != q_num_at_send:
         return
+    timeout_seconds = int(_time_limit(data) or legacy.QUIZ_TIMEOUT)
     await _handle_question_timeout(
         bot,
         user_id,
         target.attempt_id,
         target.question_index,
-        float(_time_limit(data) or legacy.QUIZ_TIMEOUT),
-        int(_time_limit(data) or legacy.QUIZ_TIMEOUT),
+        float(timeout_seconds),
+        timeout_seconds,
     )
 
 
 async def challenge_timeout(bot, user_id, q_num_at_send):
     await auto_timeout(bot, user_id, q_num_at_send)
 
-
-# ---------------------------------------------------------------------------
-# Attempt-bound lifecycle, commands and recovery
-# ---------------------------------------------------------------------------
 
 async def _resume_resolved(query, context, resolved) -> None:
     data = _hydrate_session(
@@ -1026,7 +1119,9 @@ async def _resume_resolved(query, context, resolved) -> None:
         timed_out = question_is_timed_out(resolved.session, now=time.time())
         restart_timeout_route(resolved.session)
     except (LegacyQuestionTimerConflict, LegacyRestartStateInvalid):
-        await query.edit_message_text("⚠️ Таймер сохранённой попытки противоречив. Продолжение остановлено.")
+        await query.edit_message_text(
+            "⚠️ Таймер сохранённой попытки противоречив. Продолжение остановлено."
+        )
         return
 
     await query.edit_message_text(
@@ -1091,7 +1186,10 @@ async def restart_session_handler(update: Update, context):
         pool = legacy.get_pool_by_key(session.get("level_key"))
         questions = random.sample(pool, min(total, len(pool))) if pool else []
     if not questions:
-        await query.answer("⚠️ Не удалось собрать вопросы для перезапуска.", show_alert=True)
+        await query.answer(
+            "⚠️ Не удалось собрать вопросы для перезапуска.",
+            show_alert=True,
+        )
         return
 
     try:
@@ -1123,7 +1221,8 @@ async def restart_session_handler(update: Update, context):
         first_name=query.from_user.first_name,
     )
     await query.edit_message_text(
-        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Тест')}_\n\nВопросов: {len(questions)}",
+        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Тест')}_\n\n"
+        f"Вопросов: {len(questions)}",
         parse_mode="Markdown",
     )
     if data.get("is_challenge"):
@@ -1160,7 +1259,10 @@ async def cancel_session_handler(update: Update, context):
     if local and local.get("attempt_id") == resolved.attempt_id:
         _cancel_runtime_timer(local)
         user_data.pop(user_id, None)
-    await query.edit_message_text("❌ Тест отменён.", reply_markup=legacy._main_keyboard())
+    await query.edit_message_text(
+        "❌ Тест отменён.",
+        reply_markup=legacy._main_keyboard(),
+    )
 
 
 async def _cancel_current(user_id: int) -> tuple[bool, str]:
@@ -1184,21 +1286,33 @@ async def cancel_quiz_handler(update: Update, context):
     await query.answer()
     _had, status = await _cancel_current(query.from_user.id)
     if status == "result_pending":
-        await query.edit_message_text("⏳ Тест уже завершён; результат нельзя удалить. Используй /status для финализации.")
+        await query.edit_message_text(
+            "⏳ Тест уже завершён; результат нельзя удалить. Используй /status для финализации."
+        )
         return ConversationHandler.END
     if status in {"unavailable", "conflict"}:
-        await query.edit_message_text("⚠️ Не удалось безопасно отменить попытку. Используй /status и повтори позже.")
+        await query.edit_message_text(
+            "⚠️ Не удалось безопасно отменить попытку. Используй /status и повтори позже."
+        )
         return ConversationHandler.END
-    await query.edit_message_text("❌ *Тест отменён.* Выбери действие:", reply_markup=legacy._main_keyboard(), parse_mode="Markdown")
+    await query.edit_message_text(
+        "❌ *Тест отменён.* Выбери действие:",
+        reply_markup=legacy._main_keyboard(),
+        parse_mode="Markdown",
+    )
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context):
     _had, status = await _cancel_current(update.effective_user.id)
     if status == "result_pending":
-        await update.message.reply_text("⏳ Тест уже завершён; результат сохранён для финализации. Используй /status.")
+        await update.message.reply_text(
+            "⏳ Тест уже завершён; результат сохранён для финализации. Используй /status."
+        )
     elif status in {"unavailable", "conflict"}:
-        await update.message.reply_text("⚠️ База временно не подтверждает безопасную отмену. Ничего не удалено.")
+        await update.message.reply_text(
+            "⚠️ База временно не подтверждает безопасную отмену. Ничего не удалено."
+        )
     else:
         await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
@@ -1207,13 +1321,21 @@ async def cancel(update: Update, context):
 async def reset_command(update: Update, context):
     _had, status = await _cancel_current(update.effective_user.id)
     if status == "result_pending":
-        await update.message.reply_text("⏳ Завершённый результат нельзя сбросить. Используй /status для финализации.")
+        await update.message.reply_text(
+            "⏳ Завершённый результат нельзя сбросить. Используй /status для финализации."
+        )
         return ConversationHandler.END
     if status in {"unavailable", "conflict"}:
-        await update.message.reply_text("⚠️ Безопасный сброс сейчас не подтверждён. Данные не удалены.")
+        await update.message.reply_text(
+            "⚠️ Безопасный сброс сейчас не подтверждён. Данные не удалены."
+        )
         return ConversationHandler.END
     await update.message.reply_text("🆘 Тест сброшен.", reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("📖 *Главное меню*", reply_markup=legacy._main_keyboard(), parse_mode="Markdown")
+    await update.message.reply_text(
+        "📖 *Главное меню*",
+        reply_markup=legacy._main_keyboard(),
+        parse_mode="Markdown",
+    )
     return ConversationHandler.END
 
 
@@ -1222,12 +1344,24 @@ async def reset_session_inline(update: Update, context):
     await query.answer()
     _had, status = await _cancel_current(query.from_user.id)
     if status == "result_pending":
-        await legacy.safe_edit(query, "⏳ Завершённый результат нельзя удалить. Используй /status.", reply_markup=legacy._main_keyboard())
+        await legacy.safe_edit(
+            query,
+            "⏳ Завершённый результат нельзя удалить. Используй /status.",
+            reply_markup=legacy._main_keyboard(),
+        )
         return
     if status in {"unavailable", "conflict"}:
-        await legacy.safe_edit(query, "⚠️ Безопасный сброс сейчас не подтверждён.", reply_markup=legacy._main_keyboard())
+        await legacy.safe_edit(
+            query,
+            "⚠️ Безопасный сброс сейчас не подтверждён.",
+            reply_markup=legacy._main_keyboard(),
+        )
         return
-    await legacy.safe_edit(query, "🆘 Тест сброшен.", reply_markup=legacy._main_keyboard())
+    await legacy.safe_edit(
+        query,
+        "🆘 Тест сброшен.",
+        reply_markup=legacy._main_keyboard(),
+    )
 
 
 async def _status_session(user_id: int):
@@ -1250,16 +1384,26 @@ async def status_command(update: Update, context):
     user = update.effective_user
     session, status = await _status_session(user.id)
     if status == "none":
-        await update.message.reply_text("📌 Нет активного теста.", reply_markup=legacy._main_keyboard())
+        await update.message.reply_text(
+            "📌 Нет активного теста.",
+            reply_markup=legacy._main_keyboard(),
+        )
         return
     if status == "unavailable":
         await update.message.reply_text("⚠️ База сессий временно недоступна.")
         return
     if status == "conflict":
-        await update.message.reply_text("⚠️ Состояние активной сессии противоречиво; новая попытка не запускается.")
+        await update.message.reply_text(
+            "⚠️ Состояние активной сессии противоречиво; новая попытка не запускается."
+        )
         return
     if status == "finalize":
-        await _finalize_active_session(context.bot, user, session, update.effective_chat.id)
+        await _finalize_active_session(
+            context.bot,
+            user,
+            session,
+            update.effective_chat.id,
+        )
         return
     await _show_active_attempt(update.message, session, edit=False)
 
@@ -1270,16 +1414,28 @@ async def show_status_inline(update: Update, context):
     user = query.from_user
     session, status = await _status_session(user.id)
     if status == "none":
-        await legacy.safe_edit(query, "📌 *Статус:* нет активного теста", reply_markup=legacy._main_keyboard())
+        await legacy.safe_edit(
+            query,
+            "📌 *Статус:* нет активного теста",
+            reply_markup=legacy._main_keyboard(),
+        )
         return
     if status == "unavailable":
         await legacy.safe_edit(query, "⚠️ База сессий временно недоступна.")
         return
     if status == "conflict":
-        await legacy.safe_edit(query, "⚠️ Состояние сессии противоречиво; ничего не удалено.")
+        await legacy.safe_edit(
+            query,
+            "⚠️ Состояние сессии противоречиво; ничего не удалено.",
+        )
         return
     if status == "finalize":
-        await _finalize_active_session(context.bot, user, session, query.message.chat_id)
+        await _finalize_active_session(
+            context.bot,
+            user,
+            session,
+            query.message.chat_id,
+        )
         return
     await _show_active_attempt(query, session, edit=True)
 
@@ -1297,10 +1453,16 @@ async def start(update: Update, context):
 
     session, status = await _status_session(user.id)
     if status == "unavailable":
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ База сессий временно недоступна. Новую попытку не запускаю.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ База сессий временно недоступна. Новую попытку не запускаю.",
+        )
         return
     if status == "conflict":
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Активная сессия противоречива. Новую попытку не запускаю.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ Активная сессия противоречива. Новую попытку не запускаю.",
+        )
         return
     if status == "resume":
         await context.bot.send_message(
@@ -1311,7 +1473,12 @@ async def start(update: Update, context):
         )
         return
     if status == "finalize":
-        if not await _finalize_active_session(context.bot, user, session, update.effective_chat.id):
+        if not await _finalize_active_session(
+            context.bot,
+            user,
+            session,
+            update.effective_chat.id,
+        ):
             return
 
     if context.args:
@@ -1319,9 +1486,24 @@ async def start(update: Update, context):
         if level_key in legacy.LEVEL_CONFIG:
             cfg = legacy.LEVEL_CONFIG[level_key]
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧘 Без ограничения времени", callback_data=f"relaxed_mode_{level_key}")],
-                [InlineKeyboardButton(f"⏱ На время ({legacy.TIMED_MODE_TIMEOUT} сек)", callback_data=f"timed_mode_{level_key}")],
-                [InlineKeyboardButton(f"⚡ Скоростной ({legacy.SPEED_MODE_TIMEOUT} сек)", callback_data=f"speed_mode_{level_key}")],
+                [
+                    InlineKeyboardButton(
+                        "🧘 Без ограничения времени",
+                        callback_data=f"relaxed_mode_{level_key}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"⏱ На время ({legacy.TIMED_MODE_TIMEOUT} сек)",
+                        callback_data=f"timed_mode_{level_key}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"⚡ Скоростной ({legacy.SPEED_MODE_TIMEOUT} сек)",
+                        callback_data=f"speed_mode_{level_key}",
+                    )
+                ],
                 [InlineKeyboardButton("↩️ В главное меню", callback_data="back_to_main")],
             ])
             await context.bot.send_message(
@@ -1388,7 +1570,10 @@ async def retry_errors(update: Update, context):
         score_multiplier=1.0,
         quiz_time_limit=None,
     )
-    await query.edit_message_text(f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong)}", parse_mode="Markdown")
+    await query.edit_message_text(
+        f"🔁 *ПОВТОРЕНИЕ ОШИБОК*\n\nВопросов: {len(wrong)}",
+        parse_mode="Markdown",
+    )
     await send_question(context.bot, user_id)
     return ANSWERING
 
@@ -1397,9 +1582,13 @@ async def text_answer_fallback(update: Update, context):
     user_id = update.effective_user.id
     data = user_data.get(user_id)
     if data and data.get("is_battle"):
-        return await legacy.battle_answer(update, context)
+        await update.message.reply_text("👆 В битве используй кнопки под вопросом.")
+        return BATTLE_ANSWERING
     if data:
-        await update.message.reply_text("👆 Используй кнопки под вопросом для ответа.", reply_markup=legacy._STUCK_KB)
+        await update.message.reply_text(
+            "👆 Используй кнопки под вопросом для ответа.",
+            reply_markup=legacy._STUCK_KB,
+        )
         return ANSWERING
     await update.message.reply_text("Используй /status или /test.")
     return ConversationHandler.END
@@ -1413,7 +1602,13 @@ async def _general_message_fallback(update: Update, context):
         except Exception:
             pass
     data = user_data.get(user.id)
-    if data and not data.get("is_battle"):
+    if data and data.get("is_battle"):
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="👆 В битве используй кнопки под текущим вопросом.",
+        )
+        return
+    if data:
         data["quiz_chat_id"] = update.effective_chat.id
         if data.get("is_challenge"):
             await send_challenge_question(context.bot, user.id)
@@ -1432,26 +1627,47 @@ async def _general_message_fallback(update: Update, context):
                 first_name=user.first_name,
             )
         except (LegacyPersistedSessionModeInvalid, LegacyPersistedSessionStateInvalid, ValueError):
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Сессия повреждена. Используй /status.")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ Сессия повреждена. Используй /status.",
+            )
             return
         try:
             timed_out = question_is_timed_out(session, now=time.time())
         except LegacyQuestionTimerConflict:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Таймер сессии противоречив. Используй /status.")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ Таймер сессии противоречив. Используй /status.",
+            )
             return
         if timed_out:
             target = capture_live_question_target(data)
-            await _handle_question_timeout(context.bot, user.id, target.attempt_id, target.question_index, 0.0, int(_time_limit(data) or 1))
+            await _handle_question_timeout(
+                context.bot,
+                user.id,
+                target.attempt_id,
+                target.question_index,
+                0.0,
+                int(_time_limit(data) or 1),
+            )
         elif data.get("is_challenge"):
             await send_challenge_question(context.bot, user.id)
         else:
             await send_question(context.bot, user.id)
         return
     if status == "finalize":
-        await _finalize_active_session(context.bot, user, session, update.effective_chat.id)
+        await _finalize_active_session(
+            context.bot,
+            user,
+            session,
+            update.effective_chat.id,
+        )
         return
     if status in {"unavailable", "conflict"}:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Состояние сессии сейчас нельзя безопасно прочитать.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ Состояние сессии сейчас нельзя безопасно прочитать.",
+        )
         return
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -1480,56 +1696,48 @@ async def remind_unfinished_tests_job(context):
         if decision.action != "resume":
             continue
         try:
-            keyboard = _lifecycle_keyboard(session)
             await context.bot.send_message(
                 chat_id=int(uid),
-                text="📝 *У тебя есть незавершённый тест!*\n\nПродолжить с того места, где остановился?",
+                text=(
+                    "📝 *У тебя есть незавершённый тест!*\n\n"
+                    "Продолжить с того места, где остановился?"
+                ),
                 parse_mode="Markdown",
-                reply_markup=keyboard,
+                reply_markup=_lifecycle_keyboard(session),
             )
         except Exception:
-            logger.debug("unfinished-session reminder delivery failed for %s", uid, exc_info=True)
+            logger.debug(
+                "unfinished-session reminder delivery failed for %s",
+                uid,
+                exc_info=True,
+            )
 
 
-# ---------------------------------------------------------------------------
-# Safe shutdown: persisted Mongo state already owns progress.
-# ---------------------------------------------------------------------------
-
-async def _save_all_sessions():
-    """Cancel runtime timers only; never roll RAM progress back into Mongo."""
+async def _save_all_sessions(_application=None):
+    """Cancel process-local timers only; persisted Mongo state is authoritative."""
     cancelled = 0
     for data in list(user_data.values()):
         before = data.get("timer_task")
         _cancel_runtime_timer(data)
         if before:
             cancelled += 1
-    logger.info("Graceful shutdown: cancelled %d runtime quiz timers; Mongo unchanged", cancelled)
+    logger.info(
+        "Graceful shutdown: cancelled %d runtime quiz timers; Mongo unchanged",
+        cancelled,
+    )
 
-
-def _handle_shutdown(signum, frame):
-    del signum, frame
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        return
-    if loop.is_running():
-        loop.create_task(_save_all_sessions())
-
-
-signal.signal(signal.SIGTERM, _handle_shutdown)
-signal.signal(signal.SIGINT, _handle_shutdown)
-
-
-# ---------------------------------------------------------------------------
-# Application wiring.  Old quiz handlers from bot.py are deliberately absent.
-# ---------------------------------------------------------------------------
 
 def main():
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise ValueError("❌ Не задана переменная окружения BOT_TOKEN.")
 
-    app = Application.builder().token(token).build()
+    app = (
+        Application.builder()
+        .token(token)
+        .post_shutdown(_save_all_sessions)
+        .build()
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -1546,7 +1754,7 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_fallback),
             ],
             BATTLE_ANSWERING: [
-                CallbackQueryHandler(cancel_quiz_handler, pattern="^cancel_quiz$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer_fallback),
             ],
         },
         fallbacks=[
@@ -1583,19 +1791,36 @@ def main():
     app.add_handler(CallbackQueryHandler(restart_session_handler, pattern=r"^rst:"))
     app.add_handler(CallbackQueryHandler(cancel_session_handler, pattern=r"^can:"))
 
-    app.add_handler(CallbackQueryHandler(legacy.report_inaccuracy_handler, pattern=r"^report_inaccuracy_"))
-    app.add_handler(CallbackQueryHandler(
-        legacy.admin_callback_handler,
-        pattern=r"^admin_(hard_questions|active_sessions|cleanup|broadcast_prompt|back)$",
-    ))
+    app.add_handler(
+        CallbackQueryHandler(
+            legacy.report_inaccuracy_handler,
+            pattern=r"^report_inaccuracy_",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            legacy.admin_callback_handler,
+            pattern=r"^admin_(hard_questions|active_sessions|cleanup|broadcast_prompt|back)$",
+        )
+    )
 
     report_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(legacy.report_start, pattern="^report_start_")],
+        entry_points=[
+            CallbackQueryHandler(legacy.report_start, pattern="^report_start_")
+        ],
         states={
-            REPORT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, legacy.report_receive_text)],
+            REPORT_TEXT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    legacy.report_receive_text,
+                )
+            ],
             REPORT_PHOTO: [
                 MessageHandler(filters.PHOTO, legacy.report_receive_photo),
-                CallbackQueryHandler(legacy.report_skip_photo, pattern="^report_skip_photo$"),
+                CallbackQueryHandler(
+                    legacy.report_skip_photo,
+                    pattern="^report_skip_photo$",
+                ),
                 CallbackQueryHandler(legacy.report_cancel, pattern="^report_cancel$"),
             ],
             REPORT_CONFIRM: [
@@ -1627,25 +1852,43 @@ def main():
     app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
     app.add_handler(CallbackQueryHandler(legacy.show_weekly_leaderboard, pattern="^weekly_lb_"))
-    app.add_handler(CallbackQueryHandler(legacy.category_leaderboard_handler, pattern="^cat_lb_"))
+    app.add_handler(
+        CallbackQueryHandler(
+            legacy.category_leaderboard_handler,
+            pattern="^cat_lb_",
+        )
+    )
     app.add_handler(CallbackQueryHandler(legacy.user_settings_handler, pattern="^user_settings$"))
-    app.add_handler(CallbackQueryHandler(legacy.toggle_typewriter_handler, pattern="^toggle_typewriter$"))
+    app.add_handler(
+        CallbackQueryHandler(
+            legacy.toggle_typewriter_handler,
+            pattern="^toggle_typewriter$",
+        )
+    )
     app.add_handler(CallbackQueryHandler(legacy.show_history, pattern="^my_history$"))
     app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_errors_"))
     app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_nav_"))
     app.add_handler(CallbackQueryHandler(legacy.review_test_handler, pattern=r"^review_test_\d+$"))
     app.add_handler(CallbackQueryHandler(legacy.noop_handler, pattern="^noop$"))
 
-    # Exact safe status/reset handlers must be registered before the broad legacy
-    # navigation dispatcher so it cannot route these callbacks to old writers.
     app.add_handler(CallbackQueryHandler(show_status_inline, pattern="^my_status$"))
     app.add_handler(CallbackQueryHandler(reset_session_inline, pattern="^reset_session$"))
-    app.add_handler(CallbackQueryHandler(
-        legacy.button_handler,
-        pattern=r"^(about|start_test|battle_menu|leaderboard|my_stats|leaderboard_page_\d+|coming_soon|achievements)$",
-    ))
+    app.add_handler(
+        CallbackQueryHandler(
+            legacy.button_handler,
+            pattern=(
+                r"^(about|start_test|battle_menu|leaderboard|my_stats|"
+                r"leaderboard_page_\d+|coming_soon|achievements)$"
+            ),
+        )
+    )
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _general_message_fallback))
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            _general_message_fallback,
+        )
+    )
 
     if app.job_queue is not None:
         app.job_queue.run_repeating(
@@ -1658,7 +1901,11 @@ def main():
             interval=legacy.GC_INTERVAL,
             first=legacy.GC_INTERVAL,
         )
-        app.job_queue.run_repeating(remind_unfinished_tests_job, interval=7200, first=7200)
+        app.job_queue.run_repeating(
+            remind_unfinished_tests_job,
+            interval=7200,
+            first=7200,
+        )
 
     app.add_error_handler(legacy.on_error)
     logger.info("Telegram controller started with Mongo-authoritative quiz state")
