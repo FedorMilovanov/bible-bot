@@ -39,9 +39,14 @@ def test_attempt_bound_live_answer_migration_is_all_or_nothing():
     assert 'callback_data=f"cha_{' not in challenge_send
 
     assert "apply_live_answer_once(" in answer
-    assert "advance_quiz_session(" not in answer
     assert "apply_live_timeout_once(" in timeout
-    assert "advance_quiz_session(" not in timeout
+
+    # Once the first live-answer marker lands, no controller path may retain a
+    # historical blind progress/timer write. This global fence intentionally
+    # covers recovered/restart timeout paths in addition to the two main handlers.
+    assert "advance_quiz_session(" not in BOT
+    assert "set_question_sent_at(" not in BOT
+    assert "update_quiz_session(" not in BOT
 
     # Mongo is the progress authority. The controller must not re-implement
     # answer/index/counter mutation before or after the durable transition.
@@ -73,8 +78,8 @@ def test_attempt_bound_live_answer_migration_is_all_or_nothing():
         assert "if outcome.applied:" in answer
         assert answer.index("if outcome.applied:") < answer.index("record_question_stat(")
 
-    # Once per-answer Mongo CAS is authoritative, stale RAM must never write
-    # progress counters back during shutdown and roll durable state backwards.
+    # Keep the named shutdown assertion as a local diagnostic in addition to
+    # the global write ban above: stale RAM must never roll Mongo progress back.
     assert "update_quiz_session(" not in shutdown
 
     assert 'pattern=r"^qa_' not in BOT
