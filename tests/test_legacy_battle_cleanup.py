@@ -25,7 +25,7 @@ def install(monkeypatch, collection, now):
     monkeypatch.setattr(cleanup, "_database", lambda: SimpleNamespace(_now_utc=lambda: now))
 
 
-def test_cleanup_deletes_only_waiting_battles_without_recovery_evidence(monkeypatch):
+def test_cleanup_deletes_only_expired_pre_progress_battles(monkeypatch):
     now = datetime(2026, 8, 11, 12, 0, 0)
     collection = FakeCollection(deleted_count=3)
     install(monkeypatch, collection, now)
@@ -34,7 +34,7 @@ def test_cleanup_deletes_only_waiting_battles_without_recovery_evidence(monkeypa
 
     assert deleted == 3
     assert collection.calls == [{
-        "status": "waiting",
+        "status": {"$in": ["waiting", "in_progress"]},
         "created_at_dt": {"$lt": now - timedelta(minutes=10)},
         "creator_finished": {"$ne": True},
         "opponent_finished": {"$ne": True},
