@@ -1,7 +1,10 @@
 """Canonical validation for persisted legacy quiz-attempt specifications."""
 from __future__ import annotations
 
-_ALLOWED_MODES = frozenset({"level", "random20", "hardcore20"})
+from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
+
+_CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
+_ALLOWED_MODES = frozenset({"level", *_CHALLENGE_MODES})
 
 
 def validated_session_spec(
@@ -38,6 +41,14 @@ def validated_session_spec(
         raise ValueError("time_limit must be a positive integer or None")
     if chat_id is not None and (isinstance(chat_id, bool) or not isinstance(chat_id, int)):
         raise ValueError("chat_id must be an integer or None")
+
+    if mode == "level":
+        if not isinstance(level_key, str) or not level_key or level_key in _CHALLENGE_MODES:
+            raise ValueError("level mode requires a normal level_key")
+        if time_limit not in {None, TIMED_MODE_TIMEOUT, SPEED_MODE_TIMEOUT}:
+            raise ValueError("level mode time_limit is not a recognized product timer")
+    elif level_key not in {None, mode}:
+        raise ValueError("Challenge level_key must be None or match mode")
 
     return {
         "mode": mode,
