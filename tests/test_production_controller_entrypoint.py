@@ -72,6 +72,9 @@ def test_production_composition_imports_with_runtime_dependencies():
 def test_production_startup_requires_explicit_mongo_url():
     assert '_required_env("BOT_TOKEN")' in PRODUCTION
     assert '_required_env("MONGO_URL")' in PRODUCTION
+    assert PRODUCTION.index('_required_env("MONGO_URL")') < PRODUCTION.index(
+        "Application.builder()"
+    )
     assert "- key: MONGO_URL" in RENDER
 
     env = os.environ.copy()
@@ -111,6 +114,17 @@ def test_production_composition_does_not_register_legacy_state_writers():
     ast.parse(PRODUCTION, filename="telegram_production.py")
     for forbidden in (
         "legacy.main()",
+        "legacy.test_command",
+        "legacy.random_command",
+        "legacy.reset_command",
+        "legacy.status_command",
+        "legacy.relaxed_mode_handler",
+        "legacy.timed_mode_handler",
+        "legacy.speed_mode_handler",
+        "legacy.random_all_start_handler",
+        "legacy.intro_start_handler",
+        "legacy.retry_errors",
+        "legacy.cancel_quiz_handler",
         "legacy.quiz_inline_answer",
         "legacy.challenge_inline_answer",
         "legacy.show_results",
