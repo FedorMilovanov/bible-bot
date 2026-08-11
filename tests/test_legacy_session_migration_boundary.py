@@ -1,14 +1,25 @@
 from pathlib import Path
 
 
-BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8")
+CONTROLLER = (
+    Path(__file__).resolve().parents[1] / "telegram_controller.py"
+).read_text(encoding="utf-8")
 
 
-def async_function(name: str) -> str:
-    marker = f"async def {name}("
-    start = BOT.index(marker)
-    next_async = BOT.find("\nasync def ", start + len(marker))
-    return BOT[start:] if next_async == -1 else BOT[start:next_async]
+def function(name: str, *, async_def: bool = True) -> str:
+    marker = f"{'async ' if async_def else ''}def {name}("
+    start = CONTROLLER.index(marker)
+    candidates = [
+        pos
+        for pos in (
+            CONTROLLER.find("\nasync def ", start + len(marker)),
+            CONTROLLER.find("\ndef ", start + len(marker)),
+            CONTROLLER.find("\nclass ", start + len(marker)),
+        )
+        if pos != -1
+    ]
+    end = min(candidates) if candidates else len(CONTROLLER)
+    return CONTROLLER[start:end]
 
 
 def _assert_before(source: str, first: str, later: str) -> None:
@@ -17,111 +28,95 @@ def _assert_before(source: str, first: str, later: str) -> None:
     assert source.index(first) < source.index(later)
 
 
-def test_strict_session_lifecycle_migration_is_all_or_nothing():
-    migration_markers = (
-        "from legacy_session_launch import",
+def test_strict_session_lifecycle_is_the_only_production_path():
+    for marker in (
         "launch_quiz_attempt(",
-        "from legacy_session_lifecycle import",
         "restart_owned_quiz_attempt(",
-        "from legacy_session_control import",
         "cancel_current_incomplete_session(",
-        "from legacy_session_action import",
         "resolve_session_action(",
         "session_action_payloads(",
-    )
-    if not any(marker in BOT for marker in migration_markers):
-        # The controller is intentionally still on the historical lifecycle.
-        # Once strict lifecycle migration starts, destructive APIs are forbidden.
-        return
-
-    assert "launch_quiz_attempt(" in BOT
-    assert "restart_owned_quiz_attempt(" in BOT
-    assert "cancel_current_incomplete_session(" in BOT
-    assert "resolve_session_action(" in BOT
-    assert "session_action_payloads(" in BOT
-
-    # No controller path may recreate the historical cancel -> insert window or
-    # erase exact-completed result evidence through global active cancellation.
-    assert "create_quiz_session(" not in BOT
-    assert "cancel_active_quiz_session(" not in BOT
-    assert "cancel_quiz_session(" not in BOT
-
-    start = async_function("start")
-    resume = async_function("resume_session_handler")
-    restart = async_function("restart_session_handler")
-    cancel_session = async_function("cancel_session_handler")
-    cancel_quiz = async_function("cancel_quiz_handler")
-    cancel_command = async_function("cancel")
-    reset_command = async_function("reset_command")
-    reset_inline = async_function("reset_session_inline")
-    status_command = async_function("status_command")
-    status_inline = async_function("show_status_inline")
-    reminder = async_function("remind_unfinished_tests_job")
-
-    # `/start` is a status/recovery entry point, not a cancellation action. It
-    # must distinguish incomplete resume evidence from exact-completed evidence
-    # instead of merely switching to an owner-scoped destructive helper.
-    assert "get_active_quiz_session_strict(" in start
-    assert "classify_restart_session(" in start
-    for destructive in (
-        "cancel_owned_quiz_session(",
-        "cancel_current_incomplete_session(",
-        "restart_owned_quiz_attempt(",
     ):
-        assert destructive not in start
+        assert marker in CONTROLLER
 
-    # Every producer of lifecycle buttons must bind them to the current logical
-    # attempt. It is not enough to migrate the handlers: `/start`, status UIs and
-    # reminder jobs can otherwise keep emitting stale session-id-only buttons
-    # that target a replacement attempt in the same Mongo container.
-    for source in (start, status_command, status_inline, reminder):
-        assert "session_action_payloads(" in source
-        assert 'callback_data=f"resume_session_' not in source
-        assert 'callback_data=f"restart_session_' not in source
-        assert 'callback_data=f"cancel_session_' not in source
+    for destructive in (
+        "create_quiz_session(",
+        "cancel_active_quiz_session(",
+        "cancel_quiz_session(",
+    ):
+        assert destructive not in CONTROLLER
 
-    # In-place restart preserves the Mongo container id. Therefore session-id-
-    # only legacy buttons become unsafe: an old pre-restart button could target
-    # the replacement attempt. All three lifecycle buttons must resolve the
-    # attempt token against current durable state before any resume/mutation.
-    for source, action, legacy_prefix in (
-        (resume, "res", "resume_session_"),
-        (restart, "rst", "restart_session_"),
-        (cancel_session, "can", "cancel_session_"),
+    status_lookup = function("_status_session")
+    lifecycle_keyboard = function("_lifecycle_keyboard", async_def=False)
+    show_active = function("_show_active_attempt")
+    start = function("start")
+    resume = function("resume_session_handler")
+    restart = function("restart_session_handler")
+    cancel_session = function("cancel_session_handler")
+    cancel_current = function("_cancel_current")
+    cancel_quiz = function("cancel_quiz_handler")
+    cancel_command = function("cancel")
+    reset_command = function("reset_command")
+    reset_inline = function("reset_session_inline")
+    status_command = function("status_command")
+    status_inline = function("show_status_inline")
+    reminder = function("remind_unfinished_tests_job")
+
+    # Status classification is centralized but remains strict and durable.
+    assert "get_active_quiz_session_strict(" in status_lookup
+    assert "classify_restart_session(" in status_lookup
+    assert "_status_session(" in start
+    assert "_status_session(" in status_command
+    assert "_status_session(" in status_inline
+
+    # All lifecycle button producers converge on one attempt-bound builder.
+    assert "session_action_payloads(" in lifecycle_keyboard
+    assert "_lifecycle_keyboard(" in show_active
+    assert "_lifecycle_keyboard(" in start
+    assert "_show_active_attempt(" in status_command
+    assert "_show_active_attempt(" in status_inline
+    assert "_lifecycle_keyboard(" in reminder
+    for old_prefix in (
+        'callback_data=f"resume_session_',
+        'callback_data=f"restart_session_',
+        'callback_data=f"cancel_session_',
+    ):
+        assert old_prefix not in CONTROLLER
+
+    for source, action in (
+        (resume, "res"),
+        (restart, "rst"),
+        (cancel_session, "can"),
     ):
         assert "resolve_session_action(" in source
         assert f'"{action}"' in source
-        assert f'.replace("{legacy_prefix}", "")' not in source
 
     _assert_before(restart, "resolve_session_action(", "restart_owned_quiz_attempt(")
-    assert "cancel_owned_quiz_session(" not in restart
     assert "expected_attempt_id=" in restart
+    assert "cancel_owned_quiz_session(" not in restart
 
     _assert_before(
         cancel_session,
         "resolve_session_action(",
         "cancel_owned_incomplete_quiz_attempt(",
     )
-    assert "cancel_owned_quiz_session(" not in cancel_session
     assert "expected_attempt_id=" in cancel_session
 
-    # Registration must move to the compact attempt-bound protocol as well;
-    # otherwise correctly built callbacks would never reach the migrated handlers.
+    # Current-session cancellation is centralized so every command/global exit
+    # shares the same completion-safe durable decision.
+    assert "cancel_current_incomplete_session(" in cancel_current
+    for source in (cancel_quiz, cancel_command, reset_command, reset_inline):
+        assert "_cancel_current(" in source
+        assert "cancel_active_quiz_session(" not in source
+
     for old_pattern in (
         'pattern="^resume_session_"',
         'pattern="^restart_session_"',
         'pattern="^cancel_session_"',
     ):
-        assert old_pattern not in BOT
+        assert old_pattern not in CONTROLLER
     for new_pattern in (
         'pattern=r"^res:"',
         'pattern=r"^rst:"',
         'pattern=r"^can:"',
     ):
-        assert new_pattern in BOT
-
-    # Command/global exit paths resolve whichever attempt is current and then
-    # use the completion-safe attempt-bound lifecycle CAS. They must not merely
-    # clear RAM and leave Mongo active, nor call the historical global cancel.
-    for source in (cancel_quiz, cancel_command, reset_command, reset_inline):
-        assert "cancel_current_incomplete_session(" in source
+        assert new_pattern in CONTROLLER
