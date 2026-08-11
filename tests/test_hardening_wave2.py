@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 
 import pytest
 
@@ -89,13 +90,30 @@ def test_oversized_init_data_is_rejected(monkeypatch):
 
 class FakeCollection:
     def __init__(self):
-        self.indexes = []
+        self.indexes = {"_id_": {"key": [("_id", 1)]}}
+        self.created = []
+        self.dropped = []
+
+    def index_information(self):
+        return deepcopy(self.indexes)
 
     def aggregate(self, _pipeline):
         return iter(())
 
+    def drop_index(self, name):
+        self.dropped.append(name)
+        self.indexes.pop(name, None)
+
     def create_index(self, keys, **kwargs):
-        self.indexes.append((keys, kwargs))
+        self.created.append((deepcopy(keys), deepcopy(kwargs)))
+        metadata = {"key": [tuple(item) for item in keys]}
+        if "expireAfterSeconds" in kwargs:
+            metadata["expireAfterSeconds"] = kwargs["expireAfterSeconds"]
+        if "partialFilterExpression" in kwargs:
+            metadata["partialFilterExpression"] = deepcopy(kwargs["partialFilterExpression"])
+        if "unique" in kwargs:
+            metadata["unique"] = kwargs["unique"]
+        self.indexes[kwargs.get("name", "idx")] = metadata
         return kwargs.get("name", "idx")
 
 
@@ -114,12 +132,16 @@ def test_miniapp_db_indexes_include_unique_active_user(monkeypatch):
     monkeypatch.setattr(db_hardening, "_INDEXES_READY", False)
 
     assert db_hardening.ensure_miniapp_indexes() is True
-    unique = [kwargs for _keys, kwargs in collection.indexes if kwargs.get("name") == "uniq_miniapp_active_user"]
-    assert unique == [{
+    unique = collection.indexes[db_hardening.UNIQUE_ACTIVE_NAME]
+    assert unique == {
+        "key": [("user_id", 1)],
         "unique": True,
         "partialFilterExpression": {"status": "in_progress"},
-        "name": "uniq_miniapp_active_user",
-    }]
+    }
+    terminal = collection.indexes[db_hardening.TERMINAL_TTL_NAME]
+    assert terminal["key"] == [("updated_at_dt", 1)]
+    assert terminal["expireAfterSeconds"] == db_hardening.TERMINAL_RETENTION_SECONDS
+    assert terminal["partialFilterExpression"] == db_hardening.TERMINAL_FILTER
 
 
 def test_waitress_is_given_bounded_request_limits(monkeypatch):
