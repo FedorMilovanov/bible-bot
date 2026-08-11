@@ -1,9 +1,9 @@
 """Database-level invariants for Mini App sessions.
 
 Application checks remain useful for UX, but concurrency and retention
-invariants belong in MongoDB as well. Index creation is lazy and retried when
-MongoDB is temporarily unavailable. User session documents are never repaired
-or discarded automatically by this migration layer.
+invariants belong in MongoDB as well. Index hardening is idempotent and retried
+when MongoDB is temporarily unavailable. User session documents are never
+repaired or discarded automatically by this migration layer.
 """
 from __future__ import annotations
 
@@ -170,14 +170,29 @@ def ensure_miniapp_indexes() -> bool:
                 )
 
             info = sessions.index_information()
-            _ensure_index(
-                sessions,
-                info,
-                name=UNIQUE_ACTIVE_NAME,
+            existing_unique = info.get(UNIQUE_ACTIVE_NAME)
+            if existing_unique is not None and not _index_matches(
+                existing_unique,
                 key=[("user_id", 1)],
                 partial_filter=OPEN_FILTER,
                 unique=True,
-            )
+            ):
+                logger.error(
+                    "Mini App unique-index migration requires operator review; "
+                    "existing index is intentionally preserved"
+                )
+                raise MiniAppIndexSafetyUnavailable(
+                    "existing Mini App unique index requires operator migration"
+                )
+            if existing_unique is None:
+                _ensure_index(
+                    sessions,
+                    info,
+                    name=UNIQUE_ACTIVE_NAME,
+                    key=[("user_id", 1)],
+                    partial_filter=OPEN_FILTER,
+                    unique=True,
+                )
 
             # Read back the final contracts. A create_index call returning
             # without exception is not sufficient proof if an incompatible
