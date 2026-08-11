@@ -1,4 +1,5 @@
 import inspect
+import json
 
 import pytest
 from pymongo.errors import AutoReconnect
@@ -80,6 +81,26 @@ def test_preflight_source_never_imports_application_database_bootstrap():
     assert "import database" not in source
     assert "legacy_result_store" not in source
     assert "legacy_bonus_store" not in source
+
+
+def test_preflight_source_has_no_mutating_mongo_calls():
+    source = inspect.getsource(preflight)
+
+    for forbidden in (
+        ".insert_one(",
+        ".insert_many(",
+        ".update_one(",
+        ".update_many(",
+        ".replace_one(",
+        ".delete_one(",
+        ".delete_many(",
+        ".find_one_and_update(",
+        ".find_one_and_delete(",
+        ".create_index(",
+        ".drop_index(",
+        ".drop(",
+    ):
+        assert forbidden not in source
 
 
 @pytest.mark.parametrize(
@@ -179,3 +200,65 @@ def test_missing_url_and_invalid_limit_fail_before_client(monkeypatch):
     for value in (0, -1, True, 1.5):
         with pytest.raises(ValueError, match="positive integer"):
             preflight._load_storage_snapshot(limit=value)
+
+
+def test_main_returns_zero_for_safe_snapshot(monkeypatch, capsys):
+    monkeypatch.setattr(
+        preflight,
+        "_load_storage_snapshot",
+        lambda: {
+            "topology": "replica_set",
+            "transaction_topology_candidate": True,
+            "bson_max_bytes": preflight._BSON_MAX_BYTES,
+            "warning_bytes": preflight._WARNING_BYTES,
+            "malformed_receipt_maps": 0,
+            "users": [{"user_id": "42", "bson_size": 1024, "warning": False}],
+        },
+    )
+
+    assert preflight.main() == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        {
+            "topology": "replica_set",
+            "transaction_topology_candidate": True,
+            "bson_max_bytes": preflight._BSON_MAX_BYTES,
+            "warning_bytes": preflight._WARNING_BYTES,
+            "malformed_receipt_maps": 1,
+            "users": [{"user_id": "42", "bson_size": 1024, "warning": False}],
+        },
+        {
+            "topology": "replica_set",
+            "transaction_topology_candidate": True,
+            "bson_max_bytes": preflight._BSON_MAX_BYTES,
+            "warning_bytes": preflight._WARNING_BYTES,
+            "malformed_receipt_maps": 0,
+            "users": [
+                {"user_id": "42", "bson_size": preflight._WARNING_BYTES, "warning": True}
+            ],
+        },
+    ],
+)
+def test_main_returns_one_for_unsafe_snapshot(monkeypatch, capsys, snapshot):
+    monkeypatch.setattr(preflight, "_load_storage_snapshot", lambda: snapshot)
+
+    assert preflight.main() == 1
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+def test_main_returns_two_for_unavailable_snapshot(monkeypatch, capsys):
+    def unavailable():
+        raise preflight.ResultStoragePreflightUnavailable("mongo down")
+
+    monkeypatch.setattr(preflight, "_load_storage_snapshot", unavailable)
+
+    assert preflight.main() == 2
+    assert json.loads(capsys.readouterr().err) == {
+        "ok": False,
+        "error": "preflight_unavailable",
+        "detail": "mongo down",
+    }
