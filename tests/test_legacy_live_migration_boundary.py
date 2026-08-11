@@ -1,55 +1,56 @@
 from pathlib import Path
 
 
-BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8")
+CONTROLLER = (
+    Path(__file__).resolve().parents[1] / "telegram_controller.py"
+).read_text(encoding="utf-8")
 
 
 def async_function(name: str) -> str:
     marker = f"async def {name}"
-    start = BOT.index(marker)
-    next_async = BOT.find("\nasync def ", start + len(marker))
-    return BOT[start:] if next_async == -1 else BOT[start:next_async]
+    start = CONTROLLER.index(marker)
+    next_async = CONTROLLER.find("\nasync def ", start + len(marker))
+    return CONTROLLER[start:] if next_async == -1 else CONTROLLER[start:next_async]
 
 
 def _assert_before(source: str, first: str, later: str) -> None:
     if later in source:
+        assert first in source
         assert source.index(first) < source.index(later)
 
 
-def test_attempt_bound_live_answer_migration_is_all_or_nothing():
-    live_markers = (
-        "build_live_answer_callback(",
-        "apply_live_answer_once(",
-        "apply_live_timeout_once(",
-        "mark_live_question_sent(",
-    )
-    if not any(marker in BOT for marker in live_markers):
-        # The legacy controller is intentionally still unmigrated. Once the
-        # first live marker lands, all invariants below become mandatory.
-        return
-
+def test_attempt_bound_live_answer_is_the_only_production_path():
     normal_send = async_function("send_question")
     challenge_send = async_function("send_challenge_question")
+    render = async_function("_send_current_question")
     answer = async_function("_handle_inline_answer")
     timeout = async_function("_handle_question_timeout")
     shutdown = async_function("_save_all_sessions")
 
-    assert "build_live_answer_callback(" in BOT
-    assert 'callback_data=f"qa_{' not in normal_send
-    assert 'callback_data=f"cha_{' not in challenge_send
+    for marker in (
+        "build_live_answer_callback(",
+        "apply_live_answer_once(",
+        "apply_live_timeout_once(",
+        "mark_live_question_sent(",
+    ):
+        assert marker in CONTROLLER
+
+    assert "_send_current_question(" in normal_send
+    assert "_send_current_question(" in challenge_send
+    assert "build_live_answer_callback(" in render
+    assert 'callback_data=f"qa_{' not in render
+    assert 'callback_data=f"cha_{' not in render
 
     assert "apply_live_answer_once(" in answer
     assert "apply_live_timeout_once(" in timeout
 
-    # Once the first live-answer marker lands, no controller path may retain a
-    # historical blind progress/timer write. This global fence intentionally
-    # covers recovered/restart timeout paths in addition to the two main handlers.
-    assert "advance_quiz_session(" not in BOT
-    assert "set_question_sent_at(" not in BOT
-    assert "update_quiz_session(" not in BOT
+    for blind_write in (
+        "advance_quiz_session(",
+        "set_question_sent_at(",
+        "update_quiz_session(",
+    ):
+        assert blind_write not in CONTROLLER
 
-    # Mongo is the progress authority. The controller must not re-implement
-    # answer/index/counter mutation before or after the durable transition.
     for mutation in (
         'data["correct_answers"] +=',
         'data["current_question"] +=',
@@ -58,31 +59,27 @@ def test_attempt_bound_live_answer_migration_is_all_or_nothing():
         assert mutation not in answer
         assert mutation not in timeout
 
-    # A failed durable transition must not have already cancelled timers,
-    # animated an answer, or written non-idempotent analytics. These side
-    # effects happen only after apply_live_* has accepted/replayed the answer.
+    # Durable answer/timeout acceptance must happen before non-idempotent UI,
+    # timer cancellation or analytics side effects.
     for later in (
-        "timer_task.cancel()",
-        "_cancel_countdown(",
+        "_cancel_runtime_timer(",
         "_animate_answer_buttons(",
         "record_question_stat(",
     ):
         _assert_before(answer, "apply_live_answer_once(", later)
-    _assert_before(timeout, "apply_live_timeout_once(", "_cancel_countdown(")
+    _assert_before(timeout, "apply_live_timeout_once(", "record_question_stat(")
 
-    # Exact lost-response replay returns applied=False. Legacy analytics are
-    # increment-only, so if they remain in the controller they must be gated on
-    # a newly applied transition rather than replayed again.
     if "record_question_stat(" in answer:
-        assert "outcome = apply_live_answer_once(" in answer
         assert "if outcome.applied:" in answer
         assert answer.index("if outcome.applied:") < answer.index("record_question_stat(")
+    if "record_question_stat(" in timeout:
+        assert "if outcome.applied:" in timeout
+        assert timeout.index("if outcome.applied:") < timeout.index("record_question_stat(")
 
-    # Keep the named shutdown assertion as a local diagnostic in addition to
-    # the global write ban above: stale RAM must never roll Mongo progress back.
+    # Shutdown may clean process-local timers, never roll stale RAM into Mongo.
     assert "update_quiz_session(" not in shutdown
 
-    assert 'pattern=r"^qa_' not in BOT
-    assert 'pattern=r"^cha_' not in BOT
-    assert 'pattern=r"^qa:' in BOT
-    assert 'pattern=r"^cha:' in BOT
+    assert 'pattern=r"^qa_' not in CONTROLLER
+    assert 'pattern=r"^cha_' not in CONTROLLER
+    assert 'pattern=r"^qa:"' in CONTROLLER
+    assert 'pattern=r"^cha:"' in CONTROLLER
