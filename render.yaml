@@ -5,7 +5,7 @@ services:
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: python telegram_controller.py
     healthCheckPath: /live
     maxShutdownDelaySeconds: 30
     autoDeploy: false
