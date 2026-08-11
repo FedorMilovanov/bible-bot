@@ -78,6 +78,7 @@ def launch_quiz_attempt(
     level_name: str | None = None,
     time_limit: int | None = None,
     chat_id: int | None = None,
+    is_retry: bool = False,
 ) -> SessionLaunchOutcome:
     """Create a durable attempt only when no active quiz evidence exists."""
     try:
@@ -119,10 +120,9 @@ def launch_quiz_attempt(
             level_name=level_name,
             time_limit=time_limit,
             chat_id=chat_id,
+            is_retry=is_retry,
         )
     except QuizSessionAlreadyActive as exc:
-        # A concurrent launch appeared between read and create. Do not decide
-        # which competing request should win or replace the winner.
         raise LegacySessionLaunchConflict(
             "another quiz launch won the active-session race"
         ) from exc
