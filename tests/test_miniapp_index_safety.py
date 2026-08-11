@@ -80,7 +80,7 @@ def test_legacy_generic_ttl_is_replaced_by_terminal_only_retention(monkeypatch):
     assert "score_error" not in hardening.TERMINAL_FILTER["status"]["$in"]
 
 
-def test_duplicate_active_sessions_block_uniqueness_without_mutating_rows(monkeypatch):
+def test_duplicate_open_sessions_block_uniqueness_without_mutating_rows(monkeypatch):
     sessions = FakeSessions(duplicates=[{
         "_id": "101",
         "session_ids": ["old", "new"],
@@ -96,6 +96,9 @@ def test_duplicate_active_sessions_block_uniqueness_without_mutating_rows(monkey
 
     assert hardening.UNIQUE_ACTIVE_NAME not in sessions.indexes
     assert sessions.aggregate_calls
+    assert sessions.aggregate_calls[0][0] == {
+        "$match": {"status": {"$in": list(hardening.OPEN_STATUSES)}}
+    }
     # The fake intentionally has no update_many method. Reintroducing automatic
     # duplicate abandonment would fail instead of silently choosing a winner.
 
@@ -117,7 +120,7 @@ def test_incompatible_terminal_index_is_dropped_and_recreated(monkeypatch):
     assert sessions.indexes[hardening.TERMINAL_TTL_NAME]["key"] == [("updated_at_dt", 1)]
 
 
-def test_unique_active_index_is_exact_and_partial(monkeypatch):
+def test_unique_open_index_is_exact_and_partial(monkeypatch):
     sessions = FakeSessions()
     install(monkeypatch, sessions)
 
@@ -126,7 +129,29 @@ def test_unique_active_index_is_exact_and_partial(monkeypatch):
     unique = sessions.indexes[hardening.UNIQUE_ACTIVE_NAME]
     assert unique["key"] == [("user_id", 1)]
     assert unique["unique"] is True
-    assert unique["partialFilterExpression"] == {"status": "in_progress"}
+    assert unique["partialFilterExpression"] == hardening.OPEN_FILTER
+    assert set(unique["partialFilterExpression"]["status"]["$in"]) == {
+        "in_progress",
+        "finalizing",
+        "score_error",
+    }
+
+
+def test_old_in_progress_only_unique_index_is_replaced(monkeypatch):
+    sessions = FakeSessions(indexes={
+        "_id_": {"key": [("_id", 1)]},
+        hardening.UNIQUE_ACTIVE_NAME: {
+            "key": [("user_id", 1)],
+            "unique": True,
+            "partialFilterExpression": {"status": "in_progress"},
+        },
+    })
+    install(monkeypatch, sessions)
+
+    assert hardening.ensure_miniapp_indexes() is True
+
+    assert hardening.UNIQUE_ACTIVE_NAME in sessions.dropped
+    assert sessions.indexes[hardening.UNIQUE_ACTIVE_NAME]["partialFilterExpression"] == hardening.OPEN_FILTER
 
 
 def test_index_metadata_failure_is_explicit(monkeypatch):
