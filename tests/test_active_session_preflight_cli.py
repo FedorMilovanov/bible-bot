@@ -4,11 +4,7 @@ import scripts.check_active_session_duplicates as preflight
 
 
 def test_preflight_is_zero_when_no_duplicates(monkeypatch, capsys):
-    monkeypatch.setattr(
-        preflight,
-        "find_duplicate_active_session_users",
-        lambda limit: [],
-    )
+    monkeypatch.setattr(preflight, "_load_duplicates", lambda: [])
 
     assert preflight.main() == 0
     payload = json.loads(capsys.readouterr().out)
@@ -22,11 +18,11 @@ def test_preflight_reports_duplicates_without_mutating(monkeypatch, capsys):
     ]
     seen = {}
 
-    def find(limit):
+    def load(limit=preflight._DEFAULT_LIMIT):
         seen["limit"] = limit
         return rows
 
-    monkeypatch.setattr(preflight, "find_duplicate_active_session_users", find)
+    monkeypatch.setattr(preflight, "_load_duplicates", load)
 
     assert preflight.main() == 1
     payload = json.loads(capsys.readouterr().out)
@@ -36,10 +32,10 @@ def test_preflight_reports_duplicates_without_mutating(monkeypatch, capsys):
 
 
 def test_preflight_outage_is_distinct_failure(monkeypatch, capsys):
-    def unavailable(limit):
-        raise preflight.QuizSessionAccessUnavailable("mongo down")
+    def unavailable():
+        raise preflight.DuplicateSessionPreflightUnavailable("mongo down")
 
-    monkeypatch.setattr(preflight, "find_duplicate_active_session_users", unavailable)
+    monkeypatch.setattr(preflight, "_load_duplicates", unavailable)
 
     assert preflight.main() == 2
     captured = capsys.readouterr()
