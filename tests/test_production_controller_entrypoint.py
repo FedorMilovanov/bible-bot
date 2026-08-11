@@ -1,15 +1,21 @@
 import ast
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+RENDER = (ROOT / "render.yaml").read_text(encoding="utf-8")
 CONTROLLER = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
 
 
-def test_docker_runs_strict_telegram_controller():
+def test_runtime_surfaces_run_strict_telegram_controller():
     assert 'CMD ["python", "telegram_controller.py"]' in DOCKERFILE
     assert 'CMD ["python", "bot.py"]' not in DOCKERFILE
+    assert "startCommand: python telegram_controller.py" in RENDER
+    assert "startCommand: python bot.py" not in RENDER
 
 
 def test_production_controller_is_valid_python_and_owns_quiz_state():
@@ -23,6 +29,36 @@ def test_production_controller_is_valid_python_and_owns_quiz_state():
         "resolve_session_action(",
     ):
         assert marker in CONTROLLER
+
+
+def test_production_controller_imports_with_runtime_dependencies():
+    env = os.environ.copy()
+    env.update(
+        {
+            "ADMIN_USER_ID": "1",
+            "BOT_TOKEN": "123456:TEST_TOKEN",
+            "DISABLE_WEB_SERVER": "true",
+        }
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import telegram_controller as controller; "
+                "assert callable(controller.main); "
+                "assert callable(controller.show_results); "
+                "assert callable(controller.quiz_inline_answer)"
+            ),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_legacy_bot_is_helper_only_for_quiz_runtime():
