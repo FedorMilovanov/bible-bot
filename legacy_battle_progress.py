@@ -8,6 +8,8 @@ from datetime import datetime
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from legacy_battle_protocols import BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE
+
 
 class LegacyBattleProgressUnavailable(RuntimeError):
     """Raised when durable PvP progress cannot reach MongoDB."""
@@ -206,6 +208,7 @@ def _owned_battle_filter(battle_id: str, user_id: int, role: str) -> dict:
     return {
         "_id": battle_id,
         _participant_field(role): user_id,
+        "question_progress_protocol": BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE,
         "status": {"$in": ["waiting", "in_progress"]},
         "final_claimed": {"$ne": True},
     }
