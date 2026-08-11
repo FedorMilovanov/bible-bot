@@ -54,6 +54,9 @@ def test_strict_session_lifecycle_migration_is_all_or_nothing():
     cancel_command = async_function("cancel")
     reset_command = async_function("reset_command")
     reset_inline = async_function("reset_session_inline")
+    status_command = async_function("status_command")
+    status_inline = async_function("show_status_inline")
+    reminder = async_function("remind_unfinished_tests_job")
 
     # `/start` is a status/recovery entry point, not a cancellation action. It
     # must distinguish incomplete resume evidence from exact-completed evidence
@@ -66,6 +69,16 @@ def test_strict_session_lifecycle_migration_is_all_or_nothing():
         "restart_owned_quiz_attempt(",
     ):
         assert destructive not in start
+
+    # Every producer of lifecycle buttons must bind them to the current logical
+    # attempt. It is not enough to migrate the handlers: `/start`, status UIs and
+    # reminder jobs can otherwise keep emitting stale session-id-only buttons
+    # that target a replacement attempt in the same Mongo container.
+    for source in (start, status_command, status_inline, reminder):
+        assert "session_action_payloads(" in source
+        assert 'callback_data=f"resume_session_' not in source
+        assert 'callback_data=f"restart_session_' not in source
+        assert 'callback_data=f"cancel_session_' not in source
 
     # In-place restart preserves the Mongo container id. Therefore session-id-
     # only legacy buttons become unsafe: an old pre-restart button could target
@@ -91,6 +104,21 @@ def test_strict_session_lifecycle_migration_is_all_or_nothing():
     )
     assert "cancel_owned_quiz_session(" not in cancel_session
     assert "expected_attempt_id=" in cancel_session
+
+    # Registration must move to the compact attempt-bound protocol as well;
+    # otherwise correctly built callbacks would never reach the migrated handlers.
+    for old_pattern in (
+        'pattern="^resume_session_"',
+        'pattern="^restart_session_"',
+        'pattern="^cancel_session_"',
+    ):
+        assert old_pattern not in BOT
+    for new_pattern in (
+        'pattern=r"^res:"',
+        'pattern=r"^rst:"',
+        'pattern=r"^can:"',
+    ):
+        assert new_pattern in BOT
 
     # Command/global exit paths resolve whichever attempt is current and then
     # use the completion-safe attempt-bound lifecycle CAS. They must not merely
