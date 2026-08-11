@@ -10,6 +10,11 @@ from collections.abc import Mapping
 
 from legacy_attempt_finalize import finalize_challenge_result, finalize_normal_result
 from legacy_retry_policy import LegacyRetryPolicyInvalid, persisted_is_retry
+from legacy_session_close import (
+    QuizSessionCompletionInvalid,
+    QuizSessionCompletionStoreUnavailable,
+    finish_completed_owned_quiz_session,
+)
 from legacy_session_recovery import (
     LegacyPersistedSessionModeInvalid,
     completed_result_inputs,
@@ -44,6 +49,32 @@ def _assert_recoverable_status(session: dict) -> None:
         )
 
 
+def _finish_retry_practice(session: dict, user_id: int) -> dict:
+    session_id = session.get("_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise LegacyCompletedSessionEvidenceIncomplete(
+            "completed retry practice has no durable session id"
+        )
+    try:
+        finished = finish_completed_owned_quiz_session(session_id, user_id)
+    except (QuizSessionCompletionInvalid, QuizSessionCompletionStoreUnavailable) as exc:
+        raise LegacyCompletedSessionEvidenceIncomplete(
+            "completed retry practice cannot be closed safely"
+        ) from exc
+    if not isinstance(finished, dict):
+        raise LegacyCompletedSessionEvidenceIncomplete(
+            "completed retry practice close returned no durable session"
+        )
+    return {
+        "scored": False,
+        "practice": True,
+        "earned_base": 0,
+        "daily_bonus": {"bonus": 0, "eligible": False, "claimed_now": False},
+        "new_achievements": [],
+        "session_finished": True,
+    }
+
+
 def finalize_completed_session(
     *,
     user_id: int,
@@ -58,10 +89,8 @@ def finalize_completed_session(
     taken exclusively from Mongo evidence. Caller-provided identity is used only
     for display.
 
-    Both ``in_progress`` and ``finished`` are recoverable. The latter preserves
-    compatibility with the legacy crash boundary where a handler could mark the
-    session finished before the remaining scoring writes completed. Cancelled,
-    missing or unknown states are never allowed to mint a result.
+    Durable retry-error practice uses the same answer/completion proof and then
+    closes without entering any scoring/bonus/achievement stage.
     """
     _assert_owner(session, user_id)
     _assert_recoverable_status(session)
@@ -77,8 +106,11 @@ def finalize_completed_session(
             "completed session lacks authoritative result timing evidence"
         )
 
+    if is_retry:
+        return _finish_retry_practice(session, user_id)
+
     data = dict(recovered["data"])
-    data["is_retry"] = is_retry
+    data["is_retry"] = False
     data["username"] = username or ""
     data["first_name"] = first_name or "Игрок"
     data["result_completed_at"] = recovered["completed_at"]
