@@ -24,12 +24,12 @@ def _battle_collection():
 
 
 def cleanup_stale_waiting_battles(*, max_age_minutes: int = 10) -> int:
-    """Delete only truly abandoned waiting battles, never recovery evidence.
+    """Delete only abandoned pre-progress battles, never recovery evidence.
 
-    A waiting battle becomes recovery evidence as soon as either participant has
-    a durable final result or the durable per-question progress layer exists.
-    Those documents are deliberately retained for explicit recovery/retention
-    policy instead of being guessed disposable from age alone.
+    Waiting or joined ``in_progress`` battles are disposable after the expiry
+    only while neither participant has a durable final result, no final claim
+    exists, and the durable per-question progress layer has never started.
+    Any recovery evidence makes the document intentionally ineligible.
     """
     if (
         isinstance(max_age_minutes, bool)
@@ -42,7 +42,7 @@ def cleanup_stale_waiting_battles(*, max_age_minutes: int = 10) -> int:
     collection = _battle_collection()
     cutoff = database._now_utc() - timedelta(minutes=max_age_minutes)
     query = {
-        "status": "waiting",
+        "status": {"$in": ["waiting", "in_progress"]},
         "created_at_dt": {"$lt": cutoff},
         "creator_finished": {"$ne": True},
         "opponent_finished": {"$ne": True},
