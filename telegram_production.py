@@ -39,12 +39,6 @@ async def _start(update, context):
     await quiz.start(update, context)
 
 
-async def _back_to_main(update, context):
-    """Render legacy main-menu UI and explicitly leave PTB conversation state."""
-    await legacy.back_to_main(update, context)
-    return ConversationHandler.END
-
-
 def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
@@ -59,36 +53,20 @@ def main() -> None:
         .build()
     )
 
-    quiz_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("test", quiz.test_command),
-            CallbackQueryHandler(legacy.level_selected, pattern="^level_"),
-        ],
-        states={
-            quiz.CHOOSING_LEVEL: [
-                CallbackQueryHandler(legacy.level_selected, pattern=r"^level_")
-            ],
-        },
-        fallbacks=[
-            CommandHandler("cancel", quiz.cancel),
-            CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"),
-            CallbackQueryHandler(_back_to_main, pattern="^back_to_main$"),
-        ],
-        allow_reentry=True,
-    )
-    app.add_handler(quiz_conv)
-
     app.add_handler(CommandHandler("start", _start))
     app.add_handler(CommandHandler("menu", quiz.start))
+    app.add_handler(CommandHandler("test", quiz.test_command))
     app.add_handler(CommandHandler("stats", legacy.stats_command))
     app.add_handler(CommandHandler("random", quiz.random_command))
     app.add_handler(CommandHandler("reset", quiz.reset_command))
+    app.add_handler(CommandHandler("cancel", quiz.cancel))
     app.add_handler(CommandHandler("status", quiz.status_command))
     app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))
     app.add_handler(CommandHandler("admin", legacy.admin_command))
     app.add_handler(CommandHandler("broadcast", legacy.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
 
+    app.add_handler(CallbackQueryHandler(legacy.level_selected, pattern=r"^level_"))
     app.add_handler(CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"))
     app.add_handler(CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"))
     app.add_handler(CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:"))
@@ -134,7 +112,8 @@ def main() -> None:
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     reports.report_receive_text,
-                )
+                ),
+                CallbackQueryHandler(reports.report_cancel, pattern="^report_cancel$"),
             ],
             reports.REPORT_PHOTO: [
                 MessageHandler(filters.PHOTO, reports.report_receive_photo),
