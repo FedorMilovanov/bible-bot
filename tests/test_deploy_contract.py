@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_VERSION = "3.11.15"
-PRODUCTION_CONTROLLER = "telegram_controller.py"
+PRODUCTION_CONTROLLER = "telegram_production.py"
 
 
 def read(path: str) -> str:
@@ -24,6 +24,8 @@ def test_single_process_start_contract_is_consistent():
     assert f'CMD ["python", "{PRODUCTION_CONTROLLER}"]' in docker
     assert "startCommand: python bot.py" not in render
     assert 'CMD ["python", "bot.py"]' not in docker
+    assert "startCommand: python telegram_controller.py" not in render
+    assert 'CMD ["python", "telegram_controller.py"]' not in docker
     assert "healthCheckPath: /live" in render
 
 
