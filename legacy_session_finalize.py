@@ -96,10 +96,15 @@ def finalize_completed_session(
     _assert_recoverable_status(session)
     try:
         is_retry = persisted_is_retry(session)
-        recovered = completed_result_inputs(session)
-    except (LegacyPersistedSessionModeInvalid, LegacyRetryPolicyInvalid) as exc:
+    except LegacyRetryPolicyInvalid as exc:
         raise LegacyCompletedSessionEvidenceIncomplete(
-            "completed session has unsupported persisted quiz policy"
+            "completed session has unsupported persisted retry policy"
+        ) from exc
+    try:
+        recovered = completed_result_inputs(session)
+    except LegacyPersistedSessionModeInvalid as exc:
+        raise LegacyCompletedSessionEvidenceIncomplete(
+            "completed session has unsupported persisted quiz mode"
         ) from exc
     if recovered is None:
         raise LegacyCompletedSessionEvidenceIncomplete(
