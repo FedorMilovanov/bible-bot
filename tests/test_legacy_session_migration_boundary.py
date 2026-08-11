@@ -5,7 +5,7 @@ BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8
 
 
 def async_function(name: str) -> str:
-    marker = f"async def {name}"
+    marker = f"async def {name}("
     start = BOT.index(marker)
     next_async = BOT.find("\nasync def ", start + len(marker))
     return BOT[start:] if next_async == -1 else BOT[start:next_async]
