@@ -21,6 +21,7 @@ MODE_CONFIG = {
     "speed": {"time_limit": 15, "multiplier": 2.0},
 }
 TIMEOUT_NETWORK_GRACE_SECONDS = 1.0
+COMPLETION_TIME_PROTOCOL_DURABLE = "answer_completed_at_v1"
 
 
 def _now() -> datetime:
@@ -286,6 +287,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         "time_limit": cfg["time_limit"],
         "score_multiplier": cfg["multiplier"],
         "started_at_dt": now,
+        "completed_at_dt": None,
+        "completion_time_protocol": COMPLETION_TIME_PROTOCOL_DURABLE,
         "updated_at_dt": now,
         "question_sent_at": time.time(),
         "leaderboard_recorded": False,
@@ -362,6 +365,34 @@ def _stored_result(session: dict) -> dict:
     }
 
 
+def _completion_elapsed_seconds(session: dict) -> float:
+    """Return stable quiz duration, using durable completion time for new sessions."""
+    started_at = session.get("started_at_dt")
+    if not isinstance(started_at, datetime):
+        raise ValueError("Mini App session start time is invalid")
+
+    protocol = session.get("completion_time_protocol")
+    completed_at = session.get("completed_at_dt")
+    if protocol == COMPLETION_TIME_PROTOCOL_DURABLE:
+        if not isinstance(completed_at, datetime):
+            raise ValueError("durable Mini App completion time is missing")
+    elif protocol is None:
+        # Backward compatibility for already-running sessions created before the
+        # completion-time protocol existed. Prefer a durable timestamp if a
+        # transitional final answer wrote one; otherwise retain legacy behavior.
+        if completed_at is None:
+            completed_at = _now()
+        elif not isinstance(completed_at, datetime):
+            raise ValueError("legacy Mini App completion time is invalid")
+    else:
+        raise ValueError("unsupported Mini App completion time protocol")
+
+    elapsed = (completed_at - started_at).total_seconds()
+    if elapsed < 0:
+        raise ValueError("Mini App completion time predates session start")
+    return elapsed
+
+
 def _claim_or_resume_finalization(session: dict, sessions) -> dict | None:
     """Claim a fresh finalization or resume one interrupted after the claim."""
     if session.get("status") == "finished":
@@ -424,13 +455,13 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
 
     total = int(claimed.get("question_count") or len(claimed.get("questions", [])))
     score = int(claimed.get("correct_count", 0))
-    elapsed = max(0.0, (_now() - claimed["started_at_dt"]).total_seconds())
     uid = int(user["id"])
     username = user.get("username", "")
     first_name = user.get("first_name", "")
     result_id = str(claimed["_id"])
 
     try:
+        elapsed = _completion_elapsed_seconds(claimed)
         if claimed.get("is_challenge"):
             challenge_mode = claimed["stats_level_key"]
             receipt = apply_challenge_result_once(
@@ -604,6 +635,17 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
     ok = not timed_out and chosen == correct_index
     current_streak = int(session.get("current_streak", 0)) + 1 if ok else 0
     max_streak = max(int(session.get("max_streak", 0)), current_streak)
+    total = int(session.get("question_count") or len(questions))
+    answer_time = _now()
+    set_fields = {
+        "current_streak": current_streak,
+        "max_streak": max_streak,
+        "updated_at_dt": answer_time,
+        "question_sent_at": None,
+    }
+    if index + 1 >= total:
+        set_fields["completed_at_dt"] = answer_time
+        set_fields["completion_time_protocol"] = COMPLETION_TIME_PROTOCOL_DURABLE
 
     try:
         from pymongo import ReturnDocument
@@ -617,12 +659,7 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
             },
             {
                 "$inc": {"current_index": 1, "correct_count": 1 if ok else 0},
-                "$set": {
-                    "current_streak": current_streak,
-                    "max_streak": max_streak,
-                    "updated_at_dt": _now(),
-                    "question_sent_at": None,
-                },
+                "$set": set_fields,
                 "$push": {
                     "answered": {
                         "id": question["id"],
