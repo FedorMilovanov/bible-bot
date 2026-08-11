@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+CONTROLLER = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
 
 
 ANSWER_MARKERS = (
@@ -19,22 +20,14 @@ LIFECYCLE_MARKERS = (
 )
 
 
-def test_answer_authority_and_lifecycle_migrate_as_one_controller_boundary():
-    if not any(marker in BOT for marker in (*ANSWER_MARKERS, *LIFECYCLE_MARKERS)):
-        # The controller is still fully historical. The first marker from either
-        # side activates this cross-boundary contract: in-place restart and
-        # attempt-bound answer authority must never be deployed separately.
-        return
-
+def test_production_controller_migrates_answer_and_lifecycle_as_one_boundary():
     for marker in ANSWER_MARKERS:
-        assert marker in BOT
+        assert marker in CONTROLLER
     for marker in LIFECYCLE_MARKERS:
-        assert marker in BOT
+        assert marker in CONTROLLER
 
-    # Lifecycle-first is unsafe because atomic restart preserves the Mongo
-    # container id: an old blind answer/timer writer that knows only session_id
-    # could mutate the replacement attempt. Answer-first is unsafe because the
-    # historical global cancel/create paths can still erase completed evidence.
+    # The production controller must have exactly one state authority. Historical
+    # blind/global writers cannot coexist with attempt-bound answer/lifecycle CAS.
     for historical in (
         "advance_quiz_session(",
         "set_question_sent_at(",
@@ -43,4 +36,23 @@ def test_answer_authority_and_lifecycle_migrate_as_one_controller_boundary():
         "cancel_active_quiz_session(",
         "cancel_quiz_session(",
     ):
-        assert historical not in BOT
+        assert historical not in CONTROLLER
+
+
+def test_controller_does_not_delegate_quiz_state_back_to_legacy_handlers():
+    # Importing bot.py for presentation helpers is transitional; registering its
+    # historical quiz handlers would silently reintroduce a second controller.
+    forbidden_delegations = (
+        "legacy.quiz_inline_answer",
+        "legacy.challenge_inline_answer",
+        "legacy.send_question",
+        "legacy.send_challenge_question",
+        "legacy.resume_session_handler",
+        "legacy.restart_session_handler",
+        "legacy.cancel_session_handler",
+        "legacy.cancel_quiz_handler",
+        "legacy.show_results",
+        "legacy.show_challenge_results",
+    )
+    for marker in forbidden_delegations:
+        assert marker not in CONTROLLER
