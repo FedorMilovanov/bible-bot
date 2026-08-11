@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from legacy_attempt_finalize import finalize_challenge_result, finalize_normal_result
+from legacy_retry_policy import LegacyRetryPolicyInvalid, persisted_is_retry
 from legacy_session_recovery import (
     LegacyPersistedSessionModeInvalid,
     completed_result_inputs,
@@ -65,10 +66,11 @@ def finalize_completed_session(
     _assert_owner(session, user_id)
     _assert_recoverable_status(session)
     try:
+        is_retry = persisted_is_retry(session)
         recovered = completed_result_inputs(session)
-    except LegacyPersistedSessionModeInvalid as exc:
+    except (LegacyPersistedSessionModeInvalid, LegacyRetryPolicyInvalid) as exc:
         raise LegacyCompletedSessionEvidenceIncomplete(
-            "completed session has unsupported persisted quiz mode"
+            "completed session has unsupported persisted quiz policy"
         ) from exc
     if recovered is None:
         raise LegacyCompletedSessionEvidenceIncomplete(
@@ -76,6 +78,7 @@ def finalize_completed_session(
         )
 
     data = dict(recovered["data"])
+    data["is_retry"] = is_retry
     data["username"] = username or ""
     data["first_name"] = first_name or "Игрок"
     data["result_completed_at"] = recovered["completed_at"]
