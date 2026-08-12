@@ -23,17 +23,17 @@ _ADMIN_READ_ACTIONS = {
 def _admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔍 Сложные вопросы", callback_data="admin_hard_questions")],
-            [InlineKeyboardButton("👥 Активные сессии", callback_data="admin_active_sessions")],
-            [InlineKeyboardButton("🧹 Очистка данных", callback_data="admin_cleanup")],
-            [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast_prompt")],
+            [InlineKeyboardButton("Hard questions", callback_data="admin_hard_questions")],
+            [InlineKeyboardButton("Active sessions", callback_data="admin_active_sessions")],
+            [InlineKeyboardButton("Cleanup", callback_data="admin_cleanup")],
+            [InlineKeyboardButton("Broadcast", callback_data="admin_broadcast_prompt")],
         ]
     )
 
 
 def _admin_back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]
+        [[InlineKeyboardButton("Back", callback_data="admin_back")]]
     )
 
 
@@ -56,7 +56,7 @@ def _hard_questions_text() -> str:
     rows = legacy.get_hardest_questions(limit=10) or []
     if not isinstance(rows, list):
         rows = list(rows)
-    lines = ["Самые сложные вопросы (топ-10):"]
+    lines = ["Hardest questions (top 10):"]
     for index, item in enumerate(rows[:10], start=1):
         if not isinstance(item, dict):
             continue
@@ -64,21 +64,21 @@ def _hard_questions_text() -> str:
             item.get("question")
             or item.get("question_text")
             or item.get("_id")
-            or "Вопрос"
+            or "Question"
         ).replace("\n", " ")[:140]
         attempts = item.get("total_attempts", 0)
         correct = item.get("correct_attempts", item.get("correct_count", 0))
-        lines.append(f"{index}. {question}\nПопыток: {attempts}; верных: {correct}")
+        lines.append(f"{index}. {question}\nAttempts: {attempts}; correct: {correct}")
     if len(lines) == 1:
-        lines.append("Статистика пока пуста.")
+        lines.append("No statistics yet.")
     return "\n\n".join(lines)
 
 
 def _active_sessions_text() -> str:
-    lines = [f"Активных сессий в памяти: {len(legacy.user_data)}"]
+    lines = [f"Active in-memory sessions: {len(legacy.user_data)}"]
     for user_id, data in list(legacy.user_data.items())[:20]:
         if not isinstance(data, dict):
-            lines.append(f"{user_id}: поврежденная запись")
+            lines.append(f"{user_id}: malformed record")
             continue
         name = str(data.get("first_name", "?"))[:60]
         current = data.get("current_question", 0)
@@ -94,12 +94,12 @@ async def admin_read_callback(update, context):
     query = update.callback_query
     user_id = query.from_user.id
     if user_id != legacy.ADMIN_USER_ID:
-        await query.answer("Нет доступа.", show_alert=True)
+        await query.answer("Access denied.", show_alert=True)
         return
 
     action = query.data
     if action not in _ADMIN_READ_ACTIONS:
-        await query.answer("Недопустимое действие.", show_alert=True)
+        await query.answer("Unsupported action.", show_alert=True)
         return
 
     await query.answer()
@@ -119,13 +119,13 @@ async def admin_read_callback(update, context):
 
     if action == "admin_broadcast_prompt":
         await query.edit_message_text(
-            "Рассылка\n\nОтправь команду: /broadcast Текст сообщения",
+            "Broadcast\n\nSend: /broadcast MESSAGE",
             reply_markup=_admin_back_keyboard(),
         )
         return
 
     await query.edit_message_text(
-        "Админ-панель",
+        "Admin panel",
         reply_markup=_admin_menu_keyboard(),
     )
 
@@ -136,13 +136,13 @@ async def admin_cleanup(update, context):
     query = update.callback_query
     user_id = query.from_user.id
     if user_id != legacy.ADMIN_USER_ID:
-        await query.answer("Нет доступа.", show_alert=True)
+        await query.answer("Access denied.", show_alert=True)
         return
 
     try:
         deleted_battles = cleanup_stale_waiting_battles(max_age_minutes=10)
     except LegacyBattleCleanupUnavailable:
-        await query.answer("База битв временно недоступна.", show_alert=True)
+        await query.answer("Battle storage is temporarily unavailable.", show_alert=True)
         return
 
     now = time.time()
@@ -152,9 +152,8 @@ async def admin_cleanup(update, context):
 
     await query.answer()
     await query.edit_message_text(
-        "🧹 *Очистка выполнена*\n\n"
-        f"⚔️ Безопасно удалено pre-progress битв: *{deleted_battles}*\n"
-        f"🧠 Удалено записей user_data: *{len(stale)}*",
-        parse_mode="Markdown",
+        "Cleanup completed\n\n"
+        f"Safely deleted pre-progress battles: {deleted_battles}\n"
+        f"Removed user_data records: {len(stale)}",
         reply_markup=_admin_back_keyboard(),
     )
