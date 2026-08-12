@@ -8,17 +8,23 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 RENDER = (ROOT / "render.yaml").read_text(encoding="utf-8")
+ENTRYPOINT = (ROOT / "production_entrypoint.py").read_text(encoding="utf-8")
 PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 QUIZ = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
 
 
-def test_runtime_surfaces_run_explicit_production_composition_root():
-    assert 'CMD ["python", "telegram_production.py"]' in DOCKERFILE
+def test_runtime_surfaces_run_safe_bootstrap_into_production_composition_root():
+    assert 'CMD ["python", "production_entrypoint.py"]' in DOCKERFILE
     assert 'CMD ["python", "bot.py"]' not in DOCKERFILE
     assert 'CMD ["python", "telegram_controller.py"]' not in DOCKERFILE
-    assert "startCommand: python telegram_production.py" in RENDER
+    assert "startCommand: python production_entrypoint.py" in RENDER
     assert "startCommand: python bot.py" not in RENDER
     assert "startCommand: python telegram_controller.py" not in RENDER
+    assert "configure_production_logging()" in ENTRYPOINT
+    assert "from telegram_production import main" in ENTRYPOINT
+    assert ENTRYPOINT.index("configure_production_logging()") < ENTRYPOINT.index(
+        "from telegram_production import main"
+    )
 
 
 def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
