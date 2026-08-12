@@ -22,6 +22,7 @@ import telegram_report_controller as reports
 import telegram_retry_controller as retry
 from legacy_session_access import ensure_active_session_unique_index
 from web_api.db_hardening import MiniAppIndexSafetyUnavailable, ensure_miniapp_indexes
+from web_api.telegram_transport import run_telegram_application
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,10 @@ def main() -> None:
 
     app.add_error_handler(legacy.on_error)
     logger.info("Production Telegram composition root started")
-    app.run_polling()
+    run_telegram_application(
+        app,
+        webhook_before_shutdown=quiz._save_all_sessions,
+    )
 
 
 if __name__ == "__main__":
