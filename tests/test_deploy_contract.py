@@ -61,7 +61,13 @@ def test_render_uses_webhook_transport_and_separate_body_limits():
 
 def test_production_controller_uses_configurable_transport_with_webhook_shutdown_hook():
     source = read("telegram_production.py")
-    assert "from web_api.telegram_transport import run_telegram_application" in source
+    assert "from web_api.telegram_transport import (" in source
+    assert "run_telegram_application," in source
+    assert "validate_telegram_transport_configuration," in source
+    assert "validate_telegram_transport_configuration()" in source
+    assert source.index("validate_telegram_transport_configuration()") < source.index(
+        "keep_alive()"
+    )
     assert "run_telegram_application(" in source
     assert "webhook_before_shutdown=quiz._save_all_sessions" in source
     assert "app.run_polling()" not in source
