@@ -295,7 +295,7 @@ async def broadcast_command(update, context):
     except (BroadcastStoreUnavailable, ValueError):
         logger.warning("durable broadcast acceptance failed for admin %s", user.id, exc_info=True)
         await message.reply_text(
-            "⚠️ Статус рассылки пока не подтвержден. Не создавай новую команду; повтори позже."
+            "Broadcast status is unknown. Do not create a new command; retry this command later."
         )
         return
 
