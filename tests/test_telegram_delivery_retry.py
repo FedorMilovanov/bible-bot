@@ -3,10 +3,13 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from telegram.error import RetryAfter
+from telegram.error import BadRequest, Forbidden, RetryAfter
 
 import telegram_delivery_retry as retry
-from legacy_delivery_worker import LegacyDeliveryDeferred
+from legacy_delivery_worker import (
+    LegacyDeliveryDeferred,
+    LegacyDeliveryPermanentFailure,
+)
 
 
 def run(coro):
@@ -43,6 +46,20 @@ def test_sender_retry_after_becomes_generic_durable_defer_signal():
     assert calls == ["payload"]
     assert caught.value.delay_seconds == 300.0
     assert "RetryAfter" in caught.value.detail
+
+
+@pytest.mark.parametrize(
+    "error",
+    [Forbidden("blocked"), BadRequest("invalid payload")],
+)
+def test_terminal_telegram_errors_become_permanent_failure_signal(error):
+    async def sender():
+        raise error
+
+    with pytest.raises(LegacyDeliveryPermanentFailure) as caught:
+        run(retry.send_with_durable_retry_after(sender))
+
+    assert type(error).__name__ in caught.value.detail
 
 
 def test_non_rate_limit_sender_error_passes_through_unchanged():
