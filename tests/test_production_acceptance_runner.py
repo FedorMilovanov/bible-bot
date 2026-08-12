@@ -1,8 +1,14 @@
-from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
 from scripts import run_production_acceptance as acceptance
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ACCEPTANCE_DOC = (ROOT / "docs" / "PRODUCTION_ACCEPTANCE.md").read_text(
+    encoding="utf-8"
+)
 
 
 def test_combine_codes_prefers_unavailable_over_unsafe():
@@ -45,11 +51,20 @@ def test_http_contracts_require_exact_ready_and_revision(monkeypatch):
         "/telegram/ready": {"status": "ready", "transport": "webhook"},
         "/meta": {"revision": sha},
     }
-    monkeypatch.setattr(acceptance, "_fetch_json", lambda _origin, path: payloads[path])
+    monkeypatch.setattr(
+        acceptance,
+        "_fetch_json",
+        lambda _origin, path: payloads[path],
+    )
 
     results = acceptance._http_contracts()
     assert acceptance._combine_codes(results) == acceptance.SAFE
-    assert {item.name for item in results} == {"/live", "/ready", "/telegram/ready", "/meta"}
+    assert {item.name for item in results} == {
+        "/live",
+        "/ready",
+        "/telegram/ready",
+        "/meta",
+    }
 
 
 def test_http_contracts_reject_old_deployed_revision(monkeypatch):
@@ -81,13 +96,19 @@ def test_postdeploy_rejects_retention_bootstrap_pending(monkeypatch):
 
     def run_script(path):
         if path.endswith("check_retention_indexes.py"):
-            return acceptance.CheckResult(path, acceptance.SAFE, '{"ok": true, "bootstrap_pending": ["x"]}')
+            return acceptance.CheckResult(
+                path,
+                acceptance.SAFE,
+                '{"ok": true, "bootstrap_pending": ["x"]}',
+            )
         return acceptance.CheckResult(path, acceptance.SAFE, "SAFE")
 
     monkeypatch.setattr(acceptance, "_run_script", run_script)
     code, results = acceptance.run_postdeploy()
     assert code == acceptance.UNSAFE
-    retention = next(item for item in results if item.name.endswith("check_retention_indexes.py"))
+    retention = next(
+        item for item in results if item.name.endswith("check_retention_indexes.py")
+    )
     assert retention.code == acceptance.UNSAFE
     assert "bootstrap_pending" in retention.detail
 
@@ -103,3 +124,15 @@ def test_run_predeploy_executes_all_five_read_only_checks(monkeypatch):
     code, _results = acceptance.run_predeploy()
     assert code == acceptance.SAFE
     assert tuple(seen) == acceptance.PREDEPLOY_SCRIPTS
+
+
+def test_acceptance_document_keeps_both_phases_and_exact_revision_gate():
+    required = (
+        "run_production_acceptance.py predeploy",
+        "run_production_acceptance.py postdeploy",
+        "EXPECTED_DEPLOY_SHA",
+        "/telegram/ready",
+        "100% accepted",
+    )
+    for marker in required:
+        assert marker in ACCEPTANCE_DOC
