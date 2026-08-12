@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_VERSION = "3.11.15"
+PRODUCTION_ENTRYPOINT = "production_entrypoint.py"
 PRODUCTION_CONTROLLER = "telegram_production.py"
 
 
@@ -20,8 +21,8 @@ def test_python_version_is_consistent_across_runtime_surfaces():
 def test_single_process_start_contract_is_consistent():
     render = read("render.yaml")
     docker = read("Dockerfile")
-    assert f"startCommand: python {PRODUCTION_CONTROLLER}" in render
-    assert f'CMD ["python", "{PRODUCTION_CONTROLLER}"]' in docker
+    assert f"startCommand: python {PRODUCTION_ENTRYPOINT}" in render
+    assert f'CMD ["python", "{PRODUCTION_ENTRYPOINT}"]' in docker
     assert "startCommand: python bot.py" not in render
     assert 'CMD ["python", "bot.py"]' not in docker
     assert "startCommand: python telegram_controller.py" not in render
@@ -30,9 +31,19 @@ def test_single_process_start_contract_is_consistent():
     assert "numInstances: 1" in render
 
 
-def test_readme_documents_same_production_entrypoint_and_preflight_runbook():
+def test_production_entrypoint_configures_logging_before_controller_import():
+    source = read(PRODUCTION_ENTRYPOINT)
+    assert "from production_logging import configure_production_logging" in source
+    assert "configure_production_logging()" in source
+    assert "from telegram_production import main" in source
+    assert source.index("configure_production_logging()") < source.index(
+        "from telegram_production import main"
+    )
+
+
+def test_readme_documents_bootstrap_and_composition_root():
     readme = read("README.md")
-    assert "python telegram_production.py" in readme
+    assert "python production_entrypoint.py" in readme
     assert "python bot.py" not in readme
     assert "docs/DEPLOYMENT_PREFLIGHTS.md" in readme
     assert "telegram_production.py` — единственный production Telegram composition root" in readme
@@ -61,7 +72,7 @@ def test_render_uses_webhook_transport_and_separate_body_limits():
 
 
 def test_production_controller_uses_configurable_transport_with_webhook_shutdown_hook():
-    source = read("telegram_production.py")
+    source = read(PRODUCTION_CONTROLLER)
     assert "from web_api.telegram_transport import (" in source
     assert "run_telegram_application," in source
     assert "validate_telegram_transport_configuration," in source
@@ -112,7 +123,7 @@ def test_docker_context_excludes_local_secrets_and_dev_tree():
 
 def test_production_requires_ptb_job_queue_for_recovery_jobs():
     requirements = read("requirements.txt")
-    source = read("telegram_production.py")
+    source = read(PRODUCTION_CONTROLLER)
     assert "python-telegram-bot[job-queue]==20.7" in requirements
     assert "if app.job_queue is None:" in source
     assert "if app.job_queue is not None:" not in source
@@ -122,7 +133,7 @@ def test_production_requires_ptb_job_queue_for_recovery_jobs():
 
 
 def test_broadcast_storage_is_strictly_safe_before_http_and_legacy_writer_is_not_registered():
-    source = read("telegram_production.py")
+    source = read(PRODUCTION_CONTROLLER)
     safety = read("broadcast_index_safety.py")
     assert "from broadcast_index_safety import ensure_broadcast_indexes" in source
     assert "from broadcast_integrity import ensure_broadcast_indexes" not in source
