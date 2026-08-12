@@ -44,6 +44,7 @@ def test_deployment_runbook_includes_executable_telegram_webhook_check():
     assert "GET /telegram/ready" in runbook
     assert "getWebhookInfo" in runbook
     assert "setWebhook" in runbook  # appears only in the explicit non-mutation warning
+    assert "bootstrap_pending" in runbook
 
 
 def test_render_uses_webhook_transport_and_separate_body_limits():
@@ -120,11 +121,15 @@ def test_production_requires_ptb_job_queue_for_recovery_jobs():
     assert "battles.battle_maintenance_job" in source
 
 
-def test_broadcast_storage_is_ready_before_http_and_legacy_writer_is_not_registered():
+def test_broadcast_storage_is_strictly_safe_before_http_and_legacy_writer_is_not_registered():
     source = read("telegram_production.py")
-    assert "from broadcast_integrity import ensure_broadcast_indexes" in source
+    safety = read("broadcast_index_safety.py")
+    assert "from broadcast_index_safety import ensure_broadcast_indexes" in source
+    assert "from broadcast_integrity import ensure_broadcast_indexes" not in source
     assert "ensure_broadcast_indexes()" in source
     assert source.index("ensure_broadcast_indexes()") < source.index("keep_alive()")
+    assert "unrecognized TTL index" in safety
+    assert ".drop_index(" not in safety
     assert 'CommandHandler("broadcast", broadcasts.broadcast_command)' in source
     assert 'CommandHandler("broadcast", legacy.broadcast_command)' not in source
 
