@@ -10,6 +10,7 @@ rather than being released immediately, reducing duplicate-send risk.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -45,10 +46,10 @@ class LegacyDeliveryDeferred(RuntimeError):
 
     def __init__(self, delay_seconds: float, detail: str = ""):
         if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, (int, float)):
-            raise ValueError("delay_seconds must be a positive number")
+            raise ValueError("delay_seconds must be a positive finite number")
         delay = float(delay_seconds)
-        if delay <= 0:
-            raise ValueError("delay_seconds must be a positive number")
+        if not math.isfinite(delay) or delay <= 0:
+            raise ValueError("delay_seconds must be a positive finite number")
         self.delay_seconds = delay
         self.detail = str(detail or "")[:500]
         super().__init__(self.detail or f"delivery deferred for {delay:g} seconds")
