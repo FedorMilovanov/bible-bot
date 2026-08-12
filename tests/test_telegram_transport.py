@@ -62,6 +62,42 @@ def test_transport_defaults_to_polling(monkeypatch):
     assert telegram_transport.telegram_transport_mode() == "polling"
 
 
+def test_polling_configuration_does_not_require_webhook_ingress(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "polling")
+    monkeypatch.setenv("DISABLE_WEB_SERVER", "true")
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("RENDER_EXTERNAL_URL", raising=False)
+    assert telegram_transport.validate_telegram_transport_configuration() == "polling"
+
+
+def test_webhook_configuration_requires_enabled_http_ingress(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "webhook")
+    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_BASE_URL", "https://example.com")
+    monkeypatch.setenv("DISABLE_WEB_SERVER", "true")
+    with pytest.raises(
+        telegram_transport.TransportConfigurationError,
+        match="DISABLE_WEB_SERVER",
+    ):
+        telegram_transport.validate_telegram_transport_configuration()
+
+    monkeypatch.setenv("DISABLE_WEB_SERVER", "false")
+    assert telegram_transport.validate_telegram_transport_configuration() == "webhook"
+
+
+def test_webhook_configuration_validates_origin_before_startup(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "webhook")
+    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
+    monkeypatch.setenv("DISABLE_WEB_SERVER", "false")
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("RENDER_EXTERNAL_URL", raising=False)
+    with pytest.raises(
+        telegram_transport.TransportConfigurationError,
+        match="RENDER_EXTERNAL_URL",
+    ):
+        telegram_transport.validate_telegram_transport_configuration()
+
+
 def test_polling_mode_delegates_without_manual_webhook_shutdown(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TRANSPORT", "polling")
     events = []
