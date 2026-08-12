@@ -120,6 +120,26 @@ def telegram_webhook_max_connections() -> int:
     return value
 
 
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_telegram_transport_configuration() -> str:
+    """Validate transport-specific startup requirements without side effects."""
+    mode = telegram_transport_mode()
+    if mode == "polling":
+        return mode
+
+    if _env_truthy("DISABLE_WEB_SERVER"):
+        raise TransportConfigurationError(
+            "DISABLE_WEB_SERVER cannot be enabled when TELEGRAM_TRANSPORT=webhook"
+        )
+    telegram_webhook_url()
+    telegram_webhook_secret()
+    telegram_webhook_max_connections()
+    return mode
+
+
 class TelegramWebhookBridge:
     """Thread-safe bridge from Waitress threads to PTB's asyncio update queue."""
 
@@ -302,7 +322,7 @@ async def _run_webhook_application(
 
 def run_telegram_application(application, *, webhook_before_shutdown=None) -> None:
     """Run configured transport without changing the registered handler graph."""
-    mode = telegram_transport_mode()
+    mode = validate_telegram_transport_configuration()
     if mode == "polling":
         application.run_polling()
         return
