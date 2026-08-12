@@ -85,6 +85,40 @@ def _replay_broadcast(
     return stored, recipients
 
 
+def _accept_or_recover_new_broadcast(
+    *,
+    broadcast_id: str,
+    admin_id: int,
+    admin_chat_id: int,
+    text: str,
+) -> tuple[dict, bool, list[int] | list[str]]:
+    """Accept once, then read back deterministic id after an ambiguous write error."""
+    recipients = _recipient_ids_strict()
+    try:
+        stored, created = accept_broadcast_once(
+            broadcast_id=broadcast_id,
+            admin_id=admin_id,
+            admin_chat_id=admin_chat_id,
+            text=text,
+            recipient_ids=recipients,
+        )
+        return stored, created, recipients
+    except BroadcastStoreUnavailable:
+        # A network/write acknowledgement can be lost after Mongo persisted the
+        # deterministic parent id. Never retry the insert blindly: one read-back
+        # either proves the immutable parent or preserves the fail-closed result.
+        recovered = get_broadcast(broadcast_id)
+        if not isinstance(recovered, dict):
+            raise
+        stored, persisted_recipients = _replay_broadcast(
+            recovered,
+            admin_id=admin_id,
+            admin_chat_id=admin_chat_id,
+            text=text,
+        )
+        return stored, False, persisted_recipients
+
+
 def _retry_after_seconds(exc: RetryAfter) -> float:
     value = exc.retry_after
     if isinstance(value, timedelta):
@@ -284,13 +318,11 @@ async def broadcast_command(update, context):
             )
             created = False
         else:
-            recipients = _recipient_ids_strict()
-            stored, created = accept_broadcast_once(
+            stored, created, recipients = _accept_or_recover_new_broadcast(
                 broadcast_id=broadcast_id,
                 admin_id=user.id,
                 admin_chat_id=message.chat_id,
                 text=text,
-                recipient_ids=recipients,
             )
     except (BroadcastStoreUnavailable, ValueError):
         logger.warning("durable broadcast acceptance failed for admin %s", user.id, exc_info=True)
