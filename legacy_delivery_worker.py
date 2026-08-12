@@ -2,9 +2,11 @@
 
 The module knows nothing about Telegram handlers or application lifecycle. A
 caller injects the actual send coroutine. Storage decides ownership, lease and
-acknowledgement; sender failures release the lease for retry. If delivery was
-accepted remotely but Mongo acknowledgement later fails, the lease is left to
-expire rather than being released immediately, reducing duplicate-send risk.
+acknowledgement. Ordinary sender failures release the lease for retry; an
+explicit LegacyDeliveryDeferred signal preserves the requested future retry in
+Mongo without keeping a process-local claim alive. If delivery was accepted
+remotely but Mongo acknowledgement later fails, the lease is left to expire
+rather than being released immediately, reducing duplicate-send risk.
 """
 from __future__ import annotations
 
@@ -15,6 +17,10 @@ from battle_integrity import (
     claim_battle_result_delivery,
     mark_battle_result_delivered,
     release_battle_result_delivery,
+)
+from legacy_delivery_defer import (
+    defer_battle_result_delivery,
+    defer_report_delivery_stage,
 )
 from legacy_report_delivery_migration import (
     claim_report_delivery_stage_compatible as claim_report_delivery_stage,
@@ -32,6 +38,20 @@ class LegacyDeliveryStateInvalid(RuntimeError):
 
 class LegacyDeliveryAcknowledgementPending(RuntimeError):
     """Remote send completed but durable acknowledgement did not."""
+
+
+class LegacyDeliveryDeferred(RuntimeError):
+    """Sender requests a durable future retry instead of immediate release."""
+
+    def __init__(self, delay_seconds: float, detail: str = ""):
+        if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, (int, float)):
+            raise ValueError("delay_seconds must be a positive number")
+        delay = float(delay_seconds)
+        if delay <= 0:
+            raise ValueError("delay_seconds must be a positive number")
+        self.delay_seconds = delay
+        self.detail = str(detail or "")[:500]
+        super().__init__(self.detail or f"delivery deferred for {delay:g} seconds")
 
 
 async def deliver_battle_recipient_once(
@@ -53,6 +73,18 @@ async def deliver_battle_recipient_once(
 
     try:
         await sender(battle, role)
+    except LegacyDeliveryDeferred as exc:
+        if not defer_battle_result_delivery(
+            battle_id,
+            user_id,
+            token,
+            delay_seconds=exc.delay_seconds,
+            error=exc.detail or str(exc),
+        ):
+            raise LegacyDeliveryAcknowledgementPending(
+                "battle result deferral could not be acknowledged"
+            ) from exc
+        return False
     except Exception as exc:
         release_battle_result_delivery(
             battle_id,
@@ -96,6 +128,18 @@ async def _deliver_report_stage_once(
 
     try:
         await sender(report)
+    except LegacyDeliveryDeferred as exc:
+        if not defer_report_delivery_stage(
+            report_id,
+            stage,
+            token,
+            delay_seconds=exc.delay_seconds,
+            error=exc.detail or str(exc),
+        ):
+            raise LegacyDeliveryAcknowledgementPending(
+                f"report {stage} deferral could not be acknowledged"
+            ) from exc
+        return False
     except Exception as exc:
         release_report_delivery_stage(
             report_id,
@@ -126,8 +170,8 @@ async def deliver_report_once(
                 "report disappeared while checking photo delivery state"
             )
         if photo_state.get("delivered") is not True:
-            # A different worker may currently own the photo lease. Do not let
-            # this worker overtake it and send text before photo is durably acked.
+            # A different worker may currently own the photo lease, or this
+            # stage may have been durably deferred. Do not overtake either case.
             return False, False
 
     text = await _deliver_report_stage_once(report_id, "text", text_sender)
