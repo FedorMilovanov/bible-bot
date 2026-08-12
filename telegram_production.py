@@ -39,7 +39,7 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
-from broadcast_integrity import ensure_broadcast_indexes  # noqa: E402
+from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
 from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
 from web_api.db_hardening import (  # noqa: E402
     MiniAppIndexSafetyUnavailable,
