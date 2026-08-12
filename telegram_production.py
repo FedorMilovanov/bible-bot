@@ -39,6 +39,7 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
+import telegram_settings_controller as settings  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
 from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
 from web_api.db_hardening import (  # noqa: E402
@@ -194,10 +195,16 @@ def main() -> None:
             pattern="^cat_lb_",
         )
     )
-    app.add_handler(CallbackQueryHandler(legacy.user_settings_handler, pattern="^user_settings$"))
+    app.add_handler(CallbackQueryHandler(settings.user_settings_handler, pattern="^user_settings$"))
     app.add_handler(
         CallbackQueryHandler(
-            legacy.toggle_typewriter_handler,
+            settings.set_typewriter_handler,
+            pattern=r"^typewriter_set:[01]$",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            settings.legacy_toggle_upgrade_handler,
             pattern="^toggle_typewriter$",
         )
     )
