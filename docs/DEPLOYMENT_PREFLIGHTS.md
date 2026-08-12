@@ -1,10 +1,10 @@
 # Deployment preflights
 
-Run these checks from an **authorized environment that already has the production `MONGO_URL`** before changing draft/merge/deploy state. These commands are intentionally read-only: they inspect production state and return a decision signal, but they do not choose winners, delete duplicate rows, or create/drop/replace indexes.
+Run the Mongo checks from an **authorized environment that already has the production `MONGO_URL`** before changing draft/merge/deploy state. These commands are intentionally read-only: they inspect production state and return a decision signal, but they do not choose winners, delete duplicate rows, or create/drop/replace indexes.
 
 ## Exit codes
 
-All preflight commands use the same operational convention:
+All Mongo preflight commands use the same operational convention:
 
 - `0` — the inspected contract is safe for the check;
 - `1` — MongoDB was reachable, but the inspected data/index/storage contract is unsafe and requires operator review;
@@ -91,14 +91,61 @@ Measures the largest leaderboard user documents with Mongo `$bsonSize`, counts e
 
 This is a capacity/readiness check, not a cleanup command. Do not delete old idempotency receipts merely to make the report smaller: those receipts are what prevent replayed results from minting points twice.
 
-## Deployment gate
+## Code/deployment gate
 
-Do not move the stacked PRs out of draft or enable deploy solely because CI is green. Before deployment, require:
+Before deployment, require:
 
 1. both duplicate preflights exit `0`;
 2. the session unique-index preflight exits `0` after any explicitly reviewed index migration;
 3. the retention preflight exits `0`;
 4. the BSON/storage-growth preflight has no warning or malformed-map result requiring investigation;
-5. the current PR head still passes CI, Security Audit, and CodeQL after any migration-related code change.
+5. the current PR head passes CI, Security Audit, and CodeQL after any migration-related code change;
+6. `render.yaml` still declares `numInstances: 1`, `TELEGRAM_TRANSPORT=webhook`, `TELEGRAM_WEBHOOK_MAX_CONNECTIONS=1`, and `autoDeploy: false`.
 
-Production startup also re-verifies safety-critical session indexes before Telegram polling begins. That runtime fail-fast boundary is a backstop, not a substitute for running these preflights before rollout.
+Production startup re-verifies safety-critical session indexes before Telegram transport begins. That runtime fail-fast boundary is a backstop, not a substitute for running these preflights before rollout.
+
+## Webhook rollout verification
+
+Render production uses the existing Waitress server for `POST /telegram/webhook`; no PTB webhook server or self-ping keepalive is used. Polling remains the explicit rollback transport.
+
+After the first authorized deploy:
+
+1. Confirm `GET /live` returns success.
+2. Confirm `GET /ready` reports Mongo ready.
+3. Inspect Telegram `getWebhookInfo` from an authorized environment holding `BOT_TOKEN` and verify:
+   - URL ends with `/telegram/webhook` on the expected Render HTTPS origin;
+   - `max_connections` is `1`;
+   - `allowed_updates` contains only `message` and `callback_query`;
+   - `pending_update_count` is not growing continuously;
+   - `last_error_message` is absent or not current.
+4. Exercise `/start`, normal quiz answers, timed/speed answer timeout, Challenge 20, retry-errors, report submission, PvP create/share/deep-link/join/finish, `/status`, restart and cancel.
+5. Verify report/PvP delivery recovery after a controlled application restart.
+6. Let the Free Render service become idle long enough to spin down, then send a Telegram update. The first webhook request may encounter cold-start unavailability; the service must wake and Telegram must retry until it receives a 2xx response. Verify the update is eventually processed exactly through the hardened production handler graph.
+7. Re-check `getWebhookInfo` after the cold-start test for pending updates or a current delivery error.
+
+Do not treat a successful `/live` alone as proof that Telegram ingress or Mongo authority works.
+
+## Polling rollback
+
+If webhook delivery itself must be isolated during an incident, change only the transport configuration to:
+
+```text
+TELEGRAM_TRANSPORT=polling
+```
+
+and redeploy the **same** application code. PTB polling is retained specifically as rollback and uses the same production handlers/state authority. Do not re-enable legacy `bot.py` as the launcher.
+
+After rollback, verify `/start`, one quiz answer, `/status`, report flow and one PvP action. When returning to webhook mode, repeat `getWebhookInfo` verification above.
+
+## No automatic repair
+
+None of these checks or rollout steps is permission to:
+
+- choose an arbitrary duplicate session winner;
+- delete unfinished/finalizing/score-error evidence;
+- drop an incompatible unique guard during a rolling deploy;
+- clear non-evicting scoring receipts merely to shrink BSON;
+- create a self-ping/keepalive loop to defeat hosting sleep behavior;
+- paste production secrets into CI logs, PR comments or chat.
+
+Any production data/index migration requires an explicit reviewed plan, followed by all five Mongo preflights again.
