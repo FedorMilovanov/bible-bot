@@ -58,6 +58,31 @@ def _recipient_ids_strict() -> list[int]:
         raise BroadcastStoreUnavailable("broadcast recipient snapshot failed") from exc
 
 
+def _replay_broadcast(
+    stored: dict,
+    *,
+    admin_id: int,
+    admin_chat_id: int,
+    text: str,
+) -> tuple[dict, list[str]]:
+    """Validate one already accepted immutable command without resnapshotting users."""
+    if (
+        stored.get("admin_id") != str(admin_id)
+        or stored.get("admin_chat_id") != str(admin_chat_id)
+        or stored.get("text") != text
+    ):
+        raise BroadcastStoreUnavailable(
+            "broadcast update id is bound to different immutable content"
+        )
+    recipients = stored.get("recipient_ids")
+    if not isinstance(recipients, list) or not all(
+        isinstance(value, str) and value.isdigit() and int(value) > 0
+        for value in recipients
+    ):
+        raise BroadcastStoreUnavailable("durable broadcast recipient snapshot is invalid")
+    return ensure_broadcast_fanout(stored), recipients
+
+
 def _retry_after_seconds(exc: RetryAfter) -> float:
     value = exc.retry_after
     if isinstance(value, timedelta):
@@ -247,14 +272,24 @@ async def broadcast_command(update, context):
 
     try:
         broadcast_id = broadcast_id_for_update(update.update_id)
-        recipients = _recipient_ids_strict()
-        stored, created = accept_broadcast_once(
-            broadcast_id=broadcast_id,
-            admin_id=user.id,
-            admin_chat_id=message.chat_id,
-            text=text,
-            recipient_ids=recipients,
-        )
+        existing = get_broadcast(broadcast_id)
+        if isinstance(existing, dict):
+            stored, recipients = _replay_broadcast(
+                existing,
+                admin_id=user.id,
+                admin_chat_id=message.chat_id,
+                text=text,
+            )
+            created = False
+        else:
+            recipients = _recipient_ids_strict()
+            stored, created = accept_broadcast_once(
+                broadcast_id=broadcast_id,
+                admin_id=user.id,
+                admin_chat_id=message.chat_id,
+                text=text,
+                recipient_ids=recipients,
+            )
     except (BroadcastStoreUnavailable, ValueError):
         logger.warning("durable broadcast acceptance failed for admin %s", user.id, exc_info=True)
         await message.reply_text(
