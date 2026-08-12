@@ -58,6 +58,33 @@ def test_battle_sender_failure_releases_for_retry(monkeypatch):
     assert "telegram down" in released[0][1]["error"]
 
 
+def test_battle_defer_persists_future_retry_without_release(monkeypatch):
+    deferred = []
+    monkeypatch.setattr(
+        worker,
+        "claim_battle_result_delivery",
+        lambda *_: {"battle": {"_id": "b1"}, "role": "creator", "claim_token": "tok"},
+    )
+    monkeypatch.setattr(
+        worker,
+        "defer_battle_result_delivery",
+        lambda *args, **kwargs: deferred.append((args, kwargs)) or True,
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_battle_result_delivery",
+        lambda *_args, **_kwargs: pytest.fail("durable defer must not release lease"),
+    )
+
+    async def sender(_battle, _role):
+        raise worker.LegacyDeliveryDeferred(300, "rate limited")
+
+    assert run(worker.deliver_battle_recipient_once("b1", 10, sender)) is False
+    assert deferred == [
+        (("b1", 10, "tok"), {"delay_seconds": 300.0, "error": "rate limited"})
+    ]
+
+
 def test_battle_ack_failure_does_not_immediately_release(monkeypatch):
     released = []
     monkeypatch.setattr(
@@ -211,6 +238,45 @@ def test_report_sender_failure_releases_only_failed_stage(monkeypatch):
     with pytest.raises(RuntimeError, match="photo failed"):
         run(worker.deliver_report_once("r1", photo_sender, text_sender))
     assert released[0][0][:3] == ("r1", "photo", "photo-tok")
+
+
+def test_report_defer_persists_stage_pause_and_does_not_overtake_photo(monkeypatch):
+    report = {"_id": "r1", "photo_file_id": "photo"}
+    deferred = []
+    stage_state = {"delivered": False}
+
+    def claim(_rid, stage):
+        if stage == "photo":
+            return {"report": report, "stage": stage, "claim_token": "photo-tok"}
+        pytest.fail("text must not be claimed while photo is deferred")
+
+    monkeypatch.setattr(worker, "claim_report_delivery_stage", claim)
+    monkeypatch.setattr(
+        worker,
+        "defer_report_delivery_stage",
+        lambda *args, **kwargs: deferred.append((args, kwargs)) or True,
+    )
+    monkeypatch.setattr(
+        worker,
+        "get_report_delivery_stage_state",
+        lambda _rid, _stage: stage_state,
+    )
+    monkeypatch.setattr(
+        worker,
+        "release_report_delivery_stage",
+        lambda *_args, **_kwargs: pytest.fail("durable defer must not release lease"),
+    )
+
+    async def photo_sender(_report):
+        raise worker.LegacyDeliveryDeferred(180, "rate limited")
+
+    async def text_sender(_report):
+        pytest.fail("text must not send while photo is deferred")
+
+    assert run(worker.deliver_report_once("r1", photo_sender, text_sender)) == (False, False)
+    assert deferred == [
+        (("r1", "photo", "photo-tok"), {"delay_seconds": 180.0, "error": "rate limited"})
+    ]
 
 
 def test_photo_stage_without_durable_file_id_fails_closed(monkeypatch):
