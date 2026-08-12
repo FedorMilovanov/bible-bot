@@ -87,11 +87,18 @@ def test_admin_command_uses_update_id_and_durable_recipient_snapshot(monkeypatch
     monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
     monkeypatch.setattr(broadcasts, "get_broadcast", lambda _broadcast_id: None)
     monkeypatch.setattr(broadcasts, "_recipient_ids_strict", lambda: [10, 20])
+    monkeypatch.setattr(
+        broadcasts,
+        "ensure_broadcast_fanout",
+        lambda _stored: (_ for _ in ()).throw(
+            AssertionError("command acceptance must not materialize fanout")
+        ),
+    )
     captured = []
 
     def accept(**kwargs):
         captured.append(kwargs)
-        return ({"recipient_count": 2}, True)
+        return ({"recipient_count": 2, "fanout_ready": False}, True)
 
     monkeypatch.setattr(broadcasts, "accept_broadcast_once", accept)
     update = Update(update_id=77, text="/broadcast Important news")
@@ -119,7 +126,7 @@ def test_same_update_replay_uses_stored_snapshot_without_resnapshotting_users(mo
         "text": "Important news",
         "recipient_ids": ["10", "20"],
         "recipient_count": 2,
-        "fanout_ready": True,
+        "fanout_ready": False,
     }
     monkeypatch.setattr(broadcasts, "get_broadcast", lambda _broadcast_id: existing)
     monkeypatch.setattr(
@@ -132,7 +139,13 @@ def test_same_update_replay_uses_stored_snapshot_without_resnapshotting_users(mo
         "accept_broadcast_once",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("replay must not reaccept")),
     )
-    monkeypatch.setattr(broadcasts, "ensure_broadcast_fanout", lambda stored: stored)
+    monkeypatch.setattr(
+        broadcasts,
+        "ensure_broadcast_fanout",
+        lambda _stored: (_ for _ in ()).throw(
+            AssertionError("replay acknowledgement must not depend on fanout")
+        ),
+    )
     update = Update(update_id=77, text="/broadcast Important news")
 
     run(broadcasts.broadcast_command(update, object()))
@@ -149,15 +162,14 @@ def test_same_update_replay_rejects_different_immutable_content(monkeypatch):
         "text": "Original",
         "recipient_ids": ["10"],
         "recipient_count": 1,
-        "fanout_ready": True,
+        "fanout_ready": False,
     }
     monkeypatch.setattr(broadcasts, "get_broadcast", lambda _broadcast_id: existing)
-    monkeypatch.setattr(broadcasts, "ensure_broadcast_fanout", lambda stored: stored)
     update = Update(update_id=77, text="/broadcast Changed")
 
     run(broadcasts.broadcast_command(update, object()))
 
-    assert "Ничего не отправлено" in update.message.replies[0][0]
+    assert "Статус durable-рассылки не подтвержден" in update.message.replies[0][0]
 
 
 def test_admin_command_fails_closed_before_delivery_when_snapshot_unavailable(monkeypatch):
@@ -177,7 +189,7 @@ def test_admin_command_fails_closed_before_delivery_when_snapshot_unavailable(mo
 
     run(broadcasts.broadcast_command(update, object()))
 
-    assert "Ничего не отправлено" in update.message.replies[0][0]
+    assert "Статус durable-рассылки не подтвержден" in update.message.replies[0][0]
 
 
 def _install_one_delivery(monkeypatch, *, send_error=None):
@@ -213,6 +225,33 @@ def _install_one_delivery(monkeypatch, *, send_error=None):
         lambda broadcast_id: syncs.append(broadcast_id) or {"completed": False},
     )
     return Bot(error=send_error), delivery, syncs
+
+
+def test_delivery_worker_materializes_pending_parent_before_claim(monkeypatch):
+    parent = {
+        "_id": "telegram_update_1",
+        "fanout_ready": False,
+        "text": "hello",
+        "recipient_ids": ["10"],
+    }
+    monkeypatch.setattr(broadcasts, "get_pending_broadcasts", lambda limit=20: [parent])
+    prepared = []
+    monkeypatch.setattr(
+        broadcasts,
+        "ensure_broadcast_fanout",
+        lambda stored: prepared.append(stored["_id"]) or {**stored, "fanout_ready": True},
+    )
+    monkeypatch.setattr(broadcasts, "claim_next_broadcast_delivery", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        broadcasts,
+        "sync_broadcast_completion",
+        lambda _broadcast_id: {"completed": False},
+    )
+
+    summary = run(broadcasts.drain_broadcast_outbox(Bot(), limit=1))
+
+    assert prepared == ["telegram_update_1"]
+    assert summary.claimed == 0
 
 
 def test_delivery_worker_acks_successful_recipient(monkeypatch):
