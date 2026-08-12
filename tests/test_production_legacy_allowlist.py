@@ -34,8 +34,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "show_history",
     "show_weekly_leaderboard",
     "stats_command",
-    "toggle_typewriter_handler",
-    "user_settings_handler",
 }
 
 
@@ -81,6 +79,8 @@ def test_allowlist_excludes_known_state_authority_writers():
         "report_confirm",
         "report_inaccuracy_handler",
         "broadcast_command",
+        "toggle_typewriter_handler",
+        "user_settings_handler",
         "remind_unfinished_tests_job",
         "_save_all_sessions",
     }
