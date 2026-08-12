@@ -19,6 +19,17 @@ def test_retry_after_seconds_supports_numeric_and_timedelta_values():
     assert retry.retry_after_seconds(SimpleNamespace(retry_after=0)) == 1.0
 
 
+def test_retry_after_seconds_normalizes_nonfinite_values():
+    assert retry.retry_after_seconds(SimpleNamespace(retry_after=float("inf"))) == 1.0
+    assert retry.retry_after_seconds(SimpleNamespace(retry_after=float("nan"))) == 1.0
+
+
+def test_generic_defer_signal_rejects_nonfinite_delay():
+    for value in (float("inf"), float("nan"), 0, -1, True):
+        with pytest.raises(ValueError):
+            LegacyDeliveryDeferred(value)
+
+
 def test_sender_retry_after_becomes_generic_durable_defer_signal():
     calls = []
 
