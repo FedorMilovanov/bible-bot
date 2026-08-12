@@ -53,6 +53,22 @@ EXPECTED = (
         90 * 24 * 60 * 60,
         {"admin_delivered": True},
     ),
+    (
+        "broadcasts",
+        "ttl_broadcast_created_at",
+        "ttl_broadcast_retention",
+        [("retention_at_dt", 1)],
+        90 * 24 * 60 * 60,
+        None,
+    ),
+    (
+        "broadcast_deliveries",
+        "ttl_broadcast_delivery_created_at",
+        "ttl_broadcast_delivery_retention",
+        [("retention_at_dt", 1)],
+        90 * 24 * 60 * 60,
+        None,
+    ),
 )
 
 
