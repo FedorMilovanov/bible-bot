@@ -35,6 +35,7 @@ legacy = _import_legacy_presentation()
 
 import telegram_admin_controller as admin  # noqa: E402
 import telegram_battle_controller as battles  # noqa: E402
+import telegram_battle_create_controller as battle_create  # noqa: E402
 import telegram_battle_share_controller as battle_share  # noqa: E402
 import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
@@ -212,7 +213,7 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(battles.battle_answer, pattern=r"^bq:"))
     app.add_handler(CallbackQueryHandler(battles.start_battle_questions, pattern=r"^start_battle_"))
-    app.add_handler(CallbackQueryHandler(battle_share.create_battle, pattern="^create_battle$"))
+    app.add_handler(CallbackQueryHandler(battle_create.create_battle, pattern="^create_battle$"))
     app.add_handler(CallbackQueryHandler(battles.join_battle, pattern="^join_battle_"))
     app.add_handler(CallbackQueryHandler(battles.cancel_battle, pattern="^cancel_battle_"))
     app.add_handler(CallbackQueryHandler(battles.show_battle_menu, pattern="^battle_menu$"))
