@@ -86,6 +86,9 @@ def test_production_root_does_not_register_ram_retry_source_handler():
     assert "legacy.retry_errors" not in SOURCE
 
 
-def test_generic_legacy_button_router_cannot_capture_battle_menu():
-    assert 'r"^(about|start_test|leaderboard|my_stats|"' in SOURCE
-    assert 'r"^(about|start_test|battle_menu|' not in SOURCE
+def test_broad_legacy_callback_routers_are_absent_from_production():
+    assert "legacy.button_handler" not in SOURCE
+    assert "legacy.admin_callback_handler" not in SOURCE
+    assert 'CallbackQueryHandler(battles.show_battle_menu, pattern="^battle_menu$")' in SOURCE
+    assert 'CallbackQueryHandler(quiz.reset_session_inline, pattern="^reset_session$")' in SOURCE
+    assert "admin.admin_read_callback" in SOURCE
