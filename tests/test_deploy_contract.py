@@ -41,9 +41,9 @@ def test_production_entrypoint_configures_logging_before_controller_import():
     )
 
 
-def test_readme_documents_bootstrap_and_composition_root():
+def test_readme_documents_local_controller_and_composition_root():
     readme = read("README.md")
-    assert "python production_entrypoint.py" in readme
+    assert "python telegram_production.py" in readme
     assert "python bot.py" not in readme
     assert "docs/DEPLOYMENT_PREFLIGHTS.md" in readme
     assert "telegram_production.py` — единственный production Telegram composition root" in readme
