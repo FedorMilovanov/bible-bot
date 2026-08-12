@@ -4,15 +4,15 @@ Run the Mongo checks from an **authorized environment that already has the produ
 
 ## Exit codes
 
-All Mongo preflight commands use the same operational convention:
+All preflight commands use the same operational convention:
 
 - `0` — the inspected contract is safe for the check;
-- `1` — MongoDB was reachable, but the inspected data/index/storage contract is unsafe and requires operator review;
-- `2` — the preflight could not establish the contract (for example, missing `MONGO_URL` or MongoDB unavailable).
+- `1` — the external system was reachable, but the inspected data/index/webhook contract is unsafe and requires operator review;
+- `2` — the preflight could not establish the contract because configuration or the external system was unavailable.
 
 Do not treat exit `2` as success. Do not convert exit `1` into an automatic repair step.
 
-## Recommended order
+## Pre-deploy Mongo checks
 
 ### 1. Legacy Telegram duplicate sessions
 
@@ -104,6 +104,27 @@ Before deployment, require:
 
 Production startup re-verifies safety-critical session indexes before Telegram transport begins. That runtime fail-fast boundary is a backstop, not a substitute for running these preflights before rollout.
 
+## Post-deploy Telegram webhook check
+
+After an authorized webhook deployment, run from an environment that already has `BOT_TOKEN` and either `RENDER_EXTERNAL_URL` or `TELEGRAM_WEBHOOK_BASE_URL`:
+
+```bash
+python scripts/check_telegram_webhook.py
+```
+
+This command calls only Telegram `getWebhookInfo`. It never calls `setWebhook`/`deleteWebhook`, never changes MongoDB and never prints `BOT_TOKEN`.
+
+Exit `0` requires all of these exact contracts:
+
+- deployed URL equals the expected HTTPS origin plus `/telegram/webhook`;
+- `max_connections=1`;
+- `allowed_updates` is exactly `message` + `callback_query`;
+- no recent Telegram delivery error is present.
+
+A non-zero `pending_update_count` is reported as a warning rather than an automatic failure because a short transient queue is valid during cold start. Re-run the check after traffic; continuously growing pending updates require investigation.
+
+An old retained Telegram delivery error is also a warning. By default an error from the last 300 seconds is unsafe; adjust only for a reviewed incident with `TELEGRAM_WEBHOOK_ERROR_MAX_AGE_SECONDS`.
+
 ## Webhook rollout verification
 
 Render production uses the existing Waitress server for `POST /telegram/webhook`; no PTB webhook server or self-ping keepalive is used. Polling remains the explicit rollback transport.
@@ -112,16 +133,12 @@ After the first authorized deploy:
 
 1. Confirm `GET /live` returns success.
 2. Confirm `GET /ready` reports Mongo ready.
-3. Inspect Telegram `getWebhookInfo` from an authorized environment holding `BOT_TOKEN` and verify:
-   - URL ends with `/telegram/webhook` on the expected Render HTTPS origin;
-   - `max_connections` is `1`;
-   - `allowed_updates` contains only `message` and `callback_query`;
-   - `pending_update_count` is not growing continuously;
-   - `last_error_message` is absent or not current.
-4. Exercise `/start`, normal quiz answers, timed/speed answer timeout, Challenge 20, retry-errors, report submission, PvP create/share/deep-link/join/finish, `/status`, restart and cancel.
-5. Verify report/PvP delivery recovery after a controlled application restart.
-6. Let the Free Render service become idle long enough to spin down, then send a Telegram update. The first webhook request may encounter cold-start unavailability; the service must wake and Telegram must retry until it receives a 2xx response. Verify the update is eventually processed exactly through the hardened production handler graph.
-7. Re-check `getWebhookInfo` after the cold-start test for pending updates or a current delivery error.
+3. Confirm `GET /telegram/ready` returns `200` with `transport=webhook` after PTB startup.
+4. Run `python scripts/check_telegram_webhook.py` and require exit `0` (warnings must be understood, not ignored).
+5. Exercise `/start`, normal quiz answers, timed/speed answer timeout, Challenge 20, retry-errors, report submission, PvP create/share/deep-link/join/finish, `/status`, restart and cancel.
+6. Verify report/PvP delivery recovery after a controlled application restart.
+7. Let the Free Render service become idle long enough to spin down, then send a Telegram update. The first webhook request may encounter cold-start unavailability; the service must wake and Telegram must retry until it receives a 2xx response. Verify the update is eventually processed through the hardened production handler graph.
+8. Run `python scripts/check_telegram_webhook.py` again and make sure pending updates are not continuously growing and there is no current delivery error.
 
 Do not treat a successful `/live` alone as proof that Telegram ingress or Mongo authority works.
 
@@ -135,7 +152,7 @@ TELEGRAM_TRANSPORT=polling
 
 and redeploy the **same** application code. PTB polling is retained specifically as rollback and uses the same production handlers/state authority. Do not re-enable legacy `bot.py` as the launcher.
 
-After rollback, verify `/start`, one quiz answer, `/status`, report flow and one PvP action. When returning to webhook mode, repeat `getWebhookInfo` verification above.
+After rollback, verify `/start`, one quiz answer, `/status`, report flow and one PvP action. When returning to webhook mode, repeat the webhook preflight above.
 
 ## No automatic repair
 
@@ -146,6 +163,7 @@ None of these checks or rollout steps is permission to:
 - drop an incompatible unique guard during a rolling deploy;
 - clear non-evicting scoring receipts merely to shrink BSON;
 - create a self-ping/keepalive loop to defeat hosting sleep behavior;
+- mutate Telegram webhook state from a diagnostic preflight;
 - paste production secrets into CI logs, PR comments or chat.
 
 Any production data/index migration requires an explicit reviewed plan, followed by all five Mongo preflights again.
