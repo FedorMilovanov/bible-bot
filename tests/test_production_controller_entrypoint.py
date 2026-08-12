@@ -115,6 +115,9 @@ assert os.environ["DISABLE_WEB_SERVER"] == "false"
 
 def test_http_server_is_started_only_after_startup_guards_and_handler_setup():
     main_start = PRODUCTION.index("def main() -> None:")
+    transport_guard = PRODUCTION.index(
+        "validate_telegram_transport_configuration()", main_start
+    )
     mongo_guard = PRODUCTION.index("ensure_active_session_unique_index()", main_start)
     miniapp_guard = PRODUCTION.index("if ensure_miniapp_indexes() is not True:", main_start)
     job_queue_guard = PRODUCTION.index("if app.job_queue is None:", main_start)
@@ -122,8 +125,8 @@ def test_http_server_is_started_only_after_startup_guards_and_handler_setup():
     http_start = PRODUCTION.index("\n    keep_alive()", main_start)
     transport_start = PRODUCTION.index("\n    run_telegram_application(", main_start)
 
-    assert mongo_guard < miniapp_guard < job_queue_guard < last_handler < http_start
-    assert http_start < transport_start
+    assert transport_guard < mongo_guard < miniapp_guard < job_queue_guard
+    assert job_queue_guard < last_handler < http_start < transport_start
 
 
 def test_production_startup_requires_explicit_mongo_url():
