@@ -3,10 +3,11 @@
 The module knows nothing about Telegram handlers or application lifecycle. A
 caller injects the actual send coroutine. Storage decides ownership, lease and
 acknowledgement. Ordinary sender failures release the lease for retry; an
-explicit LegacyDeliveryDeferred signal preserves the requested future retry in
-Mongo without keeping a process-local claim alive. If delivery was accepted
-remotely but Mongo acknowledgement later fails, the lease is left to expire
-rather than being released immediately, reducing duplicate-send risk.
+explicit LegacyDeliveryDeferred signal preserves a future retry in Mongo; an
+explicit LegacyDeliveryPermanentFailure settles the delivery obligation while
+retaining a durable terminal-failure marker. If a remote send completed but the
+Mongo acknowledgement later fails, the lease is left to expire rather than
+being released immediately, reducing duplicate-send risk.
 """
 from __future__ import annotations
 
@@ -23,6 +24,10 @@ from legacy_delivery_defer import (
     defer_battle_result_delivery,
     defer_report_delivery_stage,
 )
+from legacy_delivery_terminal import (
+    settle_battle_result_delivery_failure,
+    settle_report_delivery_stage_failure,
+)
 from legacy_report_delivery_migration import (
     claim_report_delivery_stage_compatible as claim_report_delivery_stage,
 )
@@ -38,7 +43,7 @@ class LegacyDeliveryStateInvalid(RuntimeError):
 
 
 class LegacyDeliveryAcknowledgementPending(RuntimeError):
-    """Remote send completed but durable acknowledgement did not."""
+    """Remote send or terminal settlement could not be durably acknowledged."""
 
 
 class LegacyDeliveryDeferred(RuntimeError):
@@ -53,6 +58,17 @@ class LegacyDeliveryDeferred(RuntimeError):
         self.delay_seconds = delay
         self.detail = str(detail or "")[:500]
         super().__init__(self.detail or f"delivery deferred for {delay:g} seconds")
+
+
+class LegacyDeliveryPermanentFailure(RuntimeError):
+    """Sender proves the remote destination/payload is permanently undeliverable."""
+
+    def __init__(self, detail: str):
+        value = str(detail or "").strip()
+        if not value:
+            raise ValueError("permanent failure detail is required")
+        self.detail = value[:500]
+        super().__init__(self.detail)
 
 
 async def deliver_battle_recipient_once(
@@ -74,6 +90,17 @@ async def deliver_battle_recipient_once(
 
     try:
         await sender(battle, role)
+    except LegacyDeliveryPermanentFailure as exc:
+        if not settle_battle_result_delivery_failure(
+            battle_id,
+            user_id,
+            token,
+            error=exc.detail,
+        ):
+            raise LegacyDeliveryAcknowledgementPending(
+                "battle permanent failure could not be durably settled"
+            ) from exc
+        return False
     except LegacyDeliveryDeferred as exc:
         if not defer_battle_result_delivery(
             battle_id,
@@ -129,6 +156,17 @@ async def _deliver_report_stage_once(
 
     try:
         await sender(report)
+    except LegacyDeliveryPermanentFailure as exc:
+        if not settle_report_delivery_stage_failure(
+            report_id,
+            stage,
+            token,
+            error=exc.detail,
+        ):
+            raise LegacyDeliveryAcknowledgementPending(
+                f"report {stage} permanent failure could not be durably settled"
+            ) from exc
+        return False
     except LegacyDeliveryDeferred as exc:
         if not defer_report_delivery_stage(
             report_id,
@@ -171,8 +209,9 @@ async def deliver_report_once(
                 "report disappeared while checking photo delivery state"
             )
         if photo_state.get("delivered") is not True:
-            # A different worker may currently own the photo lease, or this
-            # stage may have been durably deferred. Do not overtake either case.
+            # A different worker may own the photo lease, or this stage may be
+            # durably deferred. A permanent failure is settled as delivered=True
+            # plus terminal_failed=True so text can still be attempted.
             return False, False
 
     text = await _deliver_report_stage_once(report_id, "text", text_sender)
