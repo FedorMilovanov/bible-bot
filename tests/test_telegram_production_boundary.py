@@ -30,24 +30,26 @@ def test_production_root_wires_semantic_durable_battle_handlers():
         assert marker in SOURCE
 
 
-def test_production_root_wires_exact_durable_battle_sharing():
+def test_production_root_wires_exact_durable_battle_sharing_and_replay_safe_creation():
     required = (
+        "import telegram_battle_create_controller as battle_create",
         "import telegram_battle_share_controller as battle_share",
         "battle_share.handle_start_deep_link",
         'CommandHandler("start", _start)',
-        "battle_share.create_battle",
+        "battle_create.create_battle",
         'pattern="^create_battle$"',
     )
     for marker in required:
         assert marker in SOURCE
 
+    assert "battle_share.create_battle" not in SOURCE
     start = async_function("_start")
     assert start.index("battle_share.handle_start_deep_link") < start.index(
         "await quiz.start(update, context)"
     )
 
 
-def test_production_root_does_not_register_legacy_or_nonsharing_battle_create_paths():
+def test_production_root_does_not_register_legacy_random_or_nonsharing_battle_create_paths():
     forbidden = (
         "legacy.start_battle_questions",
         "legacy.battle_answer",
@@ -57,6 +59,7 @@ def test_production_root_does_not_register_legacy_or_nonsharing_battle_create_pa
         "legacy.cancel_battle",
         "legacy.cleanup_old_battles_job",
         'CallbackQueryHandler(battles.create_battle, pattern="^create_battle$")',
+        'CallbackQueryHandler(battle_share.create_battle, pattern="^create_battle$")',
         "InlineQueryHandler",
         "battle_inline_",
     )
