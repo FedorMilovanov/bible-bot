@@ -40,7 +40,7 @@ def test_non_admin_cannot_run_cleanup(monkeypatch):
 
     _run(admin.admin_cleanup(_Update(query), object()))
 
-    assert query.answers == [("Нет доступа.", True)]
+    assert query.answers == [("Access denied.", True)]
     assert query.edits == []
 
 
@@ -54,7 +54,7 @@ def test_non_admin_cannot_use_admin_read_callbacks(monkeypatch):
 
     _run(admin.admin_read_callback(_Update(query), object()))
 
-    assert query.answers == [("Нет доступа.", True)]
+    assert query.answers == [("Access denied.", True)]
     assert query.edits == []
 
 
@@ -68,7 +68,7 @@ def test_unknown_admin_read_action_is_rejected_without_dispatch(monkeypatch):
 
     _run(admin.admin_read_callback(_Update(query), object()))
 
-    assert query.answers == [("Недопустимое действие.", True)]
+    assert query.answers == [("Unsupported action.", True)]
     assert query.edits == []
 
 
@@ -78,7 +78,7 @@ def test_admin_hard_questions_is_read_only_presentation(monkeypatch):
         "get_hardest_questions",
         lambda limit=10: [
             {
-                "question": "Какой вопрос?",
+                "question": "Question text",
                 "total_attempts": 12,
                 "correct_attempts": 5,
             }
@@ -91,7 +91,7 @@ def test_admin_hard_questions_is_read_only_presentation(monkeypatch):
     assert query.answers == [(None, False)]
     assert len(query.edits) == 1
     text, kwargs = query.edits[0]
-    assert "Какой вопрос?" in text
+    assert "Question text" in text
     assert "12" in text
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "admin_back"
 
@@ -110,9 +110,9 @@ def test_admin_active_sessions_reads_process_local_projection(monkeypatch):
     _run(admin.admin_read_callback(_Update(query), object()))
 
     text, _kwargs = query.edits[0]
-    assert "Активных сессий в памяти: 2" in text
+    assert "Active in-memory sessions: 2" in text
     assert "10 | Test | 2/3" in text
-    assert "11: поврежденная запись" in text
+    assert "11: malformed record" in text
 
 
 def test_admin_back_renders_only_safe_menu_actions():
@@ -158,9 +158,8 @@ def test_cleanup_uses_recovery_safe_battle_policy_then_prunes_stale_ram(monkeypa
     assert query.answers == [(None, False)]
     assert len(query.edits) == 1
     text, kwargs = query.edits[0]
-    assert "pre-progress" in text
-    assert "*3*" in text
-    assert "*2*" in text
+    assert "Safely deleted pre-progress battles: 3" in text
+    assert "Removed user_data records: 2" in text
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "admin_back"
 
 
@@ -176,7 +175,7 @@ def test_cleanup_fails_closed_before_ram_prune_on_mongo_outage(monkeypatch):
     _run(admin.admin_cleanup(_Update(query), object()))
 
     assert admin.legacy.user_data == original
-    assert query.answers == [("База битв временно недоступна.", True)]
+    assert query.answers == [("Battle storage is temporarily unavailable.", True)]
     assert query.edits == []
 
 
