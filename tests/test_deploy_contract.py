@@ -38,6 +38,14 @@ def test_readme_documents_same_production_entrypoint_and_preflight_runbook():
     assert "telegram_production.py` — единственный production Telegram composition root" in readme
 
 
+def test_deployment_runbook_includes_executable_telegram_webhook_check():
+    runbook = read("docs/DEPLOYMENT_PREFLIGHTS.md")
+    assert "python scripts/check_telegram_webhook.py" in runbook
+    assert "GET /telegram/ready" in runbook
+    assert "getWebhookInfo" in runbook
+    assert "setWebhook" in runbook  # appears only in the explicit non-mutation warning
+
+
 def test_render_uses_webhook_transport_and_separate_body_limits():
     render = read("render.yaml")
     assert "runtime: python" in render
