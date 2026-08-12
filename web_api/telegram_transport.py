@@ -106,7 +106,7 @@ def telegram_webhook_url() -> str:
 
 
 def telegram_webhook_max_connections() -> int:
-    raw = os.getenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "4").strip() or "4"
+    raw = os.getenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "1").strip() or "1"
     try:
         value = int(raw)
     except ValueError as exc:
