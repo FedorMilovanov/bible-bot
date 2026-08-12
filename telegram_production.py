@@ -43,7 +43,10 @@ from web_api.db_hardening import (  # noqa: E402
     MiniAppIndexSafetyUnavailable,
     ensure_miniapp_indexes,
 )
-from web_api.telegram_transport import run_telegram_application  # noqa: E402
+from web_api.telegram_transport import (  # noqa: E402
+    run_telegram_application,
+    validate_telegram_transport_configuration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,7 @@ async def _reset_during_report(update, context):
 def main() -> None:
     token = _required_env("BOT_TOKEN")
     _required_env("MONGO_URL")
+    validate_telegram_transport_configuration()
     ensure_active_session_unique_index()
     if ensure_miniapp_indexes() is not True:
         raise MiniAppIndexSafetyUnavailable("Mini App index safety is unavailable")
