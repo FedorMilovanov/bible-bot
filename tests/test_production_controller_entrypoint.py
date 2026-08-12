@@ -71,6 +71,61 @@ def test_production_composition_imports_with_runtime_dependencies():
     assert result.returncode == 0, result.stderr
 
 
+def test_legacy_import_temporarily_disables_http_and_restores_environment():
+    env = os.environ.copy()
+    env.update(
+        {
+            "ADMIN_USER_ID": "1",
+            "BOT_TOKEN": "123456:TEST_TOKEN",
+            "DISABLE_WEB_SERVER": "true",
+        }
+    )
+    script = r'''
+import os
+import telegram_production as production
+seen = []
+
+def fake_import(name):
+    seen.append((name, os.environ.get("DISABLE_WEB_SERVER")))
+    return object()
+
+production.importlib.import_module = fake_import
+os.environ.pop("DISABLE_WEB_SERVER", None)
+production._import_legacy_presentation()
+assert seen == [("bot", "true")]
+assert "DISABLE_WEB_SERVER" not in os.environ
+
+seen.clear()
+os.environ["DISABLE_WEB_SERVER"] = "false"
+production._import_legacy_presentation()
+assert seen == [("bot", "true")]
+assert os.environ["DISABLE_WEB_SERVER"] == "false"
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_http_server_is_started_only_after_startup_guards_and_handler_setup():
+    main_start = PRODUCTION.index("def main() -> None:")
+    mongo_guard = PRODUCTION.index("ensure_active_session_unique_index()", main_start)
+    miniapp_guard = PRODUCTION.index("if ensure_miniapp_indexes() is not True:", main_start)
+    job_queue_guard = PRODUCTION.index("if app.job_queue is None:", main_start)
+    last_handler = PRODUCTION.index("app.add_error_handler(legacy.on_error)", main_start)
+    http_start = PRODUCTION.index("\n    keep_alive()", main_start)
+    transport_start = PRODUCTION.index("\n    run_telegram_application(", main_start)
+
+    assert mongo_guard < miniapp_guard < job_queue_guard < last_handler < http_start
+    assert http_start < transport_start
+
+
 def test_production_startup_requires_explicit_mongo_url():
     assert '_required_env("BOT_TOKEN")' in PRODUCTION
     assert '_required_env("MONGO_URL")' in PRODUCTION
