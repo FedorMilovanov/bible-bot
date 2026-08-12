@@ -1,3 +1,4 @@
+import asyncio
 import os
 from types import SimpleNamespace
 
@@ -30,17 +31,17 @@ def _button_callback(query):
     return markup.inline_keyboard[0][0].callback_data
 
 
-async def test_settings_menu_emits_target_specific_callback(monkeypatch):
+def test_settings_menu_emits_target_specific_callback(monkeypatch):
     monkeypatch.setattr(settings.legacy, "get_pref", lambda *_args, **_kwargs: True)
     query = Query(data="user_settings")
 
-    await settings.user_settings_handler(_update(query), object())
+    asyncio.run(settings.user_settings_handler(_update(query), object()))
 
     assert query.answers == 1
     assert _button_callback(query) == "typewriter_set:0"
 
 
-async def test_explicit_set_callback_is_idempotent_on_replay(monkeypatch):
+def test_explicit_set_callback_is_idempotent_on_replay(monkeypatch):
     state = {"value": True}
     writes = []
 
@@ -55,16 +56,16 @@ async def test_explicit_set_callback_is_idempotent_on_replay(monkeypatch):
     monkeypatch.setattr(settings.legacy, "set_pref", set_pref)
 
     first = Query(data="typewriter_set:0")
-    await settings.set_typewriter_handler(_update(first), object())
+    asyncio.run(settings.set_typewriter_handler(_update(first), object()))
     replay = Query(data="typewriter_set:0")
-    await settings.set_typewriter_handler(_update(replay), object())
+    asyncio.run(settings.set_typewriter_handler(_update(replay), object()))
 
     assert writes == [False, False]
     assert state["value"] is False
     assert _button_callback(replay) == "typewriter_set:1"
 
 
-async def test_old_toggle_callback_only_upgrades_menu_without_mutation(monkeypatch):
+def test_old_toggle_callback_only_upgrades_menu_without_mutation(monkeypatch):
     monkeypatch.setattr(settings.legacy, "get_pref", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
         settings.legacy,
@@ -75,13 +76,13 @@ async def test_old_toggle_callback_only_upgrades_menu_without_mutation(monkeypat
     )
     query = Query(data="toggle_typewriter")
 
-    await settings.legacy_toggle_upgrade_handler(_update(query), object())
+    asyncio.run(settings.legacy_toggle_upgrade_handler(_update(query), object()))
 
     assert query.answers == 1
     assert _button_callback(query) == "typewriter_set:0"
 
 
-async def test_invalid_set_payload_does_not_write(monkeypatch):
+def test_invalid_set_payload_does_not_write(monkeypatch):
     monkeypatch.setattr(
         settings.legacy,
         "set_pref",
@@ -91,7 +92,7 @@ async def test_invalid_set_payload_does_not_write(monkeypatch):
     )
     query = Query(data="typewriter_set:maybe")
 
-    await settings.set_typewriter_handler(_update(query), object())
+    asyncio.run(settings.set_typewriter_handler(_update(query), object()))
 
     assert query.answers == 1
     assert query.edits == []
