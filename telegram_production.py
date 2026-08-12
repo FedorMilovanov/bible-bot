@@ -5,6 +5,7 @@ import importlib
 import logging
 import os
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -71,6 +72,70 @@ async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
     legacy.report_drafts.pop(update.effective_user.id, None)
     return await quiz.reset_command(update, context)
+
+
+def _touch_presentation_callback(update):
+    query = update.callback_query
+    legacy._touch(query.from_user.id)
+    return query
+
+
+async def _about_callback(update, context):
+    del context
+    query = _touch_presentation_callback(update)
+    await query.answer()
+    await query.edit_message_text(
+        "📚 *БИБЛЕЙСКИЙ ТЕСТ-БОТ: 1 ПЕТРА*\n"
+        "Интерактивный инструмент для глубокого изучения Писания.\n\n"
+        "Нашёл ошибку в вопросе? Нажми «Неточность» во время теста.\n\n"
+        "_v4.0 • Soli Deo Gloria_",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]
+        ),
+        parse_mode="Markdown",
+    )
+
+
+async def _start_test_callback(update, context):
+    query = _touch_presentation_callback(update)
+    await query.answer()
+    await legacy.choose_level(update, context, is_callback=True)
+
+
+async def _leaderboard_callback(update, context):
+    del context
+    query = _touch_presentation_callback(update)
+    await query.answer()
+    await legacy.show_general_leaderboard(query, 0)
+
+
+async def _leaderboard_page_callback(update, context):
+    del context
+    query = _touch_presentation_callback(update)
+    await query.answer()
+    try:
+        page = int((query.data or "").removeprefix("leaderboard_page_"))
+    except (TypeError, ValueError):
+        return
+    await legacy.show_general_leaderboard(query, page)
+
+
+async def _my_stats_callback(update, context):
+    del context
+    query = _touch_presentation_callback(update)
+    await query.answer()
+    await legacy.show_my_stats(query)
+
+
+async def _achievements_callback(update, context):
+    _touch_presentation_callback(update)
+    await legacy.show_achievements(update, context)
+
+
+async def _coming_soon_callback(update, context):
+    del context
+    query = _touch_presentation_callback(update)
+    await query.answer("🚧 В разработке!", show_alert=True)
 
 
 def main() -> None:
@@ -173,7 +238,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin.admin_cleanup, pattern=r"^admin_cleanup$"))
     app.add_handler(
         CallbackQueryHandler(
-            legacy.admin_callback_handler,
+            admin.admin_read_callback,
             pattern=r"^admin_(hard_questions|active_sessions|broadcast_prompt|back)$",
         )
     )
@@ -216,15 +281,15 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(quiz.show_status_inline, pattern="^my_status$"))
     app.add_handler(CallbackQueryHandler(quiz.reset_session_inline, pattern="^reset_session$"))
+    app.add_handler(CallbackQueryHandler(_about_callback, pattern="^about$"))
+    app.add_handler(CallbackQueryHandler(_start_test_callback, pattern="^start_test$"))
+    app.add_handler(CallbackQueryHandler(_leaderboard_callback, pattern="^leaderboard$"))
     app.add_handler(
-        CallbackQueryHandler(
-            legacy.button_handler,
-            pattern=(
-                r"^(about|start_test|leaderboard|my_stats|"
-                r"leaderboard_page_\d+|coming_soon|achievements)$"
-            ),
-        )
+        CallbackQueryHandler(_leaderboard_page_callback, pattern=r"^leaderboard_page_\d+$")
     )
+    app.add_handler(CallbackQueryHandler(_my_stats_callback, pattern="^my_stats$"))
+    app.add_handler(CallbackQueryHandler(_achievements_callback, pattern="^achievements$"))
+    app.add_handler(CallbackQueryHandler(_coming_soon_callback, pattern="^coming_soon$"))
 
     app.add_handler(
         MessageHandler(
