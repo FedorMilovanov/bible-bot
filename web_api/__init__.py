@@ -1,6 +1,8 @@
-"""HTTP API package for the Telegram Mini App."""
+"""HTTP API package for the Telegram Mini App and Telegram webhook ingress."""
 from __future__ import annotations
 
+import hmac
+import logging
 import os
 
 from flask import g, jsonify, request
@@ -11,7 +13,21 @@ from .auth import get_user_from_request
 from .db_hardening import ensure_miniapp_indexes
 from .rate_limit import GLOBAL_API_LIMITER
 from .routes import create_app as _create_routes_app
+from .telegram_transport import (
+    TELEGRAM_WEBHOOK_BRIDGE,
+    WEBHOOK_PATH,
+    InvalidWebhookUpdate,
+    TransportConfigurationError,
+    WebhookNotReady,
+    telegram_transport_mode,
+    telegram_webhook_secret,
+)
 from .user_locks import user_operation_lock
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_SERVER_BODY_BYTES = 1024 * 1024
+_DEFAULT_MINIAPP_BODY_BYTES = 64 * 1024
 
 # Per authenticated Telegram user. Values are (requests, window seconds).
 _RATE_LIMITS = {
@@ -32,7 +48,11 @@ _SERIALIZED_QUIZ_PATHS = frozenset({
 
 def create_app():
     app = _create_routes_app()
-    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
+    # Telegram Update JSON needs a wider server envelope than the Mini App quiz
+    # API. The quiz endpoints get their own 64 KiB per-request cap below.
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.getenv("MAX_REQUEST_BODY_BYTES", str(_DEFAULT_SERVER_BODY_BYTES))
+    )
 
     @app.get("/meta")
     def _deployment_meta():
@@ -46,9 +66,50 @@ def create_app():
             }
         )
 
+    @app.post(WEBHOOK_PATH)
+    def _telegram_webhook():
+        try:
+            if telegram_transport_mode() != "webhook":
+                return jsonify({"error": "not found"}), 404
+            expected_secret = telegram_webhook_secret()
+        except TransportConfigurationError:
+            logger.exception("Telegram webhook transport configuration is invalid")
+            return jsonify({"error": "telegram webhook unavailable"}), 503
+
+        supplied_secret = request.headers.get(
+            "X-Telegram-Bot-Api-Secret-Token", ""
+        )
+        if not supplied_secret or not hmac.compare_digest(
+            supplied_secret, expected_secret
+        ):
+            # Reject unauthenticated traffic before parsing an attacker-controlled body.
+            return jsonify({"error": "invalid telegram webhook secret"}), 401
+        if not request.is_json:
+            return jsonify({"error": "application/json required"}), 415
+
+        try:
+            payload = request.get_json(silent=False)
+        except BadRequest:
+            return jsonify({"error": "invalid JSON"}), 400
+        if not isinstance(payload, dict):
+            return jsonify({"error": "JSON object required"}), 400
+
+        try:
+            TELEGRAM_WEBHOOK_BRIDGE.submit(payload)
+        except InvalidWebhookUpdate:
+            return jsonify({"error": "invalid telegram update"}), 400
+        except WebhookNotReady:
+            return jsonify({"error": "telegram application not ready"}), 503
+        except Exception:
+            logger.exception("unexpected Telegram webhook dispatch failure")
+            return jsonify({"error": "telegram webhook dispatch failed"}), 503
+        return jsonify({"ok": True})
+
     @app.before_request
     def _protect_api_boundary():
-        question_catalog_request = request.method == "GET" and request.path.startswith("/api/questions/")
+        question_catalog_request = (
+            request.method == "GET" and request.path.startswith("/api/questions/")
+        )
         policy = _RATE_LIMITS.get((request.method, request.path))
         if policy is None and question_catalog_request:
             policy = _QUESTION_ENDPOINT_LIMIT
@@ -73,12 +134,20 @@ def create_app():
             window_seconds=window_seconds,
         )
         if not allowed:
-            response = jsonify({"error": "rate limit exceeded", "retry_after": retry_after})
+            response = jsonify(
+                {"error": "rate limit exceeded", "retry_after": retry_after}
+            )
             response.status_code = 429
             response.headers["Retry-After"] = str(retry_after)
             return response
 
         if request.path in _SERIALIZED_QUIZ_PATHS:
+            request.max_content_length = int(
+                os.getenv(
+                    "MINIAPP_MAX_REQUEST_BODY_BYTES",
+                    str(_DEFAULT_MINIAPP_BODY_BYTES),
+                )
+            )
             if not request.is_json:
                 return jsonify({"error": "application/json required"}), 415
             try:
@@ -97,8 +166,6 @@ def create_app():
 
         if request.path == "/api/quiz/start":
             # DB-level uniqueness complements the process-local same-user lock.
-            # Index creation is lazy/retried and must not take Telegram polling
-            # offline if MongoDB is temporarily unavailable.
             ensure_miniapp_indexes()
         return None
 
@@ -117,8 +184,10 @@ def create_app():
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.path.startswith("/api/"):
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        if request.path.startswith("/api/") or request.path == WEBHOOK_PATH:
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         else:
