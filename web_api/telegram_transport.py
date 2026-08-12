@@ -27,7 +27,7 @@ WEBHOOK_PATH = "/telegram/webhook"
 WEBHOOK_ALLOWED_UPDATES = ("message", "callback_query")
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 _SUPPORTED_WEBHOOK_PORTS = frozenset({80, 88, 443, 8443})
-_BRIDGE_ENQUEUE_TIMEOUT_SECONDS = 2.0
+_BRIDGE_PROCESS_TIMEOUT_SECONDS = 30.0
 _BRIDGE_DRAIN_TIMEOUT_SECONDS = 3.0
 
 
@@ -189,6 +189,12 @@ class TelegramWebhookBridge:
                 and not self._loop.is_closed()
             )
 
+    @staticmethod
+    async def _enqueue_and_wait_for_processing(application, update) -> None:
+        """Enqueue one update and wait until PTB marks queued work as processed."""
+        await application.update_queue.put(update)
+        await application.update_queue.join()
+
     def submit(self, payload: dict) -> None:
         with self._lock:
             application = self._application
@@ -212,14 +218,14 @@ class TelegramWebhookBridge:
                 raise InvalidWebhookUpdate("invalid Telegram update")
 
             future = asyncio.run_coroutine_threadsafe(
-                application.update_queue.put(update), loop
+                self._enqueue_and_wait_for_processing(application, update), loop
             )
             try:
-                future.result(timeout=_BRIDGE_ENQUEUE_TIMEOUT_SECONDS)
+                future.result(timeout=_BRIDGE_PROCESS_TIMEOUT_SECONDS)
             except FutureTimeoutError as exc:
                 future.cancel()
                 raise WebhookNotReady(
-                    "Telegram update queue did not accept the update in time"
+                    "Telegram update processing did not complete in time"
                 ) from exc
             except Exception as exc:
                 raise WebhookNotReady("Telegram update queue is unavailable") from exc
