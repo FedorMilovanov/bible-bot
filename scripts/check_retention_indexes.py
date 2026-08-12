@@ -15,6 +15,7 @@ from pymongo.errors import PyMongoError
 
 _DB_NAME = "bible_bot_db"
 _SERVER_SELECTION_TIMEOUT_MS = 5000
+_RUNTIME_BOOTSTRAP_MISSING_OK = frozenset({"broadcasts", "broadcast_deliveries"})
 
 EXPECTED = (
     (
@@ -98,7 +99,12 @@ def _load_index_information() -> dict[str, dict]:
         client.close()
 
 
-def _audit_collection(spec: tuple, info: dict, problems: list[dict]) -> None:
+def _audit_collection(
+    spec: tuple,
+    info: dict,
+    problems: list[dict],
+    bootstrap_pending: list[dict],
+) -> None:
     label, legacy_name, target_name, key, expire_after, partial = spec
 
     if legacy_name in info:
@@ -110,15 +116,39 @@ def _audit_collection(spec: tuple, info: dict, problems: list[dict]) -> None:
             }
         )
 
+    if label in _RUNTIME_BOOTSTRAP_MISSING_OK:
+        for index_name, options in info.items():
+            if (
+                index_name not in {"_id_", target_name, legacy_name}
+                and isinstance(options, dict)
+                and "expireAfterSeconds" in options
+            ):
+                problems.append(
+                    {
+                        "collection": label,
+                        "error": "unrecognized_ttl_requires_review",
+                        "index": index_name,
+                    }
+                )
+
     target = info.get(target_name)
     if target is None:
-        problems.append(
-            {
-                "collection": label,
-                "error": "state_aware_ttl_missing",
-                "index": target_name,
-            }
-        )
+        if label in _RUNTIME_BOOTSTRAP_MISSING_OK and legacy_name not in info:
+            bootstrap_pending.append(
+                {
+                    "collection": label,
+                    "index": target_name,
+                    "action": "runtime_create_before_http",
+                }
+            )
+        else:
+            problems.append(
+                {
+                    "collection": label,
+                    "error": "state_aware_ttl_missing",
+                    "index": target_name,
+                }
+            )
         return
 
     if target.get("key") != key:
@@ -165,19 +195,33 @@ def main() -> int:
         return 2
 
     problems: list[dict] = []
+    bootstrap_pending: list[dict] = []
     for spec in EXPECTED:
-        _audit_collection(spec, index_info.get(spec[0], {}), problems)
+        _audit_collection(
+            spec,
+            index_info.get(spec[0], {}),
+            problems,
+            bootstrap_pending,
+        )
 
     if problems:
         print(
             json.dumps(
-                {"ok": False, "error": "retention_indexes_unsafe", "problems": problems},
+                {
+                    "ok": False,
+                    "error": "retention_indexes_unsafe",
+                    "problems": problems,
+                    "bootstrap_pending": bootstrap_pending,
+                },
                 ensure_ascii=False,
             )
         )
         return 1
 
-    print(json.dumps({"ok": True, "retention_indexes": "safe"}))
+    payload = {"ok": True, "retention_indexes": "safe"}
+    if bootstrap_pending:
+        payload["bootstrap_pending"] = bootstrap_pending
+    print(json.dumps(payload))
     return 0
 
 
