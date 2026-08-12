@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -259,6 +259,48 @@ def test_delivery_lease_ack_and_completion_are_restart_safe(monkeypatch):
     assert broadcasts.docs["telegram_update_50"]["completed"] is True
     assert "retention_at_dt" in broadcasts.docs["telegram_update_50"]
     assert "retention_at_dt" in deliveries.docs[claimed["_id"]]
+
+
+def test_rate_limit_deferral_survives_restart_and_blocks_early_reclaim(monkeypatch):
+    broadcasts, deliveries = install(monkeypatch)
+    parent, _created = integrity.accept_broadcast_once(
+        broadcast_id="telegram_update_55",
+        admin_id=1,
+        admin_chat_id=1,
+        text="News",
+        recipient_ids=[15],
+    )
+    integrity.ensure_broadcast_fanout(parent)
+
+    now_ref = {"value": datetime(2026, 8, 12, 6, 0, 0)}
+    database = SimpleNamespace(_now_utc=lambda: now_ref["value"])
+    monkeypatch.setattr(
+        integrity,
+        "_collections",
+        lambda: (database, broadcasts, deliveries),
+    )
+
+    claimed = integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_55")
+    assert claimed is not None
+    assert integrity.defer_broadcast_delivery(
+        claimed["_id"],
+        claimed["claim_token"],
+        delay_seconds=300,
+        error="RetryAfter",
+    ) is True
+
+    row = deliveries.docs[claimed["_id"]]
+    assert "claim_token" not in row
+    assert row["lease_until"] == now_ref["value"] + timedelta(seconds=300)
+    assert integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_55") is None
+
+    now_ref["value"] += timedelta(seconds=299)
+    assert integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_55") is None
+
+    now_ref["value"] += timedelta(seconds=2)
+    reclaimed = integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_55")
+    assert reclaimed is not None
+    assert reclaimed["attempts"] == 2
 
 
 def test_terminal_delivery_failure_completes_without_infinite_retry(monkeypatch):
