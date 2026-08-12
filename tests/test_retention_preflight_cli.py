@@ -90,6 +90,56 @@ def test_retention_preflight_is_zero_for_exact_state_aware_indexes(monkeypatch, 
     }
 
 
+def test_missing_new_broadcast_ttls_are_explicit_safe_runtime_bootstrap(monkeypatch, capsys):
+    info = _safe_indexes()
+    info["broadcasts"] = {}
+    info["broadcast_deliveries"] = {"_id_": {"key": [("_id", 1)]}}
+    monkeypatch.setattr(preflight, "_load_index_information", lambda: deepcopy(info))
+
+    assert preflight.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["retention_indexes"] == "safe"
+    assert payload["bootstrap_pending"] == [
+        {
+            "collection": "broadcasts",
+            "index": "ttl_broadcast_retention",
+            "action": "runtime_create_before_http",
+        },
+        {
+            "collection": "broadcast_deliveries",
+            "index": "ttl_broadcast_delivery_retention",
+            "action": "runtime_create_before_http",
+        },
+    ]
+
+
+def test_unrecognized_broadcast_ttl_is_unsafe_not_bootstrap(monkeypatch, capsys):
+    info = _safe_indexes()
+    info["broadcasts"] = {
+        "ttl_unknown": {
+            "key": [("created_at_dt", 1)],
+            "expireAfterSeconds": 3600,
+        }
+    }
+    monkeypatch.setattr(preflight, "_load_index_information", lambda: deepcopy(info))
+
+    assert preflight.main() == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert any(
+        problem["collection"] == "broadcasts"
+        and problem["error"] == "unrecognized_ttl_requires_review"
+        for problem in payload["problems"]
+    )
+    assert payload["bootstrap_pending"] == [
+        {
+            "collection": "broadcasts",
+            "index": "ttl_broadcast_retention",
+            "action": "runtime_create_before_http",
+        }
+    ]
+
+
 def test_retention_preflight_reports_legacy_and_wrong_target(monkeypatch, capsys):
     info = _safe_indexes()
     info["quiz_sessions"]["ttl_updated_at"] = {
