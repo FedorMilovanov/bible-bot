@@ -7,6 +7,7 @@ from typing import Any
 
 from battle_integrity import BattleStoreUnavailable, get_pending_final_battles
 from legacy_battle_delivery_flow import deliver_final_battle_once
+from telegram_delivery_retry import send_with_durable_retry_after
 
 
 class LegacyBattleDeliveryQueueInvalid(RuntimeError):
@@ -51,6 +52,9 @@ async def drain_pending_battles(
             "pending finalized battle listing returned invalid data"
         )
 
+    async def durable_sender(battle: dict, role: str):
+        return await send_with_durable_retry_after(sender, battle, role)
+
     sends = 0
     deferred = 0
     errors: list[str] = []
@@ -58,7 +62,7 @@ async def drain_pending_battles(
         identifier = "<unknown>"
         try:
             identifier = _battle_id(battle)
-            outcome = await deliver_final_battle_once(battle, sender)
+            outcome = await deliver_final_battle_once(battle, durable_sender)
             sends += int(outcome.creator_sent) + int(outcome.opponent_sent)
             deferred += int(outcome.creator_pending) + int(outcome.opponent_pending)
             errors.extend(
