@@ -4,6 +4,7 @@ services:
     runtime: python
     region: frankfurt
     plan: free
+    numInstances: 1
     buildCommand: pip install -r requirements.txt
     startCommand: python telegram_production.py
     healthCheckPath: /live
@@ -20,11 +21,17 @@ services:
         sync: false
       - key: APP_ENV
         value: production
+      - key: TELEGRAM_TRANSPORT
+        value: webhook
+      - key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS
+        value: "1"
       - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
         value: "86400"
       - key: WEB_THREADS
         value: "4"
       - key: MAX_REQUEST_BODY_BYTES
+        value: "1048576"
+      - key: MINIAPP_MAX_REQUEST_BODY_BYTES
         value: "65536"
       - key: MAX_REQUEST_HEADER_BYTES
         value: "65536"
