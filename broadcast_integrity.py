@@ -9,6 +9,7 @@ it cannot restart the whole broadcast from recipient zero.
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from datetime import datetime, timedelta
 
@@ -228,10 +229,6 @@ def accept_broadcast_once(
                 raise BroadcastStoreUnavailable(
                     "broadcast id is bound to different immutable content"
                 ) from None
-        # Acceptance ends at the immutable parent snapshot. Recipient fanout is
-        # intentionally a secondary recoverable operation performed by the
-        # delivery job, so a transient fanout failure cannot make an already
-        # accepted command look unaccepted to the administrator.
         return stored, created
     except BroadcastStoreUnavailable:
         raise
@@ -373,6 +370,45 @@ def release_broadcast_delivery(
         raise BroadcastStoreUnavailable("broadcast delivery release failed") from exc
 
 
+def defer_broadcast_delivery(
+    delivery_id: str,
+    claim_token: str,
+    *,
+    delay_seconds: float,
+    error: str = "",
+) -> bool:
+    """Persist a rate-limit pause without keeping a process-local claim alive."""
+    delivery_id = _required_string(delivery_id, "delivery_id", max_length=256)
+    claim_token = _required_string(claim_token, "claim_token", max_length=128)
+    if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, (int, float)):
+        raise ValueError("delay_seconds must be a positive finite number")
+    delay = float(delay_seconds)
+    if not math.isfinite(delay) or delay <= 0:
+        raise ValueError("delay_seconds must be a positive finite number")
+
+    database, _broadcasts, deliveries = _collections()
+    now = database._now_utc()
+    try:
+        lease_until = now + timedelta(seconds=delay)
+    except OverflowError as exc:
+        raise ValueError("delay_seconds is too large") from exc
+
+    try:
+        result = deliveries.update_one(
+            {"_id": delivery_id, "done": {"$ne": True}, "claim_token": claim_token},
+            {
+                "$set": {
+                    "lease_until": lease_until,
+                    "last_error": str(error or "")[:500],
+                },
+                "$unset": {"claim_token": ""},
+            },
+        )
+        return result.modified_count == 1
+    except PyMongoError as exc:
+        raise BroadcastStoreUnavailable("broadcast delivery deferral failed") from exc
+
+
 def sync_broadcast_completion(broadcast_id: str) -> dict:
     """Mark a fanout complete only after every delivery row is terminal."""
     broadcast_id = _required_string(broadcast_id, "broadcast_id", max_length=128)
@@ -409,8 +445,6 @@ def sync_broadcast_completion(broadcast_id: str) -> dict:
                 }
             },
         )
-        # Parent completion is written first. If this retention follow-up fails,
-        # rows leak conservatively instead of expiring and being re-created/sent.
         deliveries.update_many(
             {"broadcast_id": broadcast_id},
             {"$set": {"retention_at_dt": now}},
