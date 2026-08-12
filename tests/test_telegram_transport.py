@@ -245,6 +245,30 @@ def test_bridge_ack_waits_until_ptb_queue_processing_finishes():
     assert [item.update_id for item in queue.items] == [43]
 
 
+def test_bridge_processing_timeout_is_retryable_not_false_ack(monkeypatch):
+    monkeypatch.setattr(telegram_transport, "_BRIDGE_PROCESS_TIMEOUT_SECONDS", 0.05)
+    loop = asyncio.new_event_loop()
+    loop_thread = Thread(target=loop.run_forever, daemon=True)
+    loop_thread.start()
+    queue = ProcessingQueue()
+    app = type("BridgeApplication", (), {"bot": FakeBot(), "update_queue": queue})()
+    telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.configure(app, loop)
+    try:
+        with pytest.raises(
+            telegram_transport.WebhookNotReady,
+            match="processing did not complete in time",
+        ):
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit({"update_id": 44})
+        assert queue.enqueued.wait(timeout=1)
+        assert [item.update_id for item in queue.items] == [44]
+    finally:
+        queue.processed.set()
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear(app)
+        loop.call_soon_threadsafe(loop.stop)
+        loop_thread.join(timeout=2)
+        loop.close()
+
+
 @pytest.mark.parametrize("payload", [{}, {"update_id": -1}, {"update_id": True}])
 def test_bridge_rejects_update_without_valid_update_id(payload):
     loop = asyncio.new_event_loop()
