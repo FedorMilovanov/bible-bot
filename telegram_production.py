@@ -35,9 +35,11 @@ legacy = _import_legacy_presentation()
 import telegram_admin_controller as admin  # noqa: E402
 import telegram_battle_controller as battles  # noqa: E402
 import telegram_battle_share_controller as battle_share  # noqa: E402
+import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
+from broadcast_integrity import ensure_broadcast_indexes  # noqa: E402
 from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
 from web_api.db_hardening import (  # noqa: E402
     MiniAppIndexSafetyUnavailable,
@@ -77,6 +79,7 @@ def main() -> None:
     ensure_active_session_unique_index()
     if ensure_miniapp_indexes() is not True:
         raise MiniAppIndexSafetyUnavailable("Mini App index safety is unavailable")
+    ensure_broadcast_indexes()
 
     app = (
         Application.builder()
@@ -134,7 +137,7 @@ def main() -> None:
     app.add_handler(CommandHandler("status", quiz.status_command))
     app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))
     app.add_handler(CommandHandler("admin", legacy.admin_command))
-    app.add_handler(CommandHandler("broadcast", legacy.broadcast_command))
+    app.add_handler(CommandHandler("broadcast", broadcasts.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
 
     app.add_handler(CallbackQueryHandler(legacy.level_selected, pattern=r"^level_"))
@@ -237,6 +240,11 @@ def main() -> None:
         reports.report_delivery_job,
         interval=60,
         first=10,
+    )
+    app.job_queue.run_repeating(
+        broadcasts.broadcast_delivery_job,
+        interval=2,
+        first=1,
     )
     app.job_queue.run_repeating(
         battles.battle_maintenance_job,
