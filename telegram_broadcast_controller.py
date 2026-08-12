@@ -80,7 +80,9 @@ def _replay_broadcast(
         for value in recipients
     ):
         raise BroadcastStoreUnavailable("durable broadcast recipient snapshot is invalid")
-    return ensure_broadcast_fanout(stored), recipients
+    # Fanout is deliberately not part of command acknowledgement. The periodic
+    # recovery job materializes/retries recipient rows from this immutable parent.
+    return stored, recipients
 
 
 def _retry_after_seconds(exc: RetryAfter) -> float:
@@ -293,16 +295,11 @@ async def broadcast_command(update, context):
     except (BroadcastStoreUnavailable, ValueError):
         logger.warning("durable broadcast acceptance failed for admin %s", user.id, exc_info=True)
         await message.reply_text(
-            "⚠️ База не подтвердила durable-рассылку. Ничего не отправлено; повтори команду позже."
+            "⚠️ Статус durable-рассылки не подтвержден. Не создавай новую команду с тем же текстом; повтори позже."
         )
         return
 
     count = int(stored.get("recipient_count", len(recipients)) or 0)
-    if count == 0:
-        try:
-            sync_broadcast_completion(broadcast_id)
-        except BroadcastStoreUnavailable:
-            logger.warning("empty broadcast completion sync failed", exc_info=True)
     if created:
         await message.reply_text(
             f"✅ Рассылка сохранена в durable-очередь: {count} получателей. "
