@@ -4,8 +4,8 @@ The combined legacy delivery drain also processes battle outbox entries. Reports
 are migrated to the strict controller before PvP, so production needs a scoped
 report worker that cannot accidentally deliver battles through the old protocol.
 Telegram RetryAfter is translated into a durable future lease instead of an
-immediate release. Nothing starts in the background on import; the application
-lifecycle calls ``drain_pending_reports`` explicitly.
+immediate release. Durable stage evidence also repairs a missing aggregate
+`admin_delivered` acknowledgement after a partial Mongo failure.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from legacy_delivery_worker import deliver_report_once
+from legacy_report_delivery_repair import repair_report_delivery_aggregate
 from report_integrity import ReportStoreUnavailable, get_pending_reports
 from telegram_delivery_retry import send_with_durable_retry_after
 
@@ -77,18 +78,33 @@ async def drain_pending_reports(
                 "report:<unknown>:LegacyReportDeliveryQueueInvalid:pending report is invalid"
             )
             continue
+        identifier = str(report.get("_id") or report.get("report_id") or "<unknown>")
         try:
             report_id = _required_report_id(report)
-            photo_sent, text_sent = await deliver_report_once(
-                report_id,
-                durable_photo_sender,
-                durable_text_sender,
-            )
+            identifier = report_id
+            # Repair the crash window where both stage obligations were already
+            # settled but the aggregate admin_delivered write did not land.
+            if repair_report_delivery_aggregate(report_id):
+                continue
+            try:
+                photo_sent, text_sent = await deliver_report_once(
+                    report_id,
+                    durable_photo_sender,
+                    durable_text_sender,
+                )
+            except Exception:
+                # A stage acknowledgement may have landed before its aggregate
+                # write failed. Prove terminal stage evidence before surfacing
+                # the error; if repair succeeds there is nothing left to send.
+                if repair_report_delivery_aggregate(report_id):
+                    continue
+                raise
+
             stage_sends += int(photo_sent) + int(text_sent)
-            if not text_sent:
+            terminal = repair_report_delivery_aggregate(report_id)
+            if not text_sent and not terminal:
                 deferred += 1
         except Exception as exc:
-            identifier = str(report.get("_id") or report.get("report_id") or "<unknown>")
             errors.append(_error_text(identifier, exc))
 
     return ReportDeliveryDrainSummary(
