@@ -125,7 +125,7 @@ def test_webhook_base_url_requires_https_origin(monkeypatch):
 
 def test_webhook_connections_default_and_validate_bot_api_range(monkeypatch):
     monkeypatch.delenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", raising=False)
-    assert telegram_transport.telegram_webhook_max_connections() == 4
+    assert telegram_transport.telegram_webhook_max_connections() == 1
     for invalid in ("0", "101", "many"):
         monkeypatch.setenv("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", invalid)
         with pytest.raises(telegram_transport.TransportConfigurationError):
