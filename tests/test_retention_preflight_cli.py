@@ -1,10 +1,14 @@
 import inspect
 import json
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
 import scripts.check_retention_indexes as preflight
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _safe_indexes():
@@ -43,6 +47,18 @@ def _safe_indexes():
                 "key": [("created_at_dt", 1)],
                 "expireAfterSeconds": 7776000,
                 "partialFilterExpression": {"admin_delivered": True},
+            }
+        },
+        "broadcasts": {
+            "ttl_broadcast_retention": {
+                "key": [("retention_at_dt", 1)],
+                "expireAfterSeconds": 7776000,
+            }
+        },
+        "broadcast_deliveries": {
+            "ttl_broadcast_delivery_retention": {
+                "key": [("retention_at_dt", 1)],
+                "expireAfterSeconds": 7776000,
             }
         },
     }
@@ -90,6 +106,13 @@ def test_retention_preflight_reports_legacy_and_wrong_target(monkeypatch, capsys
     info["battles"]["ttl_battles_delivered_created_at"]["key"] = [
         ("updated_at_dt", 1)
     ]
+    info["broadcasts"]["ttl_broadcast_created_at"] = {
+        "key": [("created_at_dt", 1)],
+        "expireAfterSeconds": 7776000,
+    }
+    info["broadcast_deliveries"]["ttl_broadcast_delivery_retention"][
+        "partialFilterExpression"
+    ] = {"done": True}
     monkeypatch.setattr(preflight, "_load_index_information", lambda: deepcopy(info))
 
     assert preflight.main() == 1
@@ -107,6 +130,36 @@ def test_retention_preflight_reports_legacy_and_wrong_target(monkeypatch, capsys
         "unsafe_legacy_ttl_present",
         "state_aware_ttl_wrong_filter",
     }
+    broadcast_problems = [
+        problem
+        for problem in payload["problems"]
+        if problem["collection"].startswith("broadcast")
+    ]
+    assert {problem["error"] for problem in broadcast_problems} == {
+        "unsafe_legacy_ttl_present",
+        "state_aware_ttl_wrong_filter",
+    }
+
+
+def test_broadcast_retention_preflight_matches_runtime_index_names_and_keys():
+    runtime = (ROOT / "broadcast_integrity.py").read_text(encoding="utf-8")
+    assert 'name="ttl_broadcast_retention"' in runtime
+    assert 'name="ttl_broadcast_delivery_retention"' in runtime
+    assert '[("retention_at_dt", ASCENDING)]' in runtime
+
+    specs = {spec[0]: spec for spec in preflight.EXPECTED}
+    assert specs["broadcasts"][2:] == (
+        "ttl_broadcast_retention",
+        [("retention_at_dt", 1)],
+        7776000,
+        None,
+    )
+    assert specs["broadcast_deliveries"][2:] == (
+        "ttl_broadcast_delivery_retention",
+        [("retention_at_dt", 1)],
+        7776000,
+        None,
+    )
 
 
 def test_retention_preflight_unavailable_is_distinct_failure(monkeypatch, capsys):
