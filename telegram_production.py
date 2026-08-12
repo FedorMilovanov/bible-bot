@@ -1,6 +1,7 @@
 """Single production composition root for Telegram quiz, reports and durable PvP."""
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 
@@ -13,16 +14,36 @@ from telegram.ext import (
     filters,
 )
 
-import bot as legacy
-import telegram_admin_controller as admin
-import telegram_battle_controller as battles
-import telegram_battle_share_controller as battle_share
-import telegram_controller as quiz
-import telegram_report_controller as reports
-import telegram_retry_controller as retry
-from legacy_session_access import ensure_active_session_unique_index
-from web_api.db_hardening import MiniAppIndexSafetyUnavailable, ensure_miniapp_indexes
-from web_api.telegram_transport import run_telegram_application
+from keep_alive import keep_alive
+
+
+def _import_legacy_presentation():
+    """Import legacy presentation helpers without starting HTTP as a side effect."""
+    previous = os.environ.get("DISABLE_WEB_SERVER")
+    os.environ["DISABLE_WEB_SERVER"] = "true"
+    try:
+        return importlib.import_module("bot")
+    finally:
+        if previous is None:
+            os.environ.pop("DISABLE_WEB_SERVER", None)
+        else:
+            os.environ["DISABLE_WEB_SERVER"] = previous
+
+
+legacy = _import_legacy_presentation()
+
+import telegram_admin_controller as admin  # noqa: E402
+import telegram_battle_controller as battles  # noqa: E402
+import telegram_battle_share_controller as battle_share  # noqa: E402
+import telegram_controller as quiz  # noqa: E402
+import telegram_report_controller as reports  # noqa: E402
+import telegram_retry_controller as retry  # noqa: E402
+from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
+from web_api.db_hardening import (  # noqa: E402
+    MiniAppIndexSafetyUnavailable,
+    ensure_miniapp_indexes,
+)
+from web_api.telegram_transport import run_telegram_application  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +241,11 @@ def main() -> None:
     )
 
     app.add_error_handler(legacy.on_error)
+
+    # The legacy module imports the HTTP lifecycle for compatibility, but the
+    # production root owns *when* the server becomes reachable. Do not expose
+    # /live until storage/index/job-queue guards and the handler graph are ready.
+    keep_alive()
     logger.info("Production Telegram composition root started")
     run_telegram_application(
         app,
