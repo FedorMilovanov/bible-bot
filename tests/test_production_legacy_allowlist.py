@@ -12,14 +12,14 @@ DATABASE_SOURCE = (ROOT / "database.py").read_text(encoding="utf-8")
 # it can enter the production composition root.
 ALLOWED_LEGACY_ATTRIBUTES = {
     "GC_INTERVAL",
-    "admin_callback_handler",
+    "_touch",
     "admin_command",
     "back_to_main",
-    "button_handler",
     "category_leaderboard_handler",
     "challenge_menu",
     "challenge_rules",
     "chapter_1_menu",
+    "choose_level",
     "cleanup_stale_userdata_job",
     "confirm_level_handler",
     "help_command",
@@ -33,7 +33,10 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "report_menu",
     "review_errors_handler",
     "review_test_handler",
+    "show_achievements",
+    "show_general_leaderboard",
     "show_history",
+    "show_my_stats",
     "show_weekly_leaderboard",
     "stats_command",
 }
@@ -105,11 +108,6 @@ FORBIDDEN_COLLECTION_WRITES = {
     "collection.update_one",
 }
 
-EXPECTED_BUTTON_HANDLER_PATTERN = (
-    r"^(about|start_test|leaderboard|my_stats|"
-    r"leaderboard_page_\d+|coming_soon|achievements)$"
-)
-
 
 def _legacy_attributes() -> set[str]:
     tree = ast.parse(SOURCE, filename="telegram_production.py")
@@ -152,59 +150,46 @@ def _direct_call_targets(function_node: ast.AST) -> set[str]:
     return targets
 
 
-def _production_button_handler_patterns() -> list[str]:
-    tree = ast.parse(SOURCE, filename="telegram_production.py")
-    patterns = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or _expr_name(node.func) != "CallbackQueryHandler":
-            continue
-        if not node.args or _expr_name(node.args[0]) != "legacy.button_handler":
-            continue
-        pattern_kw = next((kw for kw in node.keywords if kw.arg == "pattern"), None)
-        assert pattern_kw is not None
-        pattern = ast.literal_eval(pattern_kw.value)
-        assert isinstance(pattern, str)
-        patterns.append(pattern)
-    return patterns
-
-
 def test_production_legacy_surface_is_exactly_allowlisted():
     assert _legacy_attributes() == ALLOWED_LEGACY_ATTRIBUTES
 
 
-def test_allowlist_excludes_known_state_authority_writers():
+def test_allowlist_excludes_known_state_authority_writers_and_broad_dispatchers():
     forbidden = {
-        "main",
-        "test_command",
-        "random_command",
-        "reset_command",
-        "status_command",
-        "relaxed_mode_handler",
-        "timed_mode_handler",
-        "speed_mode_handler",
-        "random_all_start_handler",
-        "intro_start_handler",
-        "retry_errors",
-        "cancel_quiz_handler",
-        "quiz_inline_answer",
-        "challenge_inline_answer",
-        "show_results",
-        "show_challenge_results",
-        "start_battle_questions",
+        "admin_callback_handler",
         "battle_answer",
-        "create_battle",
-        "join_battle",
+        "broadcast_command",
+        "button_handler",
         "cancel_battle",
+        "cancel_quiz_handler",
+        "challenge_inline_answer",
         "cleanup_old_battles_job",
+        "create_battle",
+        "intro_start_handler",
+        "join_battle",
+        "main",
+        "random_all_start_handler",
+        "random_command",
+        "relaxed_mode_handler",
+        "remind_unfinished_tests_job",
         "report_confirm",
         "report_inaccuracy_handler",
-        "broadcast_command",
+        "reset_command",
+        "retry_errors",
+        "show_challenge_results",
+        "show_results",
+        "speed_mode_handler",
+        "start_battle_questions",
+        "status_command",
+        "test_command",
+        "timed_mode_handler",
         "toggle_typewriter_handler",
         "user_settings_handler",
-        "remind_unfinished_tests_job",
         "_save_all_sessions",
     }
     assert ALLOWED_LEGACY_ATTRIBUTES.isdisjoint(forbidden)
+    assert "legacy.admin_callback_handler" not in SOURCE
+    assert "legacy.button_handler" not in SOURCE
 
 
 def test_allowed_legacy_handlers_cannot_reach_business_state_writers():
@@ -249,7 +234,3 @@ def test_activity_touch_remains_a_last_activity_only_write():
         isinstance(node, ast.keyword) and node.arg == "upsert"
         for node in ast.walk(touch)
     )
-
-
-def test_legacy_button_dispatcher_stays_narrowly_registered():
-    assert _production_button_handler_patterns() == [EXPECTED_BUTTON_HANDLER_PATTERN]
