@@ -13,7 +13,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "admin_callback_handler",
     "admin_command",
     "back_to_main",
-    "broadcast_command",
     "button_handler",
     "category_leaderboard_handler",
     "challenge_menu",
@@ -81,6 +80,7 @@ def test_allowlist_excludes_known_state_authority_writers():
         "cleanup_old_battles_job",
         "report_confirm",
         "report_inaccuracy_handler",
+        "broadcast_command",
         "remind_unfinished_tests_job",
         "_save_all_sessions",
     }
