@@ -85,14 +85,13 @@ async def _about_callback(update, context):
     query = _touch_presentation_callback(update)
     await query.answer()
     await query.edit_message_text(
-        "📚 *БИБЛЕЙСКИЙ ТЕСТ-БОТ: 1 ПЕТРА*\n"
-        "Интерактивный инструмент для глубокого изучения Писания.\n\n"
-        "Нашёл ошибку в вопросе? Нажми «Неточность» во время теста.\n\n"
-        "_v4.0 • Soli Deo Gloria_",
+        "Bible quiz bot: 1 Peter\n"
+        "Interactive study tool.\n\n"
+        "Found a question issue? Use the in-quiz report action.\n\n"
+        "v4.0 - Soli Deo Gloria",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main")]]
+            [[InlineKeyboardButton("Back to menu", callback_data="back_to_main")]]
         ),
-        parse_mode="Markdown",
     )
 
 
@@ -135,7 +134,7 @@ async def _achievements_callback(update, context):
 async def _coming_soon_callback(update, context):
     del context
     query = _touch_presentation_callback(update)
-    await query.answer("🚧 В разработке!", show_alert=True)
+    await query.answer("Coming soon.", show_alert=True)
 
 
 def main() -> None:
@@ -158,8 +157,6 @@ def main() -> None:
             "python-telegram-bot JobQueue is required for recovery delivery and maintenance"
         )
 
-    # Register the only remaining PTB conversation first. While a report is active,
-    # its own cancel/reset fallbacks must win over same-group global commands.
     report_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(reports.report_start, pattern="^report_start_")
@@ -326,9 +323,6 @@ def main() -> None:
 
     app.add_error_handler(legacy.on_error)
 
-    # The legacy module imports the HTTP lifecycle for compatibility, but the
-    # production root owns *when* the server becomes reachable. Do not expose
-    # /live until storage/index/job-queue guards and the handler graph are ready.
     keep_alive()
     logger.info("Production Telegram composition root started")
     run_telegram_application(
