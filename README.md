@@ -7,21 +7,26 @@ Telegram-бот и Telegram Mini App для изучения 1-го послан
 В проекте один deployable-сервис:
 
 ```text
-Telegram Bot API ← polling ← telegram_production.py
-                         │
-                         ├─ durable quiz / retry / report / PvP adapters
-                         │                  │
-                         │                  └─ MongoDB Atlas
-                         │
-                         └─ transitional bot.py helpers
-                                            │
-                                            └─ keep_alive.py → Waitress → Mini App + /api/*
-                                                                              └─ miniapp/
+Telegram Bot API ── webhook ──▶ Waitress /telegram/webhook
+                                  │
+                                  └─▶ PTB update_queue ──▶ telegram_production.py
+                                                           │
+                                                           ├─ durable quiz / retry / report / PvP adapters
+                                                           │                  │
+                                                           │                  └─ MongoDB Atlas
+                                                           │
+                                                           └─ transitional bot.py presentation helpers
+
+Telegram Bot API ◀── polling ── telegram_production.py   (explicit rollback/local mode)
+
+Waitress ──▶ Mini App + /api/* + /live + /ready
 ```
 
-**`telegram_production.py` — production composition root.** Он регистрирует Mongo-authoritative quiz/retry/report/PvP handlers и не регистрирует исторические state-writers из `bot.py`. `bot.py` остаётся transitional compatibility/presentation library для ещё не вынесенных меню, статистики и вспомогательных действий.
+**`telegram_production.py` — единственный production Telegram composition root.** Он регистрирует Mongo-authoritative quiz/retry/report/PvP handlers и не регистрирует исторические state-writers из `bot.py`. `bot.py` остаётся transitional compatibility/presentation library для ещё не вынесенных меню, статистики и вспомогательных действий.
 
-При импорте legacy helper слой запускает `keep_alive()`; production WSGI-сервер Waitress поэтому остаётся в том же процессе, без второго Render worker и без Flask development server. Docker и Render запускают именно `python telegram_production.py`.
+Render production использует custom webhook ingress через существующий Flask/Waitress сервер. Отдельный PTB webhook-server и dependency `python-telegram-bot[webhooks]` не нужны. Webhook проверяет `X-Telegram-Bot-Api-Secret-Token` до JSON parsing и передаёт валидный Telegram `Update` в `Application.update_queue`.
+
+Локально транспорт по умолчанию остаётся `polling`. Это же явный rollback-путь: `TELEGRAM_TRANSPORT=polling` возвращает `Application.run_polling()` без изменения handler graph.
 
 Старый импорт `from intro import ...` поддерживается маленьким `intro.py`, который только реэкспортирует данные из `questions.intro`; вопросы не дублируются.
 
@@ -32,13 +37,15 @@ Mini App не доверяет клиенту результаты квиза: �
 ```bash
 cp .env.example .env
 # обязательно заполни BOT_TOKEN, ADMIN_USER_ID, MONGO_URL
-# BOT_USERNAME нужен для Mini App/bot-info UI, если используется соответствующий entrypoint
+# BOT_USERNAME нужен для Mini App/bot-info UI и PvP share links
 pip install -r requirements-dev.txt
 pytest -q
 python telegram_production.py
 ```
 
-Production startup fail-closed проверяет наличие `BOT_TOKEN` и `MONGO_URL`, а также safety-critical session indexes **до начала polling**. Отсутствующий или несовместимый storage contract не должен превращаться в «здоровый», но фактически недолговечный бот.
+`.env.example` оставляет `TELEGRAM_TRANSPORT=polling` для локальной разработки. Для webhook вне Render задай HTTPS origin через `TELEGRAM_WEBHOOK_BASE_URL`; на Render используется автоматически предоставляемый `RENDER_EXTERNAL_URL`.
+
+Production startup fail-closed проверяет `BOT_TOKEN`, `MONGO_URL`, обязательный JobQueue и safety-critical session indexes до начала Telegram transport. Отсутствующий или несовместимый storage contract не должен превращаться в «здоровый», но фактически недолговечный бот.
 
 После запуска:
 
@@ -49,6 +56,25 @@ Production startup fail-closed проверяет наличие `BOT_TOKEN` и 
 - агрегированная статистика: `http://localhost:8080/stats`
 
 `.env` загружается через `python-dotenv`. Реальный `.env` исключён из Git.
+
+## Telegram webhook
+
+Production route: `POST /telegram/webhook`.
+
+Контракт:
+
+- polling mode скрывает route ответом `404`;
+- missing/wrong Telegram secret → `401` до разбора JSON;
+- non-JSON → `415`;
+- malformed JSON / malformed Telegram Update → `400`;
+- PTB bridge ещё не готов во время cold start → retryable `503`;
+- update принят в PTB queue → `200`;
+- ответы webhook получают `Cache-Control: no-store`;
+- `setWebhook` использует только реально поддерживаемые production update types: `message` и `callback_query`;
+- `max_connections=1` в Render для детерминированного single-process ingress;
+- webhook остаётся зарегистрированным при обычном shutdown/sleep, поэтому следующий Telegram POST может разбудить Render Free.
+
+Если `TELEGRAM_WEBHOOK_SECRET` не задан, стабильный допустимый secret выводится из `BOT_TOKEN`. При плановой ротации токена можно заранее задать отдельный стабильный secret.
 
 ## Telegram Mini App
 
@@ -63,7 +89,6 @@ Production startup fail-closed проверяет наличие `BOT_TOKEN` и 
 - размер `initData` ограничен до HMAC/URL parsing, а уже проверенный пользователь кэшируется на время одного HTTP-запроса;
 - production API не принимает `?user_id=...` и другие подмены пользователя;
 - quiz POST endpoints принимают только `application/json`;
-- Flask и Waitress ограничивают тело и суммарные заголовки запроса (по умолчанию 64 KiB);
 - quiz/profile/leaderboard API имеют per-user rate limiting; при превышении возвращается `429` + `Retry-After`;
 - API-ответы получают `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` и `Referrer-Policy: no-referrer`;
 - правильные ответы и explanation не выдаются до ответа пользователя;
@@ -89,14 +114,15 @@ ALLOW_DEBUG_AUTH=true
 
 ### HTTP resource limits
 
-По умолчанию:
+Production разделяет внешний server envelope и Mini App quiz payload:
 
 ```text
-MAX_REQUEST_BODY_BYTES=65536
+MAX_REQUEST_BODY_BYTES=1048576
+MINIAPP_MAX_REQUEST_BODY_BYTES=65536
 MAX_REQUEST_HEADER_BYTES=65536
 ```
 
-Для текущего API этого достаточно с большим запасом. Не увеличивай лимиты без конкретного endpoint, которому действительно нужен большой payload.
+1 MiB нужен только как bounded envelope для Telegram webhook Update JSON. Mini App quiz POSTs по-прежнему ограничены 64 KiB на уровне конкретного Flask request.
 
 ## API
 
@@ -139,15 +165,17 @@ Preflight-команды не удаляют строки и не чинят и�
 
 ### Render
 
-`render.yaml` создаёт **один Web Service** и запускает:
+`render.yaml` создаёт **один** Free Web Service (`numInstances: 1`) и запускает:
 
 ```text
 python telegram_production.py
 ```
 
-`autoDeploy` намеренно выключен. Render health check смотрит `/live`; проблемы текущей Mongo connectivity видны отдельно на `/ready` и не вызывают бессмысленный restart всего процесса. При этом production startup fail-closed проверяет обязательный Mongo config и safety-critical session/index contracts до polling.
+Render production устанавливает `TELEGRAM_TRANSPORT=webhook`. `autoDeploy` намеренно выключен. `/live` остаётся shallow liveness, `/ready` — Mongo-aware readiness.
 
-> Free Render Web Service подходит для разработки/демо, но не для 24/7 бота: бесплатный instance может засыпать после периода без входящего HTTP/WebSocket-трафика. Для постоянно доступного бота используй always-on тариф/хостинг. Это ограничение платформы, а не задача `keep_alive`.
+Free Render Web Service засыпает при отсутствии входящего HTTP/WebSocket трафика. Polling — исходящий трафик и не решает эту модель. Webhook нужен именно затем, чтобы следующий Telegram update был входящим HTTP-запросом, разбудил сервис, а Telegram повторил delivery при временном non-2xx во время cold start. Никаких self-ping keepalive jobs для этого не требуется.
+
+После deploy проверь webhook/cold-start пункты из `docs/DEPLOYMENT_PREFLIGHTS.md`.
 
 ### Docker
 
@@ -156,7 +184,7 @@ docker build -t bible-bot .
 docker run --env-file .env -p 8080:8080 bible-bot
 ```
 
-Docker image запускает `telegram_production.py`; CI отдельно проверяет import реального production composition root и `/live` smoke в собранном image.
+Docker image запускает `telegram_production.py`. Если `.env` оставляет `TELEGRAM_TRANSPORT=polling`, локальный Docker работает в polling rollback mode. Для webhook задай HTTPS public origin отдельно.
 
 ## Структура
 
@@ -167,6 +195,7 @@ Docker image запускает `telegram_production.py`; CI отдельно п
 - `telegram_battle_controller.py` — durable PvP progress/finalization/delivery adapter
 - `telegram_battle_share_controller.py` — exact-id PvP sharing/deep-link join
 - `telegram_admin_controller.py` — recovery-safe production admin cleanup
+- `web_api/telegram_transport.py` — polling/webhook lifecycle и Waitress→PTB queue bridge
 - `bot.py` — transitional legacy presentation/read/process-local helpers; не production state authority
 - `database.py` — MongoDB, статистика и compatibility storage helpers
 - `questions/` — канонические данные вопросов
@@ -178,7 +207,7 @@ Docker image запускает `telegram_production.py`; CI отдельно п
 - `tests/` — API/auth/session/hardening/regression contracts
 - `.github/workflows/ci.yml` — actionlint/dependency/secret guards, Ruff, compile, pytest, Mini App JS, production Docker/import/smoke
 - `.github/dependabot.yml` — контролируемые dependency updates
-- `docs/DEPLOYMENT_PREFLIGHTS.md` — обязательный pre-deploy runbook
+- `docs/DEPLOYMENT_PREFLIGHTS.md` — обязательный pre/post-deploy runbook
 - `docs/RESEARCH_WAVE*.md` — research/integrity trail предыдущих волн
 
 ## Важный принцип данных
