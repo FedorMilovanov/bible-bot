@@ -27,6 +27,7 @@ def test_single_process_start_contract_is_consistent():
     assert "startCommand: python telegram_controller.py" not in render
     assert 'CMD ["python", "telegram_controller.py"]' not in docker
     assert "healthCheckPath: /live" in render
+    assert "numInstances: 1" in render
 
 
 def test_readme_documents_same_production_entrypoint_and_preflight_runbook():
@@ -37,12 +38,37 @@ def test_readme_documents_same_production_entrypoint_and_preflight_runbook():
     assert "telegram_production.py` — единственный production Telegram composition root" in readme
 
 
-def test_render_uses_current_runtime_field_and_resource_bounds():
+def test_render_uses_webhook_transport_and_separate_body_limits():
     render = read("render.yaml")
     assert "runtime: python" in render
-    assert "MAX_REQUEST_BODY_BYTES" in render
-    assert "MAX_REQUEST_HEADER_BYTES" in render
     assert "healthCheckPath: /live" in render
+    assert "- key: TELEGRAM_TRANSPORT\n        value: webhook" in render
+    assert '- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: "1"' in render
+    assert '- key: MAX_REQUEST_BODY_BYTES\n        value: "1048576"' in render
+    assert '- key: MINIAPP_MAX_REQUEST_BODY_BYTES\n        value: "65536"' in render
+    assert '- key: MAX_REQUEST_HEADER_BYTES\n        value: "65536"' in render
+    assert "TELEGRAM_WEBHOOK_BASE_URL" not in render
+    assert "TELEGRAM_WEBHOOK_SECRET" not in render
+
+
+def test_production_controller_uses_configurable_transport_with_webhook_shutdown_hook():
+    source = read("telegram_production.py")
+    assert "from web_api.telegram_transport import run_telegram_application" in source
+    assert "run_telegram_application(" in source
+    assert "webhook_before_shutdown=quiz._save_all_sessions" in source
+    assert "app.run_polling()" not in source
+    # Polling rollback still owns the PTB post_shutdown hook. Webhook mode uses
+    # the explicit ordered hook because it runs Application lifecycle manually.
+    assert ".post_shutdown(quiz._save_all_sessions)" in source
+
+
+def test_custom_webhook_reuses_waitress_without_ptb_webhook_extra():
+    requirements = read("requirements.txt")
+    transport = read("web_api/telegram_transport.py")
+    assert "python-telegram-bot[job-queue]==20.7" in requirements
+    assert "python-telegram-bot[webhooks]" not in requirements
+    assert "application.update_queue.put(update)" in transport
+    assert "run_webhook(" not in transport
 
 
 def test_docker_runtime_is_non_root_and_has_healthcheck():
