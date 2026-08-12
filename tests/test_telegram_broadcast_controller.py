@@ -169,7 +169,7 @@ def test_same_update_replay_rejects_different_immutable_content(monkeypatch):
 
     run(broadcasts.broadcast_command(update, object()))
 
-    assert "Статус рассылки пока не подтвержден" in update.message.replies[0][0]
+    assert "Broadcast status is unknown" in update.message.replies[0][0]
 
 
 def test_admin_command_fails_closed_before_delivery_when_snapshot_unavailable(monkeypatch):
@@ -189,7 +189,7 @@ def test_admin_command_fails_closed_before_delivery_when_snapshot_unavailable(mo
 
     run(broadcasts.broadcast_command(update, object()))
 
-    assert "Статус рассылки пока не подтвержден" in update.message.replies[0][0]
+    assert "Broadcast status is unknown" in update.message.replies[0][0]
 
 
 def _install_one_delivery(monkeypatch, *, send_error=None):
