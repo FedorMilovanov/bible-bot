@@ -67,10 +67,10 @@ def create_or_recover_battle(update, user) -> tuple[dict, bool]:
         # random-id create attempt.
         try:
             recovered = _owned_created_battle(battle_id, user.id)
-        except LegacyBattleSessionUnavailable:
-            raise exc
+        except LegacyBattleSessionUnavailable as lookup_exc:
+            raise exc from lookup_exc
         if recovered is None:
-            raise exc
+            raise exc from None
         return recovered, False
 
 
