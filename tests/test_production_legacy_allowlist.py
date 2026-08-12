@@ -43,69 +43,46 @@ ALLOWED_LEGACY_ATTRIBUTES = {
 
 _NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}
 
-# These functions either change durable business authority or implement a
-# replay-sensitive process-local toggle. A production-allowed legacy handler
-# must never acquire a call path to one of them. This is intentionally broader
-# than the exact handler allowlist: it also fences imported database/integrity
-# writers that could otherwise be called through an innocent-looking helper.
+# Non-database authority writers still need an explicit fence because they live
+# in legacy/integrity/controller helpers rather than database.py.
 FORBIDDEN_STATE_WRITER_CALLS = {
-    "add_to_leaderboard",
-    "advance_quiz_session",
     "battle_answer",
     "broadcast_command",
-    "cancel_active_quiz_session",
     "cancel_battle",
-    "cancel_quiz_session",
     "challenge_inline_answer",
-    "check_daily_bonus",
     "claim_battle_opponent",
     "claim_final_battle",
     "cleanup_old_battles_job",
     "create_battle",
-    "create_battle_doc",
-    "create_quiz_session",
     "db_cleanup_stale_battles",
-    "delete_battle",
     "delete_battle_for_participant",
-    "finish_quiz_session",
-    "insert_report",
     "join_battle",
-    "mark_report_delivered",
     "quiz_inline_answer",
     "record_battle_result",
-    "record_question_stat",
     "relaxed_mode_handler",
     "report_confirm",
     "report_inaccuracy_handler",
     "retry_errors",
     "set_pref",
-    "set_question_sent_at",
     "show_challenge_results",
     "show_results",
     "speed_mode_handler",
     "start_battle_questions",
     "timed_mode_handler",
-    "update_achievement_stats",
-    "update_battle",
-    "update_battle_stats",
-    "update_challenge_stats",
-    "update_daily_streak",
-    "update_quiz_session",
-    "update_weekly_leaderboard",
 }
 
-FORBIDDEN_COLLECTION_WRITES = {
-    "collection.bulk_write",
-    "collection.delete_many",
-    "collection.delete_one",
-    "collection.find_one_and_delete",
-    "collection.find_one_and_replace",
-    "collection.find_one_and_update",
-    "collection.insert_many",
-    "collection.insert_one",
-    "collection.replace_one",
-    "collection.update_many",
-    "collection.update_one",
+MONGO_MUTATION_METHODS = {
+    "bulk_write",
+    "delete_many",
+    "delete_one",
+    "find_one_and_delete",
+    "find_one_and_replace",
+    "find_one_and_update",
+    "insert_many",
+    "insert_one",
+    "replace_one",
+    "update_many",
+    "update_one",
 }
 
 
@@ -150,6 +127,18 @@ def _direct_call_targets(function_node: ast.AST) -> set[str]:
     return targets
 
 
+def _database_writer_functions() -> set[str]:
+    functions = _function_map(DATABASE_SOURCE, "database.py")
+    writers = set()
+    for name, node in functions.items():
+        for target in _direct_call_targets(node):
+            method = target.rsplit(".", 1)[-1]
+            if "." in target and method in MONGO_MUTATION_METHODS:
+                writers.add(name)
+                break
+    return writers
+
+
 def test_production_legacy_surface_is_exactly_allowlisted():
     assert _legacy_attributes() == ALLOWED_LEGACY_ATTRIBUTES
 
@@ -192,10 +181,31 @@ def test_allowlist_excludes_known_state_authority_writers_and_broad_dispatchers(
     assert "legacy.button_handler" not in SOURCE
 
 
+def test_database_writer_detection_covers_known_mutating_helpers():
+    writers = _database_writer_functions()
+    assert {
+        "init_user_stats",
+        "add_to_leaderboard",
+        "create_quiz_session",
+        "update_quiz_session",
+        "advance_quiz_session",
+        "create_battle_doc",
+        "insert_report",
+        "touch_user_activity",
+    } <= writers
+
+
 def test_allowed_legacy_handlers_cannot_reach_business_state_writers():
     functions = _function_map(BOT_SOURCE, "bot.py")
     roots = ALLOWED_LEGACY_ATTRIBUTES - _NON_CALLABLE_LEGACY_ATTRIBUTES
     assert roots <= functions.keys()
+
+    # Every database.py function with a Mongo mutation is automatically fenced.
+    # The sole exception is touch_user_activity, whose exact last_activity-only
+    # shape is proven independently below.
+    forbidden_calls = FORBIDDEN_STATE_WRITER_CALLS | (
+        _database_writer_functions() - {"touch_user_activity"}
+    )
 
     violations = []
     for root in sorted(roots):
@@ -207,7 +217,7 @@ def test_allowed_legacy_handlers_cannot_reach_business_state_writers():
                 continue
             visited.add(current)
             for target in _direct_call_targets(functions[current]):
-                if target in FORBIDDEN_STATE_WRITER_CALLS or target in FORBIDDEN_COLLECTION_WRITES:
+                if target in forbidden_calls:
                     violations.append((root, current, target))
                     continue
                 if target in functions and target not in visited:
@@ -220,8 +230,12 @@ def test_activity_touch_remains_a_last_activity_only_write():
     functions = _function_map(DATABASE_SOURCE, "database.py")
     touch = functions["touch_user_activity"]
     targets = _direct_call_targets(touch)
-    assert "collection.update_one" in targets
-    assert targets.isdisjoint(FORBIDDEN_COLLECTION_WRITES - {"collection.update_one"})
+    mutation_targets = {
+        target
+        for target in targets
+        if "." in target and target.rsplit(".", 1)[-1] in MONGO_MUTATION_METHODS
+    }
+    assert mutation_targets == {"collection.update_one"}
 
     string_constants = {
         node.value
