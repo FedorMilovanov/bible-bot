@@ -179,7 +179,7 @@ def test_broadcast_id_is_stable_and_validated():
             integrity.broadcast_id_for_update(invalid)
 
 
-def test_accept_broadcast_is_idempotent_and_materializes_unique_recipients(monkeypatch):
+def test_accept_broadcast_is_idempotent_before_recoverable_fanout(monkeypatch):
     broadcasts, deliveries = install(monkeypatch)
 
     first, created = integrity.accept_broadcast_once(
@@ -199,14 +199,18 @@ def test_accept_broadcast_is_idempotent_and_materializes_unique_recipients(monke
 
     assert created is True
     assert replay_created is False
-    assert first["fanout_ready"] is True
+    assert first["fanout_ready"] is False
     assert replay["recipient_ids"] == ["2", "3", "4"]
+    assert deliveries.docs == {}
+    assert broadcasts.docs["telegram_update_42"]["fanout_ready"] is False
+
+    recovered = integrity.ensure_broadcast_fanout(replay)
+    assert recovered["fanout_ready"] is True
     assert set(deliveries.docs) == {
         "telegram_update_42:2",
         "telegram_update_42:3",
         "telegram_update_42:4",
     }
-    assert broadcasts.docs["telegram_update_42"]["fanout_ready"] is True
 
 
 def test_replayed_update_cannot_change_immutable_broadcast_content(monkeypatch):
@@ -231,13 +235,14 @@ def test_replayed_update_cannot_change_immutable_broadcast_content(monkeypatch):
 
 def test_delivery_lease_ack_and_completion_are_restart_safe(monkeypatch):
     broadcasts, deliveries = install(monkeypatch)
-    integrity.accept_broadcast_once(
+    parent, _created = integrity.accept_broadcast_once(
         broadcast_id="telegram_update_50",
         admin_id=1,
         admin_chat_id=1,
         text="News",
         recipient_ids=[10],
     )
+    integrity.ensure_broadcast_fanout(parent)
 
     claimed = integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_50")
     assert claimed is not None
@@ -258,13 +263,14 @@ def test_delivery_lease_ack_and_completion_are_restart_safe(monkeypatch):
 
 def test_terminal_delivery_failure_completes_without_infinite_retry(monkeypatch):
     _broadcasts, deliveries = install(monkeypatch)
-    integrity.accept_broadcast_once(
+    parent, _created = integrity.accept_broadcast_once(
         broadcast_id="telegram_update_60",
         admin_id=1,
         admin_chat_id=1,
         text="News",
         recipient_ids=[20],
     )
+    integrity.ensure_broadcast_fanout(parent)
     claimed = integrity.claim_next_broadcast_delivery(broadcast_id="telegram_update_60")
     assert claimed is not None
 
