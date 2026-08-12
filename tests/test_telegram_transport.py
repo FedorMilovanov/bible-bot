@@ -44,6 +44,9 @@ class RecordingQueue:
     async def put(self, item):
         self.items.append(item)
 
+    async def join(self):
+        return None
+
 
 class BlockingQueue:
     def __init__(self):
@@ -55,6 +58,23 @@ class BlockingQueue:
         self.entered.set()
         await asyncio.to_thread(self.release.wait)
         self.items.append(item)
+
+    async def join(self):
+        return None
+
+
+class ProcessingQueue:
+    def __init__(self):
+        self.items = []
+        self.enqueued = ThreadEvent()
+        self.processed = ThreadEvent()
+
+    async def put(self, item):
+        self.items.append(item)
+        self.enqueued.set()
+
+    async def join(self):
+        await asyncio.to_thread(self.processed.wait)
 
 
 def test_transport_defaults_to_polling(monkeypatch):
@@ -190,6 +210,39 @@ def test_bridge_parses_real_minimal_update_and_puts_it_on_ptb_queue():
         thread.join(timeout=2)
         loop.close()
     assert [item.update_id for item in queue.items] == [42]
+
+
+def test_bridge_ack_waits_until_ptb_queue_processing_finishes():
+    loop = asyncio.new_event_loop()
+    loop_thread = Thread(target=loop.run_forever, daemon=True)
+    loop_thread.start()
+    queue = ProcessingQueue()
+    app = type("BridgeApplication", (), {"bot": FakeBot(), "update_queue": queue})()
+    errors = []
+
+    def submit_update():
+        try:
+            telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.submit({"update_id": 43})
+        except Exception as exc:  # pragma: no cover - failure path only
+            errors.append(exc)
+
+    telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.configure(app, loop)
+    submit_thread = Thread(target=submit_update, daemon=True)
+    submit_thread.start()
+    try:
+        assert queue.enqueued.wait(timeout=1)
+        assert submit_thread.is_alive()
+        queue.processed.set()
+        submit_thread.join(timeout=2)
+        assert submit_thread.is_alive() is False
+    finally:
+        queue.processed.set()
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE.clear(app)
+        loop.call_soon_threadsafe(loop.stop)
+        loop_thread.join(timeout=2)
+        loop.close()
+    assert errors == []
+    assert [item.update_id for item in queue.items] == [43]
 
 
 @pytest.mark.parametrize("payload", [{}, {"update_id": -1}, {"update_id": True}])
