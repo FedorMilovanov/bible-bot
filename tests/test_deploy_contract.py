@@ -82,6 +82,7 @@ def test_custom_webhook_reuses_waitress_without_ptb_webhook_extra():
     assert "python-telegram-bot[job-queue]==20.7" in requirements
     assert "python-telegram-bot[webhooks]" not in requirements
     assert "application.update_queue.put(update)" in transport
+    assert "application.update_queue.join()" in transport
     assert "run_webhook(" not in transport
 
 
@@ -115,7 +116,17 @@ def test_production_requires_ptb_job_queue_for_recovery_jobs():
     assert "if app.job_queue is None:" in source
     assert "if app.job_queue is not None:" not in source
     assert "reports.report_delivery_job" in source
+    assert "broadcasts.broadcast_delivery_job" in source
     assert "battles.battle_maintenance_job" in source
+
+
+def test_broadcast_storage_is_ready_before_http_and_legacy_writer_is_not_registered():
+    source = read("telegram_production.py")
+    assert "from broadcast_integrity import ensure_broadcast_indexes" in source
+    assert "ensure_broadcast_indexes()" in source
+    assert source.index("ensure_broadcast_indexes()") < source.index("keep_alive()")
+    assert 'CommandHandler("broadcast", broadcasts.broadcast_command)' in source
+    assert 'CommandHandler("broadcast", legacy.broadcast_command)' not in source
 
 
 def test_legacy_render_worker_config_is_gone():
