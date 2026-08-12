@@ -8,8 +8,9 @@ from legacy_battle_cleanup import LegacyBattleCleanupUnavailable
 
 
 class _Query:
-    def __init__(self, user_id=1):
+    def __init__(self, user_id=1, data="admin_back"):
         self.from_user = type("User", (), {"id": user_id})()
+        self.data = data
         self.answers = []
         self.edits = []
 
@@ -41,6 +42,92 @@ def test_non_admin_cannot_run_cleanup(monkeypatch):
 
     assert query.answers == [("Нет доступа.", True)]
     assert query.edits == []
+
+
+def test_non_admin_cannot_use_admin_read_callbacks(monkeypatch):
+    monkeypatch.setattr(
+        admin.legacy,
+        "get_hardest_questions",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not read")),
+    )
+    query = _Query(user_id=999, data="admin_hard_questions")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    assert query.answers == [("Нет доступа.", True)]
+    assert query.edits == []
+
+
+def test_unknown_admin_read_action_is_rejected_without_dispatch(monkeypatch):
+    monkeypatch.setattr(
+        admin.legacy,
+        "get_hardest_questions",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not read")),
+    )
+    query = _Query(data="admin_cleanup")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    assert query.answers == [("Недопустимое действие.", True)]
+    assert query.edits == []
+
+
+def test_admin_hard_questions_is_read_only_presentation(monkeypatch):
+    monkeypatch.setattr(
+        admin.legacy,
+        "get_hardest_questions",
+        lambda limit=10: [
+            {
+                "question": "Какой вопрос?",
+                "total_attempts": 12,
+                "correct_attempts": 5,
+            }
+        ],
+    )
+    query = _Query(data="admin_hard_questions")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    assert query.answers == [(None, False)]
+    assert len(query.edits) == 1
+    text, kwargs = query.edits[0]
+    assert "Какой вопрос?" in text
+    assert "12" in text
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "admin_back"
+
+
+def test_admin_active_sessions_reads_process_local_projection(monkeypatch):
+    monkeypatch.setattr(
+        admin.legacy,
+        "user_data",
+        {
+            10: {"first_name": "Test", "current_question": 2, "questions": [1, 2, 3]},
+            11: "broken",
+        },
+    )
+    query = _Query(data="admin_active_sessions")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    text, _kwargs = query.edits[0]
+    assert "Активных сессий в памяти: 2" in text
+    assert "10 | Test | 2/3" in text
+    assert "11: поврежденная запись" in text
+
+
+def test_admin_back_renders_only_safe_menu_actions():
+    query = _Query(data="admin_back")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    markup = query.edits[0][1]["reply_markup"]
+    callbacks = [row[0].callback_data for row in markup.inline_keyboard]
+    assert callbacks == [
+        "admin_hard_questions",
+        "admin_active_sessions",
+        "admin_cleanup",
+        "admin_broadcast_prompt",
+    ]
 
 
 def test_cleanup_uses_recovery_safe_battle_policy_then_prunes_stale_ram(monkeypatch):
@@ -109,10 +196,11 @@ def test_stale_ram_classifier_is_fail_closed_for_malformed_records(monkeypatch):
     assert admin._stale_ram_users(now=1000.0) == [2, 3, 4]
 
 
-def test_admin_adapter_never_imports_or_calls_legacy_database_cleanup():
+def test_admin_adapter_never_calls_broad_legacy_or_unsafe_database_cleanup():
     from pathlib import Path
 
     source = Path(admin.__file__).read_text(encoding="utf-8")
+    assert "legacy.admin_callback_handler" not in source
     assert "db_cleanup_stale_battles" not in source
     assert "database.cleanup_stale_battles" not in source
     assert "cleanup_stale_waiting_battles" in source
