@@ -81,6 +81,10 @@ Checks the terminal-only retention contracts for:
 
 Broadcast TTLs must use `retention_at_dt`, not `created_at_dt`. Runtime sets that retention timestamp only after every recipient row has reached a terminal delivered/permanent-failure state, so a partially delivered broadcast cannot lose old delivery receipts and recreate them as unsent work.
 
+On the **first deploy that introduces the broadcast collections**, the two exact broadcast TTL indexes may legitimately not exist yet. That one condition returns exit `0` with a `bootstrap_pending` entry naming the missing index and `action=runtime_create_before_http`. This is safe because production startup creates those non-destructive indexes before HTTP/Telegram become reachable. It is not permission to ignore any existing TTL index: an age-based legacy TTL, an unrecognized TTL, or an incompatible existing target index remains exit `1`.
+
+After that first deploy, rerun this retention preflight. Both broadcast TTLs must then be present under their exact names/options and the successful result must no longer contain `bootstrap_pending`.
+
 The preflight also reports unsafe historical generic TTL indexes whose age-only deletion could destroy unfinished or undelivered recovery evidence.
 
 The command only reads `index_information()`. It does not run the runtime retention migration or create broadcast indexes.
@@ -101,7 +105,7 @@ Before deployment, require:
 
 1. both duplicate preflights exit `0`;
 2. the session unique-index preflight exits `0` after any explicitly reviewed index migration;
-3. the retention preflight exits `0`, including both broadcast TTL contracts;
+3. the retention preflight exits `0`; before the first broadcast-aware deploy only the two explicitly reported broadcast `bootstrap_pending` entries are acceptable;
 4. the BSON/storage-growth preflight has no warning or malformed-map result requiring investigation;
 5. the current PR head passes CI, Security Audit, and CodeQL after any migration-related code change;
 6. `render.yaml` still declares `numInstances: 1`, `TELEGRAM_TRANSPORT=webhook`, `TELEGRAM_WEBHOOK_MAX_CONNECTIONS=1`, and `autoDeploy: false`.
@@ -138,12 +142,13 @@ After the first authorized deploy:
 1. Confirm `GET /live` returns success.
 2. Confirm `GET /ready` reports Mongo ready.
 3. Confirm `GET /telegram/ready` returns `200` with `transport=webhook` after PTB startup.
-4. Run `python scripts/check_telegram_webhook.py` and require exit `0` (warnings must be understood, not ignored).
-5. Exercise `/start`, normal quiz answers, timed/speed answer timeout, Challenge 20, retry-errors, report submission, PvP create/share/deep-link/join/finish, `/status`, restart and cancel.
-6. Exercise one small administrator `/broadcast` and verify it is durably accepted before delivery; after a controlled restart, verify pending recipient rows continue instead of restarting the entire recipient list.
-7. Verify report/PvP/broadcast delivery recovery after a controlled application restart.
-8. Let the Free Render service become idle long enough to spin down, then send a Telegram update. The first webhook request may encounter cold-start unavailability; the service must wake and Telegram must retry until it receives a 2xx response. Verify the update is eventually processed through the hardened production handler graph.
-9. Run `python scripts/check_telegram_webhook.py` again and make sure pending updates are not continuously growing and there is no current delivery error.
+4. Rerun `python scripts/check_retention_indexes.py`; require exit `0` **without** broadcast `bootstrap_pending`.
+5. Run `python scripts/check_telegram_webhook.py` and require exit `0` (warnings must be understood, not ignored).
+6. Exercise `/start`, normal quiz answers, timed/speed answer timeout, Challenge 20, retry-errors, report submission, PvP create/share/deep-link/join/finish, `/status`, restart and cancel.
+7. Exercise one small administrator `/broadcast` and verify it is durably accepted before delivery; after a controlled restart, verify pending recipient rows continue instead of restarting the entire recipient list.
+8. Verify report/PvP/broadcast delivery recovery after a controlled application restart.
+9. Let the Free Render service become idle long enough to spin down, then send a Telegram update. The first webhook request may encounter cold-start unavailability; the service must wake and Telegram must retry until it receives a 2xx response. Verify the update is eventually processed through the hardened production handler graph.
+10. Run `python scripts/check_telegram_webhook.py` again and make sure pending updates are not continuously growing and there is no current delivery error.
 
 A Telegram send cannot carry a server-side idempotency key. If the process dies after one recipient send succeeds but before its Mongo acknowledgement, that one recipient may receive the message again after lease recovery. Durable fanout/receipts intentionally confine this at-least-once uncertainty to the in-flight recipient; a restart cannot begin the whole broadcast from recipient zero.
 
