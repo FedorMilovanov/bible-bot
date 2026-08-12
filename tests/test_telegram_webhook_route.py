@@ -25,6 +25,32 @@ def _secret_headers():
     }
 
 
+def test_telegram_ready_reports_polling_immediately(app, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "polling")
+    response = app.test_client().get("/telegram/ready")
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ready", "transport": "polling"}
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_telegram_ready_reports_webhook_not_ready_until_bridge_is_active(
+    app, monkeypatch
+):
+    monkeypatch.setenv("TELEGRAM_TRANSPORT", "webhook")
+    response = app.test_client().get("/telegram/ready")
+    assert response.status_code == 503
+    assert response.get_json() == {"status": "not_ready", "transport": "webhook"}
+
+    monkeypatch.setattr(
+        telegram_transport.TELEGRAM_WEBHOOK_BRIDGE,
+        "ready",
+        lambda: True,
+    )
+    response = app.test_client().get("/telegram/ready")
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ready", "transport": "webhook"}
+
+
 def test_webhook_route_is_hidden_in_polling_mode(app, monkeypatch):
     monkeypatch.setenv("TELEGRAM_TRANSPORT", "polling")
     response = app.test_client().post(
