@@ -3,8 +3,9 @@
 The combined legacy delivery drain also processes battle outbox entries. Reports
 are migrated to the strict controller before PvP, so production needs a scoped
 report worker that cannot accidentally deliver battles through the old protocol.
-Nothing starts in the background on import; the application lifecycle calls
-``drain_pending_reports`` explicitly.
+Telegram RetryAfter is translated into a durable future lease instead of an
+immediate release. Nothing starts in the background on import; the application
+lifecycle calls ``drain_pending_reports`` explicitly.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from typing import Any
 
 from legacy_delivery_worker import deliver_report_once
 from report_integrity import ReportStoreUnavailable, get_pending_reports
+from telegram_delivery_retry import send_with_durable_retry_after
 
 
 class LegacyReportDeliveryQueueInvalid(RuntimeError):
@@ -61,6 +63,12 @@ async def drain_pending_reports(
             "pending report listing returned invalid data"
         )
 
+    async def durable_photo_sender(report: dict):
+        return await send_with_durable_retry_after(photo_sender, report)
+
+    async def durable_text_sender(report: dict):
+        return await send_with_durable_retry_after(text_sender, report)
+
     stage_sends = 0
     deferred = 0
     for report in reports:
@@ -73,11 +81,11 @@ async def drain_pending_reports(
             report_id = _required_report_id(report)
             photo_sent, text_sent = await deliver_report_once(
                 report_id,
-                photo_sender,
-                text_sender,
+                durable_photo_sender,
+                durable_text_sender,
             )
             stage_sends += int(photo_sent) + int(text_sent)
-            if not photo_sent and not text_sent:
+            if not text_sent:
                 deferred += 1
         except Exception as exc:
             identifier = str(report.get("_id") or report.get("report_id") or "<unknown>")
