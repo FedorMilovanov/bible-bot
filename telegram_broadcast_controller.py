@@ -15,6 +15,7 @@ from broadcast_integrity import (
     accept_broadcast_once,
     broadcast_id_for_update,
     claim_next_broadcast_delivery,
+    defer_broadcast_delivery,
     ensure_broadcast_fanout,
     get_broadcast,
     get_pending_broadcasts,
@@ -80,8 +81,6 @@ def _replay_broadcast(
         for value in recipients
     ):
         raise BroadcastStoreUnavailable("durable broadcast recipient snapshot is invalid")
-    # Fanout is deliberately not part of command acknowledgement. The periodic
-    # recovery job materializes/retries recipient rows from this immutable parent.
     return stored, recipients
 
 
@@ -104,9 +103,6 @@ def _accept_or_recover_new_broadcast(
         )
         return stored, created, recipients
     except BroadcastStoreUnavailable:
-        # A network/write acknowledgement can be lost after Mongo persisted the
-        # deterministic parent id. Never retry the insert blindly: one read-back
-        # either proves the immutable parent or preserves the fail-closed result.
         recovered = get_broadcast(broadcast_id)
         if not isinstance(recovered, dict):
             raise
@@ -122,23 +118,15 @@ def _accept_or_recover_new_broadcast(
 def _retry_after_seconds(exc: RetryAfter) -> float:
     value = exc.retry_after
     if isinstance(value, timedelta):
-        return max(0.0, value.total_seconds())
+        return max(1.0, value.total_seconds())
     try:
-        return max(0.0, float(value))
+        return max(1.0, float(value))
     except (TypeError, ValueError):
         return 1.0
 
 
 def _broadcast_text(text: str) -> str:
     return f"📢 Сообщение от автора бота:\n\n{text}"
-
-
-async def _send_with_one_rate_limit_retry(bot, *, chat_id: int, text: str) -> None:
-    try:
-        await bot.send_message(chat_id=chat_id, text=_broadcast_text(text))
-    except RetryAfter as exc:
-        await asyncio.sleep(_retry_after_seconds(exc))
-        await bot.send_message(chat_id=chat_id, text=_broadcast_text(text))
 
 
 async def drain_broadcast_outbox(
@@ -196,7 +184,24 @@ async def drain_broadcast_outbox(
             break
         affected.add(parent_id)
         try:
+            if not isinstance(raw_user_id, str) or not raw_user_id.isdigit():
+                if mark_broadcast_delivery_terminal_failure(
+                    delivery_id,
+                    claim_token,
+                    error="broadcast recipient id is invalid",
+                ):
+                    terminal_failed += 1
+                continue
             user_id = int(raw_user_id)
+            if user_id <= 0:
+                if mark_broadcast_delivery_terminal_failure(
+                    delivery_id,
+                    claim_token,
+                    error="broadcast recipient id is invalid",
+                ):
+                    terminal_failed += 1
+                continue
+
             parent = get_broadcast(parent_id)
             if not isinstance(parent, dict):
                 if mark_broadcast_delivery_terminal_failure(
@@ -217,7 +222,7 @@ async def drain_broadcast_outbox(
                 continue
 
             try:
-                await _send_with_one_rate_limit_retry(bot, chat_id=user_id, text=text)
+                await bot.send_message(chat_id=user_id, text=_broadcast_text(text))
             except (Forbidden, BadRequest) as exc:
                 if mark_broadcast_delivery_terminal_failure(
                     delivery_id,
@@ -225,7 +230,18 @@ async def drain_broadcast_outbox(
                     error=f"{type(exc).__name__}: {exc}",
                 ):
                     terminal_failed += 1
-            except (NetworkError, TimedOut, RetryAfter) as exc:
+            except RetryAfter as exc:
+                delay = _retry_after_seconds(exc)
+                if not defer_broadcast_delivery(
+                    delivery_id,
+                    claim_token,
+                    delay_seconds=delay,
+                    error=f"{type(exc).__name__}: {exc}",
+                ):
+                    errors.append(f"broadcast:{parent_id}:{delivery_id}:defer conflict")
+                deferred += 1
+                break
+            except (NetworkError, TimedOut) as exc:
                 release_broadcast_delivery(
                     delivery_id,
                     claim_token,
