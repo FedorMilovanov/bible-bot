@@ -60,7 +60,7 @@ def _fetch_info(bot_token: str, *, timeout: float = 10.0) -> dict:
         headers={"Accept": "application/json"},
         method="GET",
     )
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed HTTPS host
+    with urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise RuntimeError("Telegram did not return a successful getWebhookInfo response")
