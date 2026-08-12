@@ -228,7 +228,11 @@ def accept_broadcast_once(
                 raise BroadcastStoreUnavailable(
                     "broadcast id is bound to different immutable content"
                 ) from None
-        return ensure_broadcast_fanout(stored), created
+        # Acceptance ends at the immutable parent snapshot. Recipient fanout is
+        # intentionally a secondary recoverable operation performed by the
+        # delivery job, so a transient fanout failure cannot make an already
+        # accepted command look unaccepted to the administrator.
+        return stored, created
     except BroadcastStoreUnavailable:
         raise
     except PyMongoError as exc:
