@@ -13,6 +13,11 @@ async def _noop(_report):
     return None
 
 
+@pytest.fixture(autouse=True)
+def _default_no_aggregate_repair(monkeypatch):
+    monkeypatch.setattr(drain, "repair_report_delivery_aggregate", lambda _report_id: False)
+
+
 def test_report_only_drain_delivers_pending_reports(monkeypatch):
     monkeypatch.setattr(
         drain,
@@ -35,9 +40,52 @@ def test_report_only_drain_delivers_pending_reports(monkeypatch):
     assert result.errors == ()
 
 
+def test_stuck_aggregate_is_repaired_before_any_sender_call(monkeypatch):
+    monkeypatch.setattr(drain, "get_pending_reports", lambda _limit: [{"_id": "r1"}])
+    repairs = []
+    monkeypatch.setattr(
+        drain,
+        "repair_report_delivery_aggregate",
+        lambda report_id: repairs.append(report_id) or True,
+    )
+    monkeypatch.setattr(
+        drain,
+        "deliver_report_once",
+        lambda *_args: pytest.fail("terminal stage evidence must not be resent"),
+    )
+
+    result = run(drain.drain_pending_reports(photo_sender=_noop, text_sender=_noop))
+
+    assert repairs == ["r1"]
+    assert result.reports_seen == 1
+    assert result.stage_sends == 0
+    assert result.deferred == 0
+    assert result.errors == ()
+
+
+def test_worker_error_after_stage_settlement_is_repaired_without_retry_error(monkeypatch):
+    monkeypatch.setattr(drain, "get_pending_reports", lambda _limit: [{"_id": "r1"}])
+    repair_results = iter([False, True])
+    monkeypatch.setattr(
+        drain,
+        "repair_report_delivery_aggregate",
+        lambda _report_id: next(repair_results),
+    )
+
+    async def deliver(_report_id, _photo, _text):
+        raise drain.ReportStoreUnavailable("aggregate ack lost")
+
+    monkeypatch.setattr(drain, "deliver_report_once", deliver)
+
+    result = run(drain.drain_pending_reports(photo_sender=_noop, text_sender=_noop))
+
+    assert result.reports_seen == 1
+    assert result.stage_sends == 0
+    assert result.deferred == 0
+    assert result.errors == ()
+
+
 def test_report_only_drain_never_touches_battle_queue(monkeypatch):
-    # The scoped module has no battle imports or sender. This test makes the
-    # migration boundary explicit so reports cannot activate legacy PvP delivery.
     assert not hasattr(drain, "get_pending_final_battles")
     assert not hasattr(drain, "deliver_battle_recipient_once")
 
