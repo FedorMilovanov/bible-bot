@@ -5,7 +5,7 @@ import importlib
 import logging
 import os
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -55,12 +55,90 @@ from web_api.telegram_transport import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+_PUBLIC_BOT_COMMANDS = (
+    BotCommand("app", "🚀 Открыть приложение"),
+    BotCommand("menu", "🏠 Главное меню"),
+    BotCommand("test", "🎯 Начать тест"),
+    BotCommand("stats", "📊 Моя статистика"),
+    BotCommand("random", "🎲 Случайный тест"),
+    BotCommand("status", "▶️ Продолжить тест"),
+    BotCommand("reset", "🆘 Сбросить текущий тест"),
+    BotCommand("cancel", "❌ Отменить текущий тест"),
+    BotCommand("help", "❓ Помощь"),
+)
+
 
 def _required_env(name: str) -> str:
     value = os.getenv(name)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Required production environment variable is missing: {name}")
     return value
+
+
+def _miniapp_url() -> str | None:
+    explicit = os.getenv("MINIAPP_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    base_url = (
+        os.getenv("RENDER_EXTERNAL_URL", "").strip()
+        or os.getenv("TELEGRAM_WEBHOOK_BASE_URL", "").strip()
+    )
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/app"
+
+
+def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
+    url = _miniapp_url()
+    if not url:
+        return None
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=url))]]
+    )
+
+
+_legacy_main_keyboard = legacy._main_keyboard
+
+
+def _main_keyboard_with_app() -> InlineKeyboardMarkup:
+    current = _legacy_main_keyboard()
+    url = _miniapp_url()
+    if not url:
+        return current
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=url))],
+            *current.inline_keyboard,
+        ]
+    )
+
+
+legacy._main_keyboard = _main_keyboard_with_app
+
+
+async def _app_command(update, context):
+    del context
+    keyboard = _miniapp_keyboard()
+    if keyboard is None:
+        await update.message.reply_text("⚠️ Mini App URL пока не настроен.")
+        return
+    await update.message.reply_text(
+        "📱 *Приложение 1 Петра*\n\n"
+        "Тесты, статистика и рейтинг — внутри Telegram.",
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+
+
+async def _sync_public_command_menu_job(context):
+    try:
+        await context.bot.set_my_commands(_PUBLIC_BOT_COMMANDS)
+        logger.info(
+            "Telegram public command menu synchronized (%d commands)",
+            len(_PUBLIC_BOT_COMMANDS),
+        )
+    except Exception:
+        logger.warning("Telegram public command menu sync failed", exc_info=True)
 
 
 async def _start(update, context):
@@ -192,6 +270,7 @@ def main() -> None:
     app.add_handler(report_conv)
 
     app.add_handler(CommandHandler("start", _start))
+    app.add_handler(CommandHandler("app", _app_command))
     app.add_handler(CommandHandler("menu", quiz.start))
     app.add_handler(CommandHandler("test", quiz.test_command))
     app.add_handler(CommandHandler("stats", legacy.stats_command))
@@ -296,6 +375,10 @@ def main() -> None:
         )
     )
 
+    app.job_queue.run_once(
+        _sync_public_command_menu_job,
+        when=0,
+    )
     app.job_queue.run_repeating(
         legacy.cleanup_stale_userdata_job,
         interval=legacy.GC_INTERVAL,
