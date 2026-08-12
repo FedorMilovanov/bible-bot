@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from pymongo.errors import AutoReconnect
-from telegram.error import Forbidden, NetworkError
+from telegram.error import Forbidden, NetworkError, RetryAfter
 
 os.environ.setdefault("ADMIN_USER_ID", "1")
 
@@ -296,6 +296,36 @@ def test_permanent_telegram_failure_is_terminal_not_retried_forever(monkeypatch)
     assert summary.terminal_failed == 1
     assert summary.deferred == 0
     assert terminal[0][0:2] == (delivery["_id"], "claim")
+    assert releases == []
+
+
+def test_retry_after_is_durably_deferred_without_second_send_or_release(monkeypatch):
+    bot, delivery, _syncs = _install_one_delivery(
+        monkeypatch,
+        send_error=RetryAfter(300),
+    )
+    deferrals = []
+    releases = []
+    monkeypatch.setattr(
+        broadcasts,
+        "defer_broadcast_delivery",
+        lambda delivery_id, token, *, delay_seconds, error: deferrals.append(
+            (delivery_id, token, delay_seconds, error)
+        )
+        or True,
+    )
+    monkeypatch.setattr(
+        broadcasts,
+        "release_broadcast_delivery",
+        lambda *args, **kwargs: releases.append((args, kwargs)) or True,
+    )
+
+    summary = run(broadcasts.drain_broadcast_outbox(bot, limit=5))
+
+    assert summary.deferred == 1
+    assert summary.delivered == 0
+    assert len(bot.sent) == 1
+    assert deferrals[0][0:3] == (delivery["_id"], "claim", 300.0)
     assert releases == []
 
 
