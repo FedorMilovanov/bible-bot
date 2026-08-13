@@ -64,7 +64,7 @@ def create_or_recover_battle(update, user) -> tuple[dict, bool]:
         created = create_durable_battle(
             battle_id=battle_id,
             creator_id=user.id,
-            creator_name=user.first_name or "Игрок",
+            creator_name=user.first_name or "\u0418\u0433\u0440\u043e\u043a",
             questions=questions,
         )
         return created, True
@@ -86,13 +86,13 @@ async def create_battle(update, context):
         battle, _created = create_or_recover_battle(update, user)
     except ValueError as exc:
         if "questions" in str(exc):
-            await query.answer("⚠️ Вопросы для битвы не найдены.", show_alert=True)
+            await query.answer("\u26a0\ufe0f \u0412\u043e\u043f\u0440\u043e\u0441\u044b \u0434\u043b\u044f \u0431\u0438\u0442\u0432\u044b \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b.", show_alert=True)
         else:
-            await query.answer("⚠️ Запрос на создание битвы повреждён.", show_alert=True)
+            await query.answer("\u26a0\ufe0f \u0417\u0430\u043f\u0440\u043e\u0441 \u043d\u0430 \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u0431\u0438\u0442\u0432\u044b \u043f\u043e\u0432\u0440\u0435\u0436\u0434\u0451\u043d.", show_alert=True)
         return
     except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict):
         logger.warning("replay-safe battle creation failed for user %s", user.id, exc_info=True)
-        await query.answer("⚠️ Не удалось создать битву. Попробуй ещё раз.", show_alert=True)
+        await query.answer("\u26a0\ufe0f \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0431\u0438\u0442\u0432\u0443. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437.", show_alert=True)
         return
 
     battle_id = battle["_id"]
@@ -101,32 +101,30 @@ async def create_battle(update, context):
         share_url = sharing.build_battle_share_url(
             context.bot.username,
             battle_id,
-            str(battle.get("creator_name") or user.first_name or "Игрок"),
+            str(battle.get("creator_name") or user.first_name or "\u0418\u0433\u0440\u043e\u043a"),
         )
     except ValueError:
         logger.info("battle share URL is unavailable", exc_info=True)
     else:
-        rows.append([InlineKeyboardButton(
-            "📤 Поделиться вызовом", url=share_url)])
+        rows.append([InlineKeyboardButton("\U0001f4e4 \u041f\u043e\u0434\u0435\u043b\u0438\u0442\u044c\u0441\u044f \u0432\u044b\u0437\u043e\u0432\u043e\u043c", url=share_url)])
     rows.extend(
         [
             [
                 InlineKeyboardButton(
-                    "➜ Отменить ожидание",
+                    "\u274c \u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u043e\u0436\u0438\u0434\u0430\u043d\u0438\u0435",
                     callback_data=battles._cancel_payload(battle_id),
                 )
             ],
-            [InlineKeyboardButton(
-                "◀️ К битвам", callback_data="battle_menu")],
+            [InlineKeyboardButton("\u2b05\ufe0f \u041a \u0431\u0438\u0442\u0432\u0430\u043c", callback_data="battle_menu")],
         ]
     )
 
     await query.answer()
     await query.edit_message_text(
-        "⚔️ *БИТВА СОЗДА�Н�A!*\n\n"
-        "📨 Отправь точную ссылку сопернику или дождись игрока из общего списка.\n"
-        "⍬ После присоединения бот пришлёт обоим кнопку Start.\n\n"
-        "_Незапущенная битва автоматически очищается после окна ожидания._",
+        "\u2694\ufe0f *\u0411\u0418\u0422\u0412\u0410 \u0421\u041e\u0417\u0414\u0410\u041d\u0410!*\n\n"
+        "\U0001f4e4 \u041e\u0442\u043f\u0440\u0430\u0432\u044c \u0442\u043e\u0447\u043d\u0443\u044e \u0441\u0441\u044b\u043b\u043a\u0443 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0443 \u0438\u043b\u0438 \u0434\u043e\u0436\u0434\u0438\u0441\u044c \u0438\u0433\u0440\u043e\u043a\u0430 \u0438\u0437 \u043e\u0431\u0449\u0435\u0433\u043e \u0441\u043f\u0438\u0441\u043a\u0430.\n"
+        "\u23f3 \u041f\u043e\u0441\u043b\u0435 \u043f\u0440\u0438\u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u044f \u0431\u043e\u0442 \u043f\u0440\u0438\u0448\u043b\u0451\u0442 \u043e\u0431\u043e\u0438\u043c \u043a\u043d\u043e\u043f\u043a\u0443 Start.\n\n"
+        "_\u041d\u0435\u0437\u0430\u043f\u0443\u0449\u0435\u043d\u043d\u0430\u044f \u0431\u0438\u0442\u0432\u0430 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043e\u0447\u0438\u0449\u0430\u0435\u0442\u0441\u044f \u043f\u043e\u0441\u043b\u0435 \u043e\u043a\u043d\u0430 \u043e\u0436\u0438\u0434\u0430\u043d\u0438\u044f._",
         reply_markup=InlineKeyboardMarkup(rows),
         parse_mode="Markdown",
     )
