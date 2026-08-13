@@ -24,6 +24,7 @@ from .content_truth import (
     SOURCE_CATALOG,
     curate_pool,
 )
+from .content_truth_review import apply_review_overrides
 from .intro import (
     intro_part1_questions as _raw_intro1,
     intro_part2_questions as _raw_intro2,
@@ -33,7 +34,7 @@ from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
 
 
 def _canonical(raw: list[dict], key: str) -> list[dict]:
-    return curate_pool(raw, pool_key=key)
+    return apply_review_overrides(curate_pool(raw, pool_key=key))
 
 
 # Production-facing canonical leaf pools. Raw chapter1.py/intro.py remain an
@@ -137,7 +138,6 @@ COMPETITIVE_POOL = _build_competitive_pool()
 _POOLS["competitive_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
-# Backward-compatible diagnostic name derived from the canonical ranking policy.
 NON_COMPETITIVE_IDS = frozenset(
     question["id"]
     for key in _COMPETITIVE_LEAF_KEYS
