@@ -44,6 +44,7 @@ import telegram_retry_controller as retry  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
 from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
+from questions import pick_competitive_challenge_questions  # noqa: E402
 from web_api.db_hardening import (  # noqa: E402
     MiniAppIndexSafetyUnavailable,
     ensure_miniapp_indexes,
@@ -114,6 +115,9 @@ def _main_keyboard_with_app() -> InlineKeyboardMarkup:
 
 
 legacy._main_keyboard = _main_keyboard_with_app
+# The legacy Challenge selector mixes learning-only pools. Production Challenge
+# is ranking-scored, so both initial launch and restart must use the reviewed bank.
+legacy.pick_challenge_questions = pick_competitive_challenge_questions
 
 
 async def _app_command(update, context):
