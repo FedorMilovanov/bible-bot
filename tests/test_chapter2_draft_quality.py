@@ -5,6 +5,7 @@ from questions.chapter2 import (
     INTERTEXT_2_1_10,
     TEXT_2_1_10,
 )
+from questions.chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
 from questions.source_registry import SOURCE_CATALOG
 
 
@@ -63,6 +64,8 @@ def test_chapter2_intertexts_have_lxx_or_text_evidence_and_rank_only_direct_link
             assert item["position"] == "neutral"
 
 
-def test_incomplete_chapter2_is_not_exposed_as_a_production_pool():
-    assert "chapter2" not in POOL_REGISTRY
+def test_reviewed_chapter2_is_the_only_exposed_chapter2_production_pool():
+    reviewed_ids = {item["id"] for item in CHAPTER2_REVIEWED_QUESTIONS}
+    production_ids = {item["id"] for item in POOL_REGISTRY["chapter2"]}
+    assert production_ids == reviewed_ids
     assert not any(key.startswith("ch2_") for key in POOL_REGISTRY)
