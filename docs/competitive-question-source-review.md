@@ -1,34 +1,108 @@
-# Competitive question source review
+# Canonical question source review and main admission
 
 Reviewed: 2026-08-13
 
-This note records the source threshold for questions that may affect PvP or Challenge ranking. Learning-mode availability is broader; ranking eligibility is intentionally conservative.
+This document records the final content-truth model used by production before integration into `main`.
 
-## Released after review
+## Canonical authority
 
-- `easy_12` — retained wording is explicitly conditional: *if* the letter is dated to the early 60s, Nero is the relevant emperor. The competitive fact tested is the imperial chronology, not acceptance of that date for 1 Peter.
-- `med_02` — Tacitus, *Annals* 15.44, explicitly names Nero as the ruler who blamed Christians after the fire of Rome and subjected them to severe punishments. This is a direct historical-source question, not a claim about an empire-wide persecution reflected by 1 Peter.
-- `hard_02` — `παρακύψαι` in 1 Peter 1:12 is from `παρακύπτω`, whose lexical image is stooping/peering or looking into; the question tests that lexical sense.
-- `hard_12` — the Greek text of 1 Peter 1:4 directly has `ἄφθαρτον`, `ἀμίαντον`, `ἀμάραντον`; standard lexical glosses distinguish imperishable/incorruptible, undefiled, and unfading.
+`questions/chapter1.py` and `questions/intro.py` remain the historical authoring corpus. Production code does not consume them directly. The public `questions` package builds canonical copies through the content-truth/review layers, and a regression guard rejects production imports that bypass that package boundary.
 
-## Kept learning-only
+Every canonical item carries explicit epistemic metadata:
 
-- `easy_02`, `med_15`, `hard_11` — dating 1 Peter to the early 60s is a scholarly reconstruction, not an uncontested internal-text fact. Modern introductions give materially different dating/authorship assessments.
-- `easy_03`, `med_01` — reading "Babylon" in 1 Peter 5:13 as Rome is common and historically important, but it remains an inference about place and symbolism rather than an explicit identification in the verse.
-- `easy_04` — 1 Peter 5:12 names Silvanus, but whether `διὰ Σιλουανοῦ ... ἔγραψα` makes him Peter's secretary/editor or the letter carrier is disputed. The stronger "secretary-editor explains the Greek" wording is therefore not ranking-safe.
-- `med_03` — `πρόγνωσις` supports lexical senses such as foreknowledge/forethought/prearrangement, but the current answer selects a more specific theological model. Keep it out of ranking until the question is rewritten to test a narrower textual/lexical claim.
-- `med_13` — the current inline annotation mixes `διασπορά` with an erroneous/corrupted gloss. Lexically the noun denotes dispersion/scattering; the question stays quarantined until its source text is corrected.
-- `hard_03` — Exodus 12:11 is a plausible background for "girding the loins" in 1 Peter 1:13, but responsible notes describe the connection as reminiscent/allusive rather than an explicit citation.
-- `hard_13` — Exodus 24:3-8 provides a strong proposed covenant background for obedience plus sprinkling with blood in 1 Peter 1:2, but identifying that precise allusion is an exegetical conclusion. It remains learning-only rather than ranking-authoritative.
+- `claim_type`: `text`, `greek`, `history`, `interpretation`, or `application`;
+- `confidence`: `high`, `medium`, or `contested`;
+- `position`: `neutral` or `project`;
+- `competitive`: whether the item may affect PvP/Challenge ranking;
+- `sources`: source IDs resolved through the canonical source catalog.
 
-## Sources
+Project/traditional positions remain available for learning but are visibly labelled rather than presented as universal scholarly consensus.
 
-- Tacitus, *Annals* 15.44 (Perseus): https://www.perseus.tufts.edu/hopper/text?doc=Tac.+Ann.+15.44&fromdoc=Perseus%3Atext%3A1999.02.0078
-- New American Bible / NABRE introduction and notes on 1 Peter: https://www.bible.com/bible/463/1PE.INTRO1.NABRE and https://www.biblegateway.com/passage/?search=1+Peter+1%3A13&version=NABRE
-- NET Bible note on 1 Peter 5:12: https://classic.net.bible.org/verse.php?book=1Pe&chapter=5&tab=commentaries&theme=wiki&verse=12
-- E. Randolph Richards, "Silvanus Was Not Peter's Secretary," JETS 43.3 (2000): https://www.galaxie.com/article/jets43-3-03
-- Abbott-Smith lexical entry for `παρακύπτω`: https://bible-teka.com/strong/greek/3879/dict/abbott-smith/
-- Perseus vocabulary for 1 Peter 1:4: https://vocab.perseus.org/word-list/urn%3Acts%3AgreekLit%3Atlg0031.tlg021.perseus-grc2%3A1.4/
-- Lexical data for `πρόγνωσις`: https://www.blueletterbible.org/lexicon/g4268/mgnt/mgnt/0-1/
-- LSJ-derived lexical data for `διασπορά`: https://bible-teka.com/strong/greek/1290/dict/liddell-scott-jones/
-- "The use of Exodus 19-24 in 1 Peter 1:2 - An exegetical investigation" (2025): https://www.scielo.org.za/scielo.php?lng=en&pid=S2305-08532025000100010&script=sci_abstract
+## Confirmed P0 repairs
+
+The canonical runtime bank repairs all four confirmed source-text failures found in the marathon audit:
+
+- `geo_04` — Ephesus is present and is the correct answer; the old item named Ephesus only in its explanation while marking Rome correct.
+- `ling2_12` — uses the real 1 Pet 1:6 sequence `ἐν ᾧ ἀγαλλιᾶσθε, ὀλίγον ἄρτι...`; the malformed `ἐν ὀλίγον ἄρτι` construction is not used.
+- `ling2_15` — no invented `ἐν` before `φθαρτοῖς`; the item tests the actual dative forms in 1 Pet 1:18.
+- `ling3_06` — uses `ἀγαπήσατε`, aorist active imperative 2nd plural, rather than the erroneous present-imperative form.
+
+Dedicated regression tests protect these repairs.
+
+## Full Greek review
+
+All three Greek learning pools were reviewed item by item against the Greek text/morphology. The canonical review additionally corrects or narrows claims involving:
+
+- `πρόγνωσις` and theological over-reading;
+- `διασπορά` versus the corrupted `σπορά` gloss;
+- `ἀναγεννήσας` and aorist-aspect overstatement;
+- `εἰ δέον` without an invented `ἐστίν`;
+- `ψυχή` in `σωτηρίαν ψυχῶν`;
+- proposed Exodus background for 1 Pet 1:13 as an allusion/background rather than an explicit citation;
+- the syntax around `λόγου`, `ζῶντος`, and `μένοντος` in 1 Pet 1:23;
+- the future horizon of salvation in 1 Pet 1:5;
+- election/calling as theological synthesis rather than morphology;
+- `ἀμώμου`, `ἀσπίλου`, `ἐξηράνθη`, `ἀνυπόκριτος`, `ἐκτενῶς`, `φιλαδελφία`, and `ἀγάπη` without folk-etymological or one-gloss overclaiming.
+
+Greek learning items remain non-competitive unless they pass an explicit source-review release.
+
+## Nero and historical review
+
+Nero questions distinguish source layers instead of collapsing them into one narrative:
+
+- Tacitus, *Annals* 15.44 is used for Nero blaming Christians after the fire and for the specific punishments he lists;
+- Suetonius is named for claims drawn from *Nero* 38/49, including the fire-duration report and `Qualis artifex pereo!`;
+- Eusebius, *Church History* 2.25 is identified as a later church-historical witness for traditions concerning Peter and Paul under Nero;
+- Paul’s Roman citizenship is tested as the direct Acts claim rather than as an automatically proven legal cause of one precise execution method;
+- Neronian Rome is treated as historical context whose connection to 1 Peter depends on the disputed dating of the letter.
+
+## Geography review
+
+The address in 1 Pet 1:1 is described as five geographic/provincial names — Pontus, Galatia, Cappadocia, Asia, and Bithynia — rather than flattening every name into an identical administrative category. `διασπορά` is kept at its basic sense of dispersion/diaspora before further theological interpretation.
+
+## Intro/authorship review
+
+The course retains its traditional Petrine position while clearly identifying it as the course position. Rewritten introduction items separate:
+
+- internal textual claims from historical proof;
+- early patristic reception from modern authorship adjudication;
+- the high-Greek objection from the stronger claim that Petrine authorship is impossible;
+- knowledge of Peter’s death from the stronger claim that pseudonymity is logically impossible;
+- Silvanus named in 1 Pet 5:12 from disputed secretary/editor/courier reconstructions;
+- dating, Babylon/Rome, and arguments from silence from uncontested facts.
+
+## Competitive integrity
+
+Learning availability is broader than ranking eligibility. PvP and Challenge use the canonical ranking policy rather than the broad casual/random learning bank. Contested interpretation/application material does not decide another user’s competitive result unless an item has received an explicit source-reviewed ranking release.
+
+The currently explicit source-reviewed ranking releases are:
+
+- `easy_12` — conditional imperial chronology;
+- `med_02` — Tacitus on Nero and Christians after the fire;
+- `hard_02` — lexical sense of `παρακύπτω`;
+- `hard_12` — the three Greek adjectives in 1 Pet 1:4.
+
+## Mini App lifecycle correctness
+
+The Mini App remains server-authoritative for quiz timing. On WebView/browser resume (`visibilitychange` / `pageshow`), an active answerable question is reloaded from the server so the UI’s remaining time is resynchronised with the authoritative server timestamp instead of trusting throttled client intervals. JS unit tests cover the visible/hidden and answerable/pending cases.
+
+## Main admission gate
+
+This content/runtime state may enter `main` only after a fresh pull-request run against the current `main` base succeeds for all admission workflows:
+
+- CI: actionlint, dependency/secret guards, Ruff, compile, full pytest, Mini App JavaScript syntax/unit tests, Docker build, production imports, and web-container smoke;
+- Security Audit;
+- CodeQL for Python and JavaScript/TypeScript.
+
+Old successful or failed runs from a previous PR base are not accepted as evidence for the final `main` merge.
+
+## Key sources
+
+- SBL Greek New Testament / MorphGNT morphology for 1 Peter.
+- Tacitus, *Annals* 15.44.
+- Suetonius, *Nero* 38 and 49.
+- Eusebius, *Church History* 2.25.
+- Pliny / Trajan, *Letters* 10.96–97.
+- Oxford Handbook of 1 Peter, contested issues in authorship/date/place.
+- E. Randolph Richards, “Silvanus Was Not Peter’s Secretary,” JETS 43.3 (2000).
+- Cambridge/New Testament Studies work on Acts 4:13 and literacy terminology.
