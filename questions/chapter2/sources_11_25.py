@@ -41,6 +41,11 @@ SOURCE_CATALOG = {
         "url": "https://www.cambridge.org/core/journals/new-testament-studies/article/following-in-the-footsteps-exemplarity-ethnicity-and-ethics-in-1-peter/F19BD804EBB5FF4CD0259B3C75C0CE8A",
         "kind": "scholarship",
     },
+    "naseri_1p2_11": {
+        "title": "Christopher Naseri, Christian Identity in the First Letter of Peter: An Exegesis of 1 Peter 2:11 (2016)",
+        "url": "https://www.iiste.org/Journals/index.php/RHSS/article/view/30666",
+        "kind": "scholarship",
+    },
     "hts_ancient_slavery": {
         "title": "Hendrik Goede, Constructing ancient slavery as socio-historic context of the New Testament",
         "url": "https://hts.org.za/index.php/hts/article/view/1297",
