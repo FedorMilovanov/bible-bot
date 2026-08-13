@@ -1,7 +1,7 @@
 """Reviewed authoring aggregate for 1 Peter chapter 2.
 
 This is the promotion boundary between scattered review modules and a single
-chapter-level bank. It is not a production pool yet.
+chapter-level bank.
 """
 
 from copy import deepcopy
@@ -23,10 +23,14 @@ from .theology_civil import THEOLOGY_CIVIL_2_13_17
 from .theology_people_text import THEOLOGY_PEOPLE_TEXT
 
 
-# Explicit quarantine remains part of the contract even when empty. New items
-# that overclaim their evidence must be excluded here rather than silently
-# leaking into the reviewed bank.
-CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset()
+CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset(
+    {
+        "ch2_hist_001",
+        "ch2_hist_003",
+        "ch2_hist_004",
+        "ch2_theol_010",
+    }
+)
 
 _SUPPLEMENTAL_REVIEWED = (
     APPLICATION_GROWTH_2_1_3
