@@ -5,6 +5,7 @@ from __future__ import annotations
 from .chapter2.sources import SOURCE_CATALOG as CHAPTER2_SOURCE_CATALOG
 from .chapter2.sources_11_25 import SOURCE_CATALOG as CHAPTER2_11_25_SOURCE_CATALOG
 from .chapter2.sources_disputed import SOURCE_CATALOG as CHAPTER2_DISPUTED_SOURCE_CATALOG
+from .chapter2.sources_visitation import SOURCE_CATALOG as CHAPTER2_VISITATION_SOURCE_CATALOG
 from .content_truth import SOURCE_CATALOG as LEGACY_SOURCE_CATALOG
 
 
@@ -23,6 +24,7 @@ SOURCE_CATALOG = _merge_catalogs(
     CHAPTER2_SOURCE_CATALOG,
     CHAPTER2_11_25_SOURCE_CATALOG,
     CHAPTER2_DISPUTED_SOURCE_CATALOG,
+    CHAPTER2_VISITATION_SOURCE_CATALOG,
 )
 
 
