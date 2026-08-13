@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -14,6 +15,7 @@ from legacy_battle_session import (
     create_durable_battle,
     get_owned_open_durable_battle,
 )
+from questions import BATTLE_POOL
 
 logger = logging.getLogger(__name__)
 _MAX_UPDATE_ID = (1 << 64) - 1
@@ -42,6 +44,14 @@ def _owned_created_battle(battle_id: str, creator_id: int) -> dict | None:
     return battle
 
 
+def _competitive_battle_questions() -> list[dict]:
+    """Return exactly 10 questions from the ranking-eligible bank."""
+    pool = list(BATTLE_POOL)
+    if len(pool) < 10:
+        raise ValueError("battle questions are unavailable")
+    return random.sample(pool, 10)
+
+
 def create_or_recover_battle(update, user) -> tuple[dict, bool]:
     """Create once by update id or recover an already accepted/ambiguous write."""
     battle_id = battle_id_for_update(update.update_id)
@@ -49,9 +59,7 @@ def create_or_recover_battle(update, user) -> tuple[dict, bool]:
     if existing is not None:
         return existing, False
 
-    questions = battles._battle_pool()
-    if not questions:
-        raise ValueError("battle questions are unavailable")
+    questions = _competitive_battle_questions()
     try:
         created = create_durable_battle(
             battle_id=battle_id,
@@ -61,10 +69,6 @@ def create_or_recover_battle(update, user) -> tuple[dict, bool]:
         )
         return created, True
     except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict) as exc:
-        # Mongo may have committed the deterministic insert even if the client
-        # lost its acknowledgement, or this exact Telegram update may be replayed.
-        # Read back only the exact id owned by this creator; never issue a second
-        # random-id create attempt.
         try:
             recovered = _owned_created_battle(battle_id, user.id)
         except LegacyBattleSessionUnavailable as lookup_exc:
@@ -102,24 +106,26 @@ async def create_battle(update, context):
     except ValueError:
         logger.info("battle share URL is unavailable", exc_info=True)
     else:
-        rows.append([InlineKeyboardButton("📤 Поделиться вызовом", url=share_url)])
+        rows.append([InlineKeyboardButton(
+            "📤 Поделиться вызовом", url=share_url)])
     rows.extend(
         [
             [
                 InlineKeyboardButton(
-                    "❌ Отменить ожидание",
+                    "➜ Отменить ожидание",
                     callback_data=battles._cancel_payload(battle_id),
                 )
             ],
-            [InlineKeyboardButton("⬅️ К битвам", callback_data="battle_menu")],
+            [InlineKeyboardButton(
+                "◀️ К битвам", callback_data="battle_menu")],
         ]
     )
 
     await query.answer()
     await query.edit_message_text(
-        "⚔️ *БИТВА СОЗДАНА!*\n\n"
-        "📤 Отправь точную ссылку сопернику или дождись игрока из общего списка.\n"
-        "⏳ После присоединения бот пришлёт обоим кнопку Start.\n\n"
+        "⚔️ *БИТВА СОЗДА�Н�A!*\n\n"
+        "📨 Отправь точную ссылку сопернику или дождись игрока из общего списка.\n"
+        "⍬ После присоединения бот пришлёт обоим кнопку Start.\n\n"
         "_Незапущенная битва автоматически очищается после окна ожидания._",
         reply_markup=InlineKeyboardMarkup(rows),
         parse_mode="Markdown",
