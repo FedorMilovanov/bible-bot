@@ -1,12 +1,14 @@
-"""Canonical source registry assembled from the legacy and chapter-specific catalogs."""
+"""Canonical source registry assembled from legacy and chapter-specific catalogs."""
 
 from __future__ import annotations
 
-from .chapter2.sources import SOURCE_CATALOG as CHAPTER2_SOURCE_CATALOG
-from .chapter2.sources_11_25 import SOURCE_CATALOG as CHAPTER2_11_25_SOURCE_CATALOG
-from .chapter2.sources_disputed import SOURCE_CATALOG as CHAPTER2_DISPUTED_SOURCE_CATALOG
-from .chapter2.sources_visitation import SOURCE_CATALOG as CHAPTER2_VISITATION_SOURCE_CATALOG
-from .content_truth import SOURCE_CATALOG as LEGACY_SOURCE_CATALOG
+from .chapter2.sources import SOURCE_CATALOG as BASE
+from .chapter2.sources_11_25 import SOURCE_CATALOG as LATE
+from .chapter2.sources_disputed import SOURCE_CATALOG as DISPUTED
+from .chapter2.sources_logikon import SOURCE_CATALOG as LOGIKON
+from .chapter2.sources_temple import SOURCE_CATALOG as TEMPLE
+from .chapter2.sources_visitation import SOURCE_CATALOG as VISITATION
+from .content_truth import SOURCE_CATALOG as LEGACY
 
 
 def _merge_catalogs(*catalogs: dict[str, dict]) -> dict[str, dict]:
@@ -19,13 +21,6 @@ def _merge_catalogs(*catalogs: dict[str, dict]) -> dict[str, dict]:
     return merged
 
 
-SOURCE_CATALOG = _merge_catalogs(
-    LEGACY_SOURCE_CATALOG,
-    CHAPTER2_SOURCE_CATALOG,
-    CHAPTER2_11_25_SOURCE_CATALOG,
-    CHAPTER2_DISPUTED_SOURCE_CATALOG,
-    CHAPTER2_VISITATION_SOURCE_CATALOG,
-)
-
+SOURCE_CATALOG = _merge_catalogs(LEGACY, BASE, LATE, DISPUTED, LOGIKON, TEMPLE, VISITATION)
 
 __all__ = ["SOURCE_CATALOG"]
