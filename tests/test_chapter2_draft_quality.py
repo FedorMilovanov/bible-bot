@@ -1,5 +1,10 @@
 from questions import POOL_REGISTRY
-from questions.chapter2 import CHAPTER2_DRAFT_QUESTIONS, GREEK_2_1_10, TEXT_2_1_10
+from questions.chapter2 import (
+    CHAPTER2_DRAFT_QUESTIONS,
+    GREEK_2_1_10,
+    INTERTEXT_2_1_10,
+    TEXT_2_1_10,
+)
 from questions.source_registry import SOURCE_CATALOG
 
 
@@ -41,6 +46,17 @@ def test_chapter2_greek_requires_text_and_morphology_and_is_not_ranked_yet():
 def test_chapter2_direct_text_slice_is_explicitly_rankable_only_when_high_confidence():
     assert TEXT_2_1_10
     for item in TEXT_2_1_10:
+        if item["competitive"]:
+            assert item["claim_type"] == "text"
+            assert item["confidence"] == "high"
+            assert item["position"] == "neutral"
+
+
+def test_chapter2_intertexts_have_lxx_or_text_evidence_and_rank_only_direct_links():
+    assert INTERTEXT_2_1_10
+    for item in INTERTEXT_2_1_10:
+        assert "sblgnt" in item["sources"]
+        assert "septuagint_bible" in item["sources"]
         if item["competitive"]:
             assert item["claim_type"] == "text"
             assert item["confidence"] == "high"
