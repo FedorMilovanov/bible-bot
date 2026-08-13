@@ -1,6 +1,7 @@
 """Explicit ranking eligibility policy and review registration."""
 from __future__ import annotations
 
+from . import intro_review_extra
 from .content_truth import SOURCE_CATALOG
 from .content_truth_review import REVIEW_OVERRIDES
 from .geography_review import GEOGRAPHY_OVERRIDES
@@ -8,6 +9,7 @@ from .nero_review import ADDITIONAL_SOURCE_CATALOG, NERO_OVERRIDES
 from .nero_review_extra import EXTRA_SOURCE_CATALOG, NERO_EXTRA_OVERRIDES
 
 REVIEW_OVERRIDES.update(GEOGRAPHY_OVERRIDES)
+REVIEW_OVERRIDES.update(intro_review_extra.INTRO_EXTRA_OVERRIDES)
 REVIEW_OVERRIDES.update(NERO_OVERRIDES)
 REVIEW_OVERRIDES.update(NERO_EXTRA_OVERRIDES)
 SOURCE_CATALOG.update(ADDITIONAL_SOURCE_CATALOG)
