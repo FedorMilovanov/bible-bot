@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -14,6 +15,7 @@ from legacy_battle_session import (
     create_durable_battle,
     get_owned_open_durable_battle,
 )
+from questions import BATTLE_POOL
 
 logger = logging.getLogger(__name__)
 _MAX_UPDATE_ID = (1 << 64) - 1
@@ -42,6 +44,14 @@ def _owned_created_battle(battle_id: str, creator_id: int) -> dict | None:
     return battle
 
 
+def _competitive_battle_questions() -> list[dict]:
+    """Return exactly 10 questions from the ranking-eligible bank."""
+    pool = list(BATTLE_POOL)
+    if len(pool) < 10:
+        raise ValueError("battle questions are unavailable")
+    return random.sample(pool, 10)
+
+
 def create_or_recover_battle(update, user) -> tuple[dict, bool]:
     """Create once by update id or recover an already accepted/ambiguous write."""
     battle_id = battle_id_for_update(update.update_id)
@@ -49,9 +59,7 @@ def create_or_recover_battle(update, user) -> tuple[dict, bool]:
     if existing is not None:
         return existing, False
 
-    questions = battles._battle_pool()
-    if not questions:
-        raise ValueError("battle questions are unavailable")
+    questions = _competitive_battle_questions()
     try:
         created = create_durable_battle(
             battle_id=battle_id,

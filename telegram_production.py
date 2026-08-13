@@ -38,6 +38,7 @@ import telegram_battle_controller as battles  # noqa: E402
 import telegram_battle_create_controller as battle_create  # noqa: E402
 import telegram_battle_share_controller as battle_share  # noqa: E402
 import telegram_broadcast_controller as broadcasts  # noqa: E402
+import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
@@ -285,7 +286,7 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(legacy.level_selected, pattern=r"^level_"))
     app.add_handler(CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"))
-    app.add_handler(CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"))
+    app.add_handler(CallbackQueryHandler(challenge.challenge_start, pattern="^challenge_start_"))
     app.add_handler(CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:"))
     app.add_handler(CallbackQueryHandler(quiz.challenge_inline_answer, pattern=r"^cha:"))
     app.add_handler(CallbackQueryHandler(quiz.cancel_quiz_handler, pattern="^cancel_quiz$"))
@@ -303,7 +304,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(quiz.speed_mode_handler, pattern=r"^speed_mode_"))
 
     app.add_handler(CallbackQueryHandler(quiz.resume_session_handler, pattern=r"^res:"))
-    app.add_handler(CallbackQueryHandler(quiz.restart_session_handler, pattern=r"^rst:"))
+    app.add_handler(CallbackQueryHandler(challenge.restart_session_handler, pattern=r"^rst:"))
     app.add_handler(CallbackQueryHandler(quiz.cancel_session_handler, pattern=r"^can:"))
 
     app.add_handler(

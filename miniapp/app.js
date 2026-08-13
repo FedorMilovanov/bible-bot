@@ -194,6 +194,14 @@ function resetQuizState(poolKey, mode, count, challenge) {
   });
 }
 
+function applySessionState(data) {
+  state.sessionId = data.session_id;
+  state.score = Number(data.score || 0);
+  state.streak = Number(data.current_streak || 0);
+  state.maxStreak = Number(data.max_streak || 0);
+  state.answers = Array.isArray(data.answers) ? data.answers : [];
+}
+
 async function updateUserBadge() {
   const user = getUser();
   const badge = $('#userBadge');
@@ -337,7 +345,7 @@ async function startQuiz(poolKey, mode = 'relaxed', count = 10, challenge = fals
       body: JSON.stringify({ pool_key: poolKey, mode, count, challenge }),
     });
     if (!isCurrentQuizFlow(flowEpoch)) return;
-    state.sessionId = data.session_id;
+    applySessionState(data);
     applyCurrentQuestion(data);
   } catch (error) {
     if (!quizFlow.isCurrent(flowEpoch)) return;
@@ -362,6 +370,33 @@ function applyCurrentQuestion(data) {
   state.timeLimit = data.time_limit || null;
   $('#quizTimer').classList.toggle('hidden', !state.timeLimit);
   renderQuestion(data.remaining_seconds);
+}
+
+async function restoreActiveQuiz() {
+  if (!getInitData()) return false;
+  const data = await api('/api/quiz/active');
+  if (!data.active) {
+    if (data.finalized) {
+      toast('Завершённый тест сохранён в статистике.', 3200);
+      void updateUserBadge();
+    }
+    return false;
+  }
+
+  const flowEpoch = quizFlow.begin();
+  resetQuizState(
+    data.pool_key,
+    data.mode || 'relaxed',
+    Number(data.total || 10),
+    Boolean(data.challenge),
+  );
+  showScreen('quiz');
+  setQuizLoading('Восстанавливаю незавершённый тест…');
+  if (!isCurrentQuizFlow(flowEpoch)) return false;
+  applySessionState(data);
+  applyCurrentQuestion(data);
+  toast('Продолжаем незавершённый тест.', 2600);
+  return true;
 }
 
 async function loadCurrentQuestion() {
@@ -497,6 +532,52 @@ async function submitAnswer(chosen, localTimeout = false) {
     buttons.forEach((button) => { button.disabled = false; });
     toast(`Не удалось сохранить ответ: ${error.message}`, 3600);
     resumeTimer();
+  }
+}
+
+async function exitQuiz() {
+  if (!state.sessionId || !quizScreenActive()) return;
+  if (state.answerPending) {
+    toast('Сначала дождись сохранения текущего ответа.', 2800);
+    return;
+  }
+  if (!window.confirm('Выйти из теста? Незавершённый результат не попадёт в рейтинг.')) return;
+
+  const flowEpoch = quizFlow.current();
+  const sessionId = state.sessionId;
+  const buttons = [...document.querySelectorAll('.opt')];
+  state.answerPending = true;
+  stopTimer();
+  buttons.forEach((button) => { button.disabled = true; });
+
+  try {
+    await api('/api/quiz/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
+    invalidateQuizFlow();
+    showScreen('home');
+    toast('Незавершённый тест отменён.', 2400);
+  } catch (error) {
+    if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
+    if (error.status === 409) {
+      try {
+        const active = await api('/api/quiz/active');
+        if (!active.active) {
+          invalidateQuizFlow();
+          showScreen('home');
+          toast('Тест уже завершён — результат сохранён.', 3200);
+          void updateUserBadge();
+          return;
+        }
+      } catch (_) {
+        // Preserve the current screen below when server recovery cannot be confirmed.
+      }
+    }
+    state.answerPending = false;
+    toast(`Не удалось выйти из теста: ${error.message}`, 3600);
+    await loadCurrentQuestion();
   }
 }
 
@@ -679,12 +760,7 @@ $$('[data-action]').forEach((button) => {
 
 $$('[data-back]').forEach((button) => button.addEventListener('click', () => showScreen(button.dataset.back)));
 $('#openBotBtn').addEventListener('click', openBot);
-$('#quizExit').addEventListener('click', () => {
-  if (window.confirm('Выйти из теста? Незавершённый результат не попадёт в рейтинг.')) {
-    invalidateQuizFlow();
-    showScreen('home');
-  }
-});
+$('#quizExit').addEventListener('click', () => { void exitQuiz(); });
 $('#resultHome').addEventListener('click', () => {
   invalidateQuizFlow();
   showScreen('home');
@@ -705,24 +781,22 @@ $('#resultShare').addEventListener('click', async () => {
   } catch (_) {}
 });
 
-try {
-  const params = new URLSearchParams(window.location.search);
-  const startParam = params.get('tgWebAppStartParam') || params.get('start');
-  if (startParam) {
+function openStartParam() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const startParam = params.get('tgWebAppStartParam') || params.get('start');
+    if (!startParam) return;
     const key = startParam.replace(/^level_/, '');
     const level = [...LEVELS, ...HIST].find((item) => item.key === key);
     if (level) window.setTimeout(() => openModePicker(level), 250);
-  }
-} catch (_) {}
+  } catch (_) {}
+}
 
 if (tg?.BackButton) {
   tg.BackButton.onClick(() => {
     const active = document.querySelector('.screen.active')?.id;
     if (active === 'screen-quiz') {
-      if (window.confirm('Выйти из теста?')) {
-        invalidateQuizFlow();
-        showScreen('home');
-      }
+      void exitQuiz();
     } else if (active === 'screen-home') tg.close();
     else showScreen('home');
   });
@@ -733,4 +807,17 @@ if (tg?.BackButton) {
   observer.observe(document.getElementById('app'), { attributes: true, subtree: true });
 }
 
-updateUserBadge();
+async function bootstrapMiniApp() {
+  void updateUserBadge();
+  if (getInitData()) {
+    try {
+      if (await restoreActiveQuiz()) return;
+    } catch (error) {
+      toast(`Не удалось восстановить незавершённый тест: ${error.message}`, 4200);
+      return;
+    }
+  }
+  openStartParam();
+}
+
+void bootstrapMiniApp();
