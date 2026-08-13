@@ -98,16 +98,12 @@ NON_COMPETITIVE_IDS = frozenset(
         "easy_02",   # dating of 1 Peter
         "easy_03",   # Babylon = Rome / place of composition
         "easy_04",   # Silvanus as secretary/editor
-        "easy_12",   # emperor depends on disputed dating
         "med_01",    # Babylon = Rome reconstruction
-        "med_02",    # Neronian historical context
         "med_03",    # disputed semantic/theological reading of prognosis
         "med_13",    # corrupted/under-review diaspora lexical annotation
         "med_15",    # dating of 1 Peter
-        "hard_02",   # Greek lexical item under dedicated review
         "hard_03",   # proposed Exodus 12:11 allusion
         "hard_11",   # dating of 1 Peter
-        "hard_12",   # Greek lexical/rhetorical claim under dedicated review
         "hard_13",   # proposed Exodus 24 covenant background
     }
 )
