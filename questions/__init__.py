@@ -5,29 +5,57 @@ from __future__ import annotations
 import random
 
 from .chapter1 import (
-    all_chapter1_questions,
-    easy_questions,
-    easy_questions_v17_25,
-    geography_questions,
-    hard_questions,
-    hard_questions_v17_25,
-    linguistics_ch1_questions,
-    linguistics_ch1_questions_2,
-    linguistics_v17_25_questions,
-    medium_questions,
-    medium_questions_v17_25,
-    nero_questions,
-    practical_ch1_questions,
-    practical_v17_25_questions,
+    easy_questions as _raw_easy_p1,
+    easy_questions_v17_25 as _raw_easy_p2,
+    geography_questions as _raw_geography,
+    hard_questions as _raw_hard_p1,
+    hard_questions_v17_25 as _raw_hard_p2,
+    linguistics_ch1_questions as _raw_linguistics_1,
+    linguistics_ch1_questions_2 as _raw_linguistics_2,
+    linguistics_v17_25_questions as _raw_linguistics_3,
+    medium_questions as _raw_medium_p1,
+    medium_questions_v17_25 as _raw_medium_p2,
+    nero_questions as _raw_nero,
+    practical_ch1_questions as _raw_practical_p1,
+    practical_v17_25_questions as _raw_practical_p2,
+)
+from .content_truth import (
+    RANKING_QUARANTINE_IDS,
+    SOURCE_CATALOG,
+    curate_pool,
 )
 from .intro import (
-    intro_part1_questions,
-    intro_part2_questions,
-    intro_part3_questions,
+    intro_part1_questions as _raw_intro1,
+    intro_part2_questions as _raw_intro2,
+    intro_part3_questions as _raw_intro3,
 )
 
 
-_POOLS: dict[str, list] = {
+def _canonical(raw: list[dict], key: str) -> list[dict]:
+    return curate_pool(raw, pool_key=key)
+
+
+# Production-facing canonical leaf pools. Raw chapter1.py/intro.py remain an
+# authoring/migration corpus only; handlers and APIs consume these curated copies.
+easy_questions = _canonical(_raw_easy_p1, "easy_p1")
+easy_questions_v17_25 = _canonical(_raw_easy_p2, "easy_p2")
+medium_questions = _canonical(_raw_medium_p1, "medium_p1")
+medium_questions_v17_25 = _canonical(_raw_medium_p2, "medium_p2")
+hard_questions = _canonical(_raw_hard_p1, "hard_p1")
+hard_questions_v17_25 = _canonical(_raw_hard_p2, "hard_p2")
+practical_ch1_questions = _canonical(_raw_practical_p1, "practical_p1")
+practical_v17_25_questions = _canonical(_raw_practical_p2, "practical_p2")
+linguistics_ch1_questions = _canonical(_raw_linguistics_1, "linguistics_ch1")
+linguistics_ch1_questions_2 = _canonical(_raw_linguistics_2, "linguistics_ch1_2")
+linguistics_v17_25_questions = _canonical(_raw_linguistics_3, "linguistics_ch1_3")
+nero_questions = _canonical(_raw_nero, "nero")
+geography_questions = _canonical(_raw_geography, "geography")
+intro_part1_questions = _canonical(_raw_intro1, "intro1")
+intro_part2_questions = _canonical(_raw_intro2, "intro2")
+intro_part3_questions = _canonical(_raw_intro3, "intro3")
+
+
+_POOLS: dict[str, list[dict]] = {
     "easy": easy_questions + easy_questions_v17_25,
     "easy_p1": easy_questions,
     "easy_p2": easy_questions_v17_25,
@@ -51,10 +79,10 @@ _POOLS: dict[str, list] = {
 }
 
 
-def _dedupe_pool(keys: list[str]) -> list:
+def _dedupe_pool(keys: list[str]) -> list[dict]:
     """Build a stable pool with one canonical occurrence of every explicit id."""
     seen: set[str] = set()
-    result: list = []
+    result: list[dict] = []
     for key in keys:
         for question in _POOLS[key]:
             qid = str(question.get("id") or "").strip()
@@ -65,9 +93,7 @@ def _dedupe_pool(keys: list[str]) -> list:
     return result
 
 
-# Casual random mode intentionally spans every learning category. It is not the
-# source of truth for scored competitive modes.
-_RANDOM_ALL_LEAF_KEYS = [
+_CHAPTER1_LEAF_KEYS = [
     "easy_p1",
     "easy_p2",
     "medium_p1",
@@ -81,32 +107,12 @@ _RANDOM_ALL_LEAF_KEYS = [
     "linguistics_ch1_3",
     "nero",
     "geography",
-    "intro1",
-    "intro2",
-    "intro3",
 ]
+all_chapter1_questions = _dedupe_pool(_CHAPTER1_LEAF_KEYS)
+
+_RANDOM_ALL_LEAF_KEYS = _CHAPTER1_LEAF_KEYS + ["intro1", "intro2", "intro3"]
 _POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
 
-
-# Ranking eligibility is stricter than learning availability. These core-pool
-# items depend on disputed dating/authorship reconstruction, imported historical
-# context, or Greek claims still under dedicated source review. They remain
-# available in their normal learning levels but cannot influence PvP/Challenge
-# ranking until reviewed and explicitly released.
-NON_COMPETITIVE_IDS = frozenset(
-    {
-        "easy_02",   # dating of 1 Peter
-        "easy_03",   # Babylon = Rome / place of composition
-        "easy_04",   # Silvanus as secretary/editor
-        "med_01",    # Babylon = Rome reconstruction
-        "med_03",    # disputed semantic/theological reading of prognosis
-        "med_13",    # corrupted/under-review diaspora lexical annotation
-        "med_15",    # dating of 1 Peter
-        "hard_03",   # proposed Exodus 12:11 allusion
-        "hard_11",   # dating of 1 Peter
-        "hard_13",   # proposed Exodus 24 covenant background
-    }
-)
 
 _COMPETITIVE_LEAF_KEYS = [
     "easy_p1",
@@ -118,11 +124,11 @@ _COMPETITIVE_LEAF_KEYS = [
 ]
 
 
-def _build_competitive_pool() -> list:
+def _build_competitive_pool() -> list[dict]:
     return [
         question
         for question in _dedupe_pool(_COMPETITIVE_LEAF_KEYS)
-        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
+        if question.get("competitive") is True
     ]
 
 
@@ -130,26 +136,21 @@ COMPETITIVE_POOL = _build_competitive_pool()
 _POOLS["competitive_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
-# Production PvP samples only from this bank and must not append unrelated pools.
+# Backward-compatible diagnostic name derived from the canonical policy rather
+# than maintained as a second hand-edited truth source.
+NON_COMPETITIVE_IDS = frozenset(
+    question["id"]
+    for key in _COMPETITIVE_LEAF_KEYS
+    for question in _POOLS[key]
+    if question.get("competitive") is not True
+)
+
 BATTLE_POOL = COMPETITIVE_POOL
 
-# Per-difficulty slices use exactly the same eligibility policy.
-CHALLENGE_POOLS: dict[str, list] = {
-    "easy": [
-        question
-        for question in _POOLS["easy"]
-        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
-    ],
-    "medium": [
-        question
-        for question in _POOLS["medium"]
-        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
-    ],
-    "hard": [
-        question
-        for question in _POOLS["hard"]
-        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
-    ],
+CHALLENGE_POOLS: dict[str, list[dict]] = {
+    "easy": [question for question in _POOLS["easy"] if question.get("competitive") is True],
+    "medium": [question for question in _POOLS["medium"] if question.get("competitive") is True],
+    "hard": [question for question in _POOLS["hard"] if question.get("competitive") is True],
 }
 
 _CHALLENGE_DISTRIBUTION = {
@@ -158,19 +159,14 @@ _CHALLENGE_DISTRIBUTION = {
 }
 
 
-def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
-    """Return exactly 20 unique ranking-eligible questions.
-
-    ``rng`` may be a ``random.Random`` instance in tests. If one difficulty pool
-    is unexpectedly short, the remainder is filled from the rest of the same
-    ranking-eligible bank; it never falls back to excluded learning categories.
-    """
+def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list[dict]:
+    """Return exactly 20 unique ranking-eligible canonical questions."""
     distribution = _CHALLENGE_DISTRIBUTION.get(mode)
     if distribution is None:
         raise ValueError(f"Неизвестный competitive Challenge mode: {mode!r}")
 
     source = rng or random
-    selected: list = []
+    selected: list[dict] = []
     seen: set[str] = set()
 
     for key, requested in distribution:
@@ -212,8 +208,8 @@ def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
     return selected
 
 
-def get_pool_by_key(key: str) -> list:
-    """Return a named pool and fail loudly on configuration typos."""
+def get_pool_by_key(key: str) -> list[dict]:
+    """Return a named canonical pool and fail loudly on configuration typos."""
     try:
         return _POOLS[key]
     except KeyError:
@@ -241,6 +237,8 @@ __all__ = [
     "intro_part2_questions",
     "intro_part3_questions",
     "POOL_REGISTRY",
+    "SOURCE_CATALOG",
+    "RANKING_QUARANTINE_IDS",
     "NON_COMPETITIVE_IDS",
     "COMPETITIVE_POOL",
     "BATTLE_POOL",
