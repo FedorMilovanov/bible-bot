@@ -23,7 +23,7 @@ SOURCE_CATALOG = {
     },
     "tmsj_felix_penal_substitution": {
         "title": "Paul W. Felix Sr., Penal Substitution in the New Testament: A Focused Look at First Peter, TMSJ 20.2 (2009)",
-        "url": "https://tms.edu/educational-resources/journal/archive/",
+        "url": "https://tms.edu/wp-content/uploads/2021/09/tmsj20h.pdf",
         "kind": "conservative_scholarship",
     },
     "tms_doctrinal_statement": {
@@ -37,9 +37,14 @@ SOURCE_CATALOG = {
         "kind": "scholarship",
     },
     "cambridge_following_footsteps": {
-        "title": "Following in the Footsteps: Exemplarity, Ethnicity and Ethics in 1 Peter, New Testament Studies",
+        "title": "Katie Marcar, Following in the Footsteps: Exemplarity, Ethnicity and Ethics in 1 Peter, New Testament Studies",
         "url": "https://www.cambridge.org/core/journals/new-testament-studies/article/following-in-the-footsteps-exemplarity-ethnicity-and-ethics-in-1-peter/F19BD804EBB5FF4CD0259B3C75C0CE8A",
         "kind": "scholarship",
+    },
+    "cambridge_reese_1peter": {
+        "title": "Ruth Anne Reese, 1 Peter, New Cambridge Bible Commentary (2022)",
+        "url": "https://www.cambridge.org/core/books/abs/1-peter/commentary/1B7036CB70CE0D991195D3D39393273D",
+        "kind": "academic_commentary",
     },
     "naseri_1p2_11": {
         "title": "Christopher Naseri, Christian Identity in the First Letter of Peter: An Exegesis of 1 Peter 2:11 (2016)",
