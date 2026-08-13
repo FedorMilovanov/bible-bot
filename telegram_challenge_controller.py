@@ -28,17 +28,17 @@ async def challenge_start(update, context):
     await query.answer()
     mode = query.data.replace("challenge_start_", "")
     if mode not in _COMPETITIVE_MODES:
-        await query.edit_message_text("Unknown Challenge.")
+        await query.edit_message_text("\u26a0\ufe0f \u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 Challenge.")
         return ConversationHandler.END
     try:
         questions = pick_competitive_challenge_questions(mode)
     except ValueError:
         logger.exception("competitive Challenge question selection failed")
-        await query.edit_message_text("Challenge questions are temporarily unavailable.")
+        await query.edit_message_text("\u26a0\ufe0f \u0412\u043e\u043f\u0440\u043e\u0441\u044b Challenge \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b.")
         return ConversationHandler.END
 
     time_limit = 10 if mode == "hardcore20" else None
-    mode_name = "Random Challenge" if mode == "random20" else "Hardcore Random"
+    mode_name = "\U0001f3b2 Random Challenge" if mode == "random20" else "\U0001f480 Hardcore Random"
     data = await quiz._launch_attempt(
         user=update.effective_user,
         bot=context.bot,
@@ -52,7 +52,8 @@ async def challenge_start(update, context):
     if data is None:
         return ConversationHandler.END
     await query.edit_message_text(
-        f"{mode_name}\n\n{len(questions)} questions. Start!",
+        f"{mode_name}\n\n\U0001f4cb {len(questions)} \u0432\u043e\u043f\u0440\u043e\u0441\u043e\u0432\n\u041f\u043e\u0435\u0445\u0430\u043b\u0438! \U0001f4aa",
+        parse_mode="Markdown",
     )
     await quiz.send_challenge_question(context.bot, update.effective_user.id)
     return quiz.ANSWERING
@@ -64,10 +65,10 @@ async def restart_session_handler(update, context):
     try:
         resolved = resolve_session_action(query.data, "rst", user_id)
     except LegacySessionActionUnavailable:
-        await query.answer("Session store unavailable.", show_alert=True)
+        await query.answer("\u26a0\ufe0f \u0411\u0430\u0437\u0430 \u0441\u0435\u0441\u0441\u0438\u0439 \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0430.", show_alert=True)
         return
     except LegacySessionActionStale:
-        await query.answer("This action is stale.", show_alert=True)
+        await query.answer("\u042d\u0442\u0430 \u043a\u043d\u043e\u043f\u043a\u0430 \u0443\u0436\u0435 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0430.", show_alert=True)
         return
 
     session = resolved.session
@@ -77,17 +78,23 @@ async def restart_session_handler(update, context):
 
     try:
         if persisted_is_retry(session):
-            await query.answer("Retry practice cannot be restarted.", show_alert=True)
+            await query.answer(
+                "\u041f\u043e\u0432\u0442\u043e\u0440\u0435\u043d\u0438\u0435 \u043e\u0448\u0438\u0431\u043e\u043a \u043d\u0435\u043b\u044c\u0437\u044f \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0442\u044c. \u041e\u0442\u043c\u0435\u043d\u0438 \u0435\u0433\u043e \u0438 \u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u043d\u043e\u0432\u043e \u0438\u0437 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u043e\u0432.",
+                show_alert=True,
+            )
             return
     except LegacyRetryPolicyInvalid:
-        await query.answer("Stored retry policy is invalid.", show_alert=True)
+        await query.answer("\u26a0\ufe0f \u041f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u043e\u0439 \u043f\u043e\u043f\u044b\u0442\u043a\u0438 \u043f\u043e\u0432\u0440\u0435\u0436\u0434\u0435\u043d\u0430.", show_alert=True)
         return
 
     try:
         questions = pick_competitive_challenge_questions(mode)
     except ValueError:
         logger.exception("competitive Challenge restart selection failed")
-        await query.answer("Challenge questions are unavailable.", show_alert=True)
+        await query.answer(
+            "\u26a0\ufe0f \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0431\u0440\u0430\u0442\u044c \u0432\u043e\u043f\u0440\u043e\u0441\u044b Challenge \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a\u0430.",
+            show_alert=True,
+        )
         return
 
     try:
@@ -104,10 +111,10 @@ async def restart_session_handler(update, context):
             chat_id=query.message.chat_id,
         )
     except QuizSessionLifecycleUnavailable:
-        await query.answer("Session store unavailable.", show_alert=True)
+        await query.answer("\u26a0\ufe0f \u0411\u0430\u0437\u0430 \u0441\u0435\u0441\u0441\u0438\u0439 \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0430.", show_alert=True)
         return
     except QuizSessionLifecycleConflict:
-        await query.answer("Attempt changed; open /status.", show_alert=True)
+        await query.answer("\u041f\u043e\u043f\u044b\u0442\u043a\u0430 \u0443\u0436\u0435 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0430\u0441\u044c. \u041e\u0442\u043a\u0440\u043e\u0439 /status.", show_alert=True)
         return
 
     await query.answer()
@@ -119,6 +126,8 @@ async def restart_session_handler(update, context):
         first_name=query.from_user.first_name,
     )
     await query.edit_message_text(
-        f"Restarted {data.get('level_name', 'Challenge')}: {len(questions)} questions"
+        f"\U0001f501 *\u041d\u0430\u0447\u0438\u043d\u0430\u0435\u043c \u0437\u0430\u043d\u043e\u0432\u043e*\n_{data.get('level_name', 'Challenge')}_\n\n"
+        f"\u0412\u043e\u043f\u0440\u043e\u0441\u043e\u0432: {len(questions)}",
+        parse_mode="Markdown",
     )
     await quiz.send_challenge_question(context.bot, user_id)
