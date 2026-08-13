@@ -33,6 +33,7 @@ from legacy_session_close import (
     finish_completed_owned_quiz_session,
     validate_completed_owned_quiz_session,
 )
+from questions.pool_policy import is_non_scoring_learning_pool
 
 _CHALLENGE_MODES = frozenset({"random20", "hardcore20"})
 _QUIZ_MODES = frozenset({"relaxed", "timed", "speed"})
@@ -254,8 +255,9 @@ def finalize_normal_result(
 ) -> dict:
     """Durably finalize one ordinary legacy quiz result.
 
-    Retry-error drills intentionally remain unscored, matching legacy product
-    semantics and preventing bonus/achievement farming through the review flow.
+    Retry-error drills and policy-designated learning pools remain unscored.
+    Their completed Mongo sessions still pass the same owner/completion proof
+    and are closed durably, but they never enter points, bonuses or achievements.
     """
     if data.get("is_retry"):
         return {
@@ -274,6 +276,21 @@ def finalize_normal_result(
             total=total,
             challenge_mode=None,
         )
+        if is_non_scoring_learning_pool(data.get("level_key")):
+            session_finished = _finish_recovery_session(data, user_id)
+            return {
+                "scored": False,
+                "learning": True,
+                "earned_base": 0,
+                "daily_bonus": {
+                    "bonus": 0,
+                    "eligible": False,
+                    "claimed_now": False,
+                },
+                "new_achievements": [],
+                "session_finished": session_finished,
+            }
+
         result_id = stable_result_id(user_id, data)
         base = apply_base_result_once(
             result_id=result_id,
