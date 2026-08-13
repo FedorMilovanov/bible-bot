@@ -42,7 +42,8 @@ Rules:
 - `application` and genuinely `contested` items are never competitive.
 - Do not make a disputed dating, authorship reconstruction, allusion, secretary hypothesis, persecution model, or systematic-theology synthesis look like a lexical fact.
 
-See `docs/CONTENT_STANDARDS.md` for the full evidence policy.
+See `docs/CONTENT_SOURCE_POLICY.md` for the full evidence policy.
+For chapter-completion criteria see `docs/FIRST_PETER_2_5_ROADMAP.md` and the per-chapter coverage matrix.
 
 ## 4. Source hierarchy
 
