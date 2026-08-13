@@ -116,22 +116,21 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         else:
             selected = random.sample(pool, count)
     except ValueError:
-        logger.exception("question selection failed for pool %s", pool_key)
+        logger.exception("question selection failed")
         return None, "question pool unavailable", 503
 
     if len(selected) != count:
         logger.error(
-            "question selection returned %d items instead of %d for %s",
+            "question selection returned %d items instead of %d",
             len(selected),
             count,
-            pool_key,
         )
         return None, "question selection returned an invalid count", 503
 
     try:
         prepared = [core.prepare_question(question) for question in selected]
     except (TypeError, ValueError):
-        logger.exception("invalid question data in pool %s", pool_key)
+        logger.exception("invalid question data selected for quiz start")
         return None, "question data is invalid", 500
 
     cfg = dict(core.MODE_CONFIG[mode])
