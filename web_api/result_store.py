@@ -403,7 +403,7 @@ def apply_challenge_result_once(
             streak_count = 1
         else:
             try:
-                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(last_activity, "%Y-%m-%d")).days
+                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(streak_last, "%Y-%m-%d")).days
                 if delta == 1:
                     streak_count += 1
                 elif delta != 0:
