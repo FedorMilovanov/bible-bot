@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """Replay-safe production adapter for creating durable shared PvP battles."""
 from __future__ import annotations
 
