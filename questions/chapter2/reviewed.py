@@ -1,7 +1,7 @@
 """Reviewed authoring aggregate for 1 Peter chapter 2.
 
 This is the promotion boundary between scattered review modules and a single
-chapter-level bank.  It is not a production pool yet.
+chapter-level bank. It is not a production pool yet.
 """
 
 from copy import deepcopy
@@ -18,6 +18,7 @@ from .history_bodily_suffering import HISTORY_BODILY_2_18_25
 from .history_exiles_2_11 import HISTORY_EXILES_2_11
 from .history_oiketai import HISTORY_OIKETAI_2_18
 from .history_roman_2_13_14 import HISTORY_ROMAN_2_13_14
+from .quality_overrides import apply_quality_overrides
 from .theology_civil import THEOLOGY_CIVIL_2_13_17
 from .theology_people_text import THEOLOGY_PEOPLE_TEXT
 
@@ -46,7 +47,10 @@ _REVIEWED_SOURCE_ITEMS = [
     if item["id"] not in CHAPTER2_REVIEW_QUARANTINE_IDS
 ]
 
-CHAPTER2_REVIEWED_QUESTIONS = [deepcopy(item) for item in _REVIEWED_SOURCE_ITEMS]
+CHAPTER2_REVIEWED_QUESTIONS = [
+    apply_quality_overrides(deepcopy(item))
+    for item in _REVIEWED_SOURCE_ITEMS
+]
 
 
 __all__ = [
