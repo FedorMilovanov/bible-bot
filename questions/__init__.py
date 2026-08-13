@@ -29,6 +29,7 @@ from .intro import (
     intro_part2_questions as _raw_intro2,
     intro_part3_questions as _raw_intro3,
 )
+from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
 
 
 def _canonical(raw: list[dict], key: str) -> list[dict]:
@@ -128,7 +129,7 @@ def _build_competitive_pool() -> list[dict]:
     return [
         question
         for question in _dedupe_pool(_COMPETITIVE_LEAF_KEYS)
-        if question.get("competitive") is True
+        if ranking_eligible(question)
     ]
 
 
@@ -136,21 +137,20 @@ COMPETITIVE_POOL = _build_competitive_pool()
 _POOLS["competitive_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
-# Backward-compatible diagnostic name derived from the canonical policy rather
-# than maintained as a second hand-edited truth source.
+# Backward-compatible diagnostic name derived from the canonical ranking policy.
 NON_COMPETITIVE_IDS = frozenset(
     question["id"]
     for key in _COMPETITIVE_LEAF_KEYS
     for question in _POOLS[key]
-    if question.get("competitive") is not True
+    if not ranking_eligible(question)
 )
 
 BATTLE_POOL = COMPETITIVE_POOL
 
 CHALLENGE_POOLS: dict[str, list[dict]] = {
-    "easy": [question for question in _POOLS["easy"] if question.get("competitive") is True],
-    "medium": [question for question in _POOLS["medium"] if question.get("competitive") is True],
-    "hard": [question for question in _POOLS["hard"] if question.get("competitive") is True],
+    "easy": [question for question in _POOLS["easy"] if ranking_eligible(question)],
+    "medium": [question for question in _POOLS["medium"] if ranking_eligible(question)],
+    "hard": [question for question in _POOLS["hard"] if ranking_eligible(question)],
 }
 
 _CHALLENGE_DISTRIBUTION = {
@@ -239,6 +239,7 @@ __all__ = [
     "POOL_REGISTRY",
     "SOURCE_CATALOG",
     "RANKING_QUARANTINE_IDS",
+    "SOURCE_REVIEWED_RANKING_IDS",
     "NON_COMPETITIVE_IDS",
     "COMPETITIVE_POOL",
     "BATTLE_POOL",
