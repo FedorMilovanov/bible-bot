@@ -13,6 +13,8 @@ import logging
 import re
 from datetime import datetime, timedelta
 
+from questions.pool_policy import is_non_scoring_learning_pool
+
 logger = logging.getLogger(__name__)
 _RESULT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RECEIPT_RETENTION = timedelta(hours=24)
@@ -182,6 +184,54 @@ def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> 
         return None
 
 
+def _apply_learning_result_once(
+    *,
+    user_id: int,
+    result_id: str,
+    username: str,
+    first_name: str,
+    level_key: str,
+    score: int,
+    total: int,
+) -> dict | None:
+    """Persist learning progress without touching ranking or achievement totals."""
+    collection = _user_collection()
+    if collection is None:
+        return None
+
+    uid = str(user_id)
+    existing = collection.find_one({"_id": uid})
+    if not existing:
+        return None
+    prior_receipt = _receipt_from(existing, result_id)
+    if prior_receipt:
+        return prior_receipt
+
+    total = max(1, int(total))
+    score = max(0, min(int(score), total))
+    receipt = {
+        "points": 0,
+        "daily_bonus": 0,
+        "new_achievements": [],
+        "kind": "learning",
+        "level_key": level_key,
+    }
+    update = {
+        "$inc": {
+            f"{level_key}_attempts": 1,
+            f"{level_key}_correct": score,
+            f"{level_key}_total": total,
+        },
+        "$set": {
+            "username": username or "",
+            "first_name": first_name or "Пользователь",
+            "last_activity": datetime.utcnow(),
+        },
+        "$max": {f"{level_key}_best_score": score},
+    }
+    return _persist_once(user_id, result_id, update, receipt)
+
+
 def apply_regular_result_once(
     *,
     user_id: int,
@@ -196,11 +246,23 @@ def apply_regular_result_once(
     is_perfect: bool,
     max_streak: int,
 ) -> dict | None:
-    """Atomically apply a normal Mini App result and its daily/achievement stats."""
+    """Atomically apply a normal Mini App result under the canonical pool policy."""
     import database
 
     collection = database.collection
-    if collection is None or level_key not in database.ALL_LEVEL_KEYS:
+    if collection is None:
+        return None
+    if is_non_scoring_learning_pool(level_key):
+        return _apply_learning_result_once(
+            user_id=user_id,
+            result_id=result_id,
+            username=username,
+            first_name=first_name,
+            level_key=level_key,
+            score=score,
+            total=total,
+        )
+    if level_key not in database.ALL_LEVEL_KEYS:
         return None
 
     uid = str(user_id)
@@ -341,7 +403,7 @@ def apply_challenge_result_once(
             streak_count = 1
         else:
             try:
-                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(streak_last, "%Y-%m-%d")).days
+                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(last_activity, "%Y-%m-%d")).days
                 if delta == 1:
                     streak_count += 1
                 elif delta != 0:
