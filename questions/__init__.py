@@ -88,9 +88,30 @@ _RANDOM_ALL_LEAF_KEYS = [
 _POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
 
 
-# Competitive modes use a narrower contract than learning modes. Categories
-# still under scholarly/content review stay available for study but do not
-# affect another user's rank.
+# Ranking eligibility is stricter than learning availability. These core-pool
+# items depend on disputed dating/authorship reconstruction, imported historical
+# context, or Greek claims still under dedicated source review. They remain
+# available in their normal learning levels but cannot influence PvP/Challenge
+# ranking until reviewed and explicitly released.
+NON_COMPETITIVE_IDS = frozenset(
+    {
+        "easy_02",   # dating of 1 Peter
+        "easy_03",   # Babylon = Rome / place of composition
+        "easy_04",   # Silvanus as secretary/editor
+        "easy_12",   # emperor depends on disputed dating
+        "med_01",    # Babylon = Rome reconstruction
+        "med_02",    # Neronian historical context
+        "med_03",    # disputed semantic/theological reading of prognosis
+        "med_13",    # corrupted/under-review diaspora lexical annotation
+        "med_15",    # dating of 1 Peter
+        "hard_02",   # Greek lexical item under dedicated review
+        "hard_03",   # proposed Exodus 12:11 allusion
+        "hard_11",   # dating of 1 Peter
+        "hard_12",   # Greek lexical/rhetorical claim under dedicated review
+        "hard_13",   # proposed Exodus 24 covenant background
+    }
+)
+
 _COMPETITIVE_LEAF_KEYS = [
     "easy_p1",
     "easy_p2",
@@ -99,18 +120,40 @@ _COMPETITIVE_LEAF_KEYS = [
     "hard_p1",
     "hard_p2",
 ]
-COMPETITIVE_POOL = _dedupe_pool(_COMPETITIVE_LEAF_KEYS#
-_POOLS["competitive_all"] = COMPETITIVE_POOL
 
+
+def _build_competitive_pool() -> list:
+    return [
+        question
+        for question in _dedupe_pool(_COMPETITIVE_LEAF_KEYS)
+        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
+    ]
+
+
+COMPETITIVE_POOL = _build_competitive_pool()
+_POOLS["competitive_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
 # Production PvP samples only from this bank and must not append unrelated pools.
 BATTLE_POOL = COMPETITIVE_POOL
 
+# Per-difficulty slices use exactly the same eligibility policy.
 CHALLENGE_POOLS: dict[str, list] = {
-    "easy": _POOLS["easy"],
-    "medium": _POOLS["medium"],
-    "hard": _POOLS["hard"],
+    "easy": [
+        question
+        for question in _POOLS["easy"]
+        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
+    ],
+    "medium": [
+        question
+        for question in _POOLS["medium"]
+        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
+    ],
+    "hard": [
+        question
+        for question in _POOLS["hard"]
+        if str(question.get("id") or "").strip() not in NON_COMPETITIVE_IDS
+    ],
 }
 
 _CHALLENGE_DISTRIBUTION = {
@@ -120,15 +163,15 @@ _CHALLENGE_DISTRIBUTION = {
 
 
 def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
-    """Return exactly 20 unique objective questions with a stable difficulty mix.
+    """Return exactly 20 unique ranking-eligible questions.
 
     ``rng`` may be a ``random.Random`` instance in tests. If one difficulty pool
     is unexpectedly short, the remainder is filled from the rest of the same
-    competitive bank rather than from a subjective or unreviewed category.
+    ranking-eligible bank; it never falls back to excluded learning categories.
     """
     distribution = _CHALLENGE_DISTRIBUTION.get(mode)
     if distribution is None:
-        raise ValueError(f"НеизвестныйJ competitive Challenge mode: {mode!r}")
+        raise ValueError(f"Неизвестный competitive Challenge mode: {mode!r}")
 
     source = rng or random
     selected: list = []
@@ -138,7 +181,7 @@ def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
         candidates = [
             question
             for question in CHALLENGE_POOLS[key]
-            if str(question.get("id") or "").trip() not in seen
+            if str(question.get("id") or "").strip() not in seen
         ]
         take = min(requested, len(candidates))
         for question in source.sample(candidates, take):
@@ -156,13 +199,18 @@ def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
         ]
         needed = 20 - len(selected)
         if len(remainder) < needed:
-            raise ValueError("Competitive question bank contains fewer than 20 unique questions")
+            raise ValueError(
+                "Competitive question bank contains fewer than 20 unique questions"
+            )
         for question in source.sample(remainder, needed):
-            seen.add(str(question.get("id") or "").strip())
+            qid = str(question.get("id") or "").strip()
+            seen.add(qid)
             selected.append(question)
 
     if len(selected) != 20 or len(seen) != 20:
-        raise ValueError("Competitive Challenge selection is not exactly 20 unique questions")
+        raise ValueError(
+            "Competitive Challenge selection is not exactly 20 unique questions"
+        )
 
     source.shuffle(selected)
     return selected
@@ -173,7 +221,9 @@ def get_pool_by_key(key: str) -> list:
     try:
         return _POOLS[key]
     except KeyError:
-        raise KeyError(f"Неизвестный pool_key: {key!r}. Доступные: {list(_POOLS.keys())}")
+        raise KeyError(
+            f"Неизвестный pool_key: {key!r}. Доступные: {list(_POOLS.keys())}"
+        )
 
 
 __all__ = [
@@ -195,6 +245,7 @@ __all__ = [
     "intro_part2_questions",
     "intro_part3_questions",
     "POOL_REGISTRY",
+    "NON_COMPETITIVE_IDS",
     "COMPETITIVE_POOL",
     "BATTLE_POOL",
     "CHALLENGE_POOLS",
