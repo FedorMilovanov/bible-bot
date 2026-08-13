@@ -137,6 +137,51 @@ def _current_question_payload(session: dict) -> dict | None:
     }
 
 
+def _answered_review_payload(session: dict) -> list[dict]:
+    """Expose only already-answered questions for reload/review recovery."""
+    questions = {str(item.get("id")): item for item in session.get("questions") or []}
+    recovered: list[dict] = []
+    for answer in session.get("answered") or []:
+        question = questions.get(str(answer.get("id")))
+        if not question:
+            continue
+        try:
+            chosen = int(answer.get("chosen", -1))
+            correct = int(answer.get("correct", question["correct"]))
+        except (TypeError, ValueError, KeyError):
+            continue
+        recovered.append(
+            {
+                "question": public_question(question),
+                "chosen": chosen,
+                "correct": correct,
+                "ok": bool(answer.get("ok")),
+                "timedOut": bool(answer.get("timed_out")),
+                "explanation": str(question.get("explanation", "")),
+            }
+        )
+    return recovered
+
+
+def _active_session_payload(session: dict, *, resumed: bool) -> dict | None:
+    current = _current_question_payload(session)
+    if current is None:
+        return None
+    return {
+        "active": True,
+        "session_id": str(session["_id"]),
+        "pool_key": str(session.get("pool_key", "")),
+        "mode": str(session.get("mode", "relaxed")),
+        "challenge": bool(session.get("is_challenge")),
+        "resumed": resumed,
+        "score": int(session.get("correct_count", 0)),
+        "current_streak": int(session.get("current_streak", 0)),
+        "max_streak": int(session.get("max_streak", 0)),
+        "answers": _answered_review_payload(session),
+        **current,
+    }
+
+
 def _matching_active_start_payload(
     session: dict,
     *,
@@ -154,17 +199,154 @@ def _matching_active_start_payload(
         or session.get("question_count") != count
     ):
         return None
-    current = _current_question_payload(session)
-    if current is None:
-        return None
+    return _active_session_payload(session, resumed=True)
+
+
+def get_active_quiz(user: dict) -> tuple[dict | None, str | None, int]:
+    """Recover the caller's single durable open Mini App session, if any."""
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None, "database unavailable", 503
+
+    user_id = str(user["id"])
+    try:
+        session = sessions.find_one(
+            {"user_id": user_id, "status": {"$in": list(OPEN_STATUSES)}}
+        )
+    except PyMongoError:
+        logger.exception("failed to resolve active Mini App session")
+        return None, "database temporarily unavailable", 503
+    except Exception:
+        logger.exception("unexpected active Mini App session lookup failure")
+        return None, "could not resolve active quiz session", 500
+
+    if not session:
+        return {"active": False}, None, 200
+
+    questions = session.get("questions") or []
+    total = int(session.get("question_count") or len(questions))
+    index = int(session.get("current_index", 0))
+    if total <= 0 or index < 0 or index > total:
+        return None, "unfinished quiz session is inconsistent", 409
+
+    if session.get("status") == "in_progress" and index < total:
+        payload = _active_session_payload(session, resumed=True)
+        if payload is None:
+            return None, "unfinished quiz session is inconsistent", 409
+        return payload, None, 200
+
+    if index != total:
+        return None, "unfinished quiz result state is inconsistent", 409
+
+    finalized = _finalize_quiz(session, user)
+    if finalized is None:
+        return None, "quiz result finalization is incomplete", 503
     return {
+        "active": False,
+        "finalized": True,
         "session_id": str(session["_id"]),
-        "pool_key": pool_key,
-        "mode": mode,
-        "challenge": is_challenge,
-        "resumed": True,
-        **current,
-    }
+        "pool_key": str(session.get("pool_key", "")),
+        "mode": str(session.get("mode", "relaxed")),
+        "challenge": bool(session.get("is_challenge")),
+        "score": int(session.get("correct_count", 0)),
+        "total": total,
+        **finalized,
+    }, None, 200
+
+
+def cancel_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
+    """Owner-scoped, idempotent cancellation that never deletes completion evidence."""
+    session_id = str(payload.get("session_id", "")).strip()
+    if not session_id:
+        return None, "session_id is required", 400
+
+    sessions = miniapp_sessions()
+    if sessions is None:
+        return None, "database unavailable", 503
+
+    user_id = str(user["id"])
+    try:
+        session = sessions.find_one({"_id": session_id, "user_id": user_id})
+    except PyMongoError:
+        logger.exception("failed to load Mini App session for cancellation")
+        return None, "database temporarily unavailable", 503
+    except Exception:
+        logger.exception("unexpected Mini App cancellation lookup failure")
+        return None, "could not resolve quiz session", 500
+
+    if not session:
+        return None, "quiz session not found", 409
+    if session.get("status") == "abandoned":
+        return {"cancelled": True, "already_cancelled": True}, None, 200
+    if session.get("status") == "finished":
+        return None, "completed quiz cannot be cancelled; result is preserved", 409
+    if session.get("status") in {"finalizing", "score_error"}:
+        finalized = _finalize_quiz(session, user)
+        if finalized is None:
+            return None, "quiz result finalization is incomplete", 503
+        return None, "completed quiz cannot be cancelled; result is preserved", 409
+    if session.get("status") != "in_progress":
+        return None, "quiz session is not active", 409
+
+    questions = session.get("questions") or []
+    total = int(session.get("question_count") or len(questions))
+    index = int(session.get("current_index", 0))
+    if total <= 0 or index < 0 or index > total:
+        return None, "quiz session is inconsistent", 409
+    if index == total:
+        finalized = _finalize_quiz(session, user)
+        if finalized is None:
+            return None, "quiz result finalization is incomplete", 503
+        return None, "completed quiz cannot be cancelled; result is preserved", 409
+
+    now = _now()
+    try:
+        from pymongo import ReturnDocument
+
+        abandoned = sessions.find_one_and_update(
+            {
+                "_id": session_id,
+                "user_id": user_id,
+                "status": "in_progress",
+                "current_index": index,
+            },
+            {
+                "$set": {
+                    "status": "abandoned",
+                    "abandoned_at_dt": now,
+                    "updated_at_dt": now,
+                    "question_sent_at": None,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except PyMongoError:
+        logger.exception("failed to cancel Mini App quiz session")
+        return None, "database temporarily unavailable", 503
+    except Exception:
+        logger.exception("unexpected Mini App cancellation failure")
+        return None, "could not cancel quiz session", 500
+
+    if abandoned and abandoned.get("status") == "abandoned":
+        return {"cancelled": True, "already_cancelled": False}, None, 200
+
+    try:
+        latest = sessions.find_one({"_id": session_id, "user_id": user_id})
+    except Exception:
+        logger.exception("failed to classify Mini App cancellation race")
+        return None, "could not confirm quiz cancellation", 503
+
+    if latest and latest.get("status") == "abandoned":
+        return {"cancelled": True, "already_cancelled": True}, None, 200
+    if latest:
+        latest_total = int(latest.get("question_count") or len(latest.get("questions") or []))
+        latest_index = int(latest.get("current_index", 0))
+        if latest_index == latest_total and latest.get("status") in {"in_progress", "finalizing", "score_error", "finished"}:
+            finalized = _finalize_quiz(latest, user) if latest.get("status") != "finished" else _stored_result(latest)
+            if finalized is None:
+                return None, "quiz result finalization is incomplete", 503
+            return None, "completed quiz cannot be cancelled; result is preserved", 409
+    return None, "quiz session changed while cancellation was in progress", 409
 
 
 def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
@@ -315,15 +497,10 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         logger.exception("unexpected failure while creating Mini App quiz session")
         return None, "could not create quiz session", 500
 
-    current = _current_question_payload(document)
-    return {
-        "session_id": session_id,
-        "pool_key": pool_key,
-        "mode": mode,
-        "challenge": is_challenge,
-        "resumed": False,
-        **current,
-    }, None, 200
+    current = _active_session_payload(document, resumed=False)
+    if current is None:
+        return None, "created quiz session is inconsistent", 500
+    return current, None, 200
 
 
 def get_current_question(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
