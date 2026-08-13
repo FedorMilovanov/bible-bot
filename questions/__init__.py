@@ -52,6 +52,7 @@ _POOLS: dict[str, list] = {
 
 
 def _dedupe_pool(keys: list[str]) -> list:
+    """Build a stable pool with one canonical occurrence of every explicit id."""
     seen: set[str] = set()
     result: list = []
     for key in keys:
@@ -64,7 +65,9 @@ def _dedupe_pool(keys: list[str]) -> list:
     return result
 
 
-_LEARNING_ALL_LEAF_KEYS = [
+# Casual random mode intentionally spans every learning category. It is not the
+# source of truth for scored competitive modes.
+_RANDOM_ALL_LEAF_KEYS = [
     "easy_p1",
     "easy_p2",
     "medium_p1",
@@ -82,25 +85,30 @@ _LEARNING_ALL_LEAF_KEYS = [
     "intro2",
     "intro3",
 ]
-_POOLS["learning_all"] = _dedupe_pool(_LEARNING_ALL_LEAF_KEYS)
+_POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
 
 
+# Ranking eligibility is stricter than learning availability. These core-pool
+# items depend on disputed dating/authorship reconstruction, imported historical
+# context, or Greek claims still under dedicated source review. They remain
+# available in their normal learning levels but cannot influence PvP/Challenge
+# ranking until reviewed and explicitly released.
 NON_COMPETITIVE_IDS = frozenset(
     {
-        "easy_02",
-        "easy_03",
-        "easy_04",
-        "easy_12",
-        "med_01",
-        "med_02",
-        "med_03",
-        "med_13",
-        "med_15",
-        "hard_02",
-        "hard_03",
-        "hard_11",
-        "hard_12",
-        "hard_13",
+        "easy_02",   # dating of 1 Peter
+        "easy_03",   # Babylon = Rome / place of composition
+        "easy_04",   # Silvanus as secretary/editor
+        "easy_12",   # emperor depends on disputed dating
+        "med_01",    # Babylon = Rome reconstruction
+        "med_02",    # Neronian historical context
+        "med_03",    # disputed semantic/theological reading of prognosis
+        "med_13",    # corrupted/under-review diaspora lexical annotation
+        "med_15",    # dating of 1 Peter
+        "hard_02",   # Greek lexical item under dedicated review
+        "hard_03",   # proposed Exodus 12:11 allusion
+        "hard_11",   # dating of 1 Peter
+        "hard_12",   # Greek lexical/rhetorical claim under dedicated review
+        "hard_13",   # proposed Exodus 24 covenant background
     }
 )
 
@@ -124,13 +132,12 @@ def _build_competitive_pool() -> list:
 
 COMPETITIVE_POOL = _build_competitive_pool()
 _POOLS["competitive_all"] = COMPETITIVE_POOL
-# web_api.quiz reserves random_all for Challenge 20; keep the compatibility key
-# authoritative by pointing it at exactly the same eligible bank.
-_POOLS["random_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
+# Production PvP samples only from this bank and must not append unrelated pools.
 BATTLE_POOL = COMPETITIVE_POOL
 
+# Per-difficulty slices use exactly the same eligibility policy.
 CHALLENGE_POOLS: dict[str, list] = {
     "easy": [
         question
@@ -156,6 +163,12 @@ _CHALLENGE_DISTRIBUTION = {
 
 
 def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
+    """Return exactly 20 unique ranking-eligible questions.
+
+    ``rng`` may be a ``random.Random`` instance in tests. If one difficulty pool
+    is unexpectedly short, the remainder is filled from the rest of the same
+    ranking-eligible bank; it never falls back to excluded learning categories.
+    """
     distribution = _CHALLENGE_DISTRIBUTION.get(mode)
     if distribution is None:
         raise ValueError(f"Неизвестный competitive Challenge mode: {mode!r}")
@@ -204,6 +217,7 @@ def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list:
 
 
 def get_pool_by_key(key: str) -> list:
+    """Return a named pool and fail loudly on configuration typos."""
     try:
         return _POOLS[key]
     except KeyError:
