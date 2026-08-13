@@ -46,6 +46,16 @@ SOURCE_CATALOG = {
         "url": "https://www.iiste.org/Journals/index.php/RHSS/article/view/30666",
         "kind": "scholarship",
     },
+    "pliny_trajan_10_96_97": {
+        "title": "Pliny the Younger and Trajan, Letters 10.96-97",
+        "url": "https://www.earlychristianwritings.com/text/pliny.html",
+        "kind": "primary_history_later_comparison",
+    },
+    "oxford_kantor_pontus_bithynia": {
+        "title": "Georgy Kantor, Navigating Roman Law and Local Privileges in Pontus-Bithynia (Oxford, 2020)",
+        "url": "https://academic.oup.com/book/36865/chapter/322068466",
+        "kind": "modern_history_control",
+    },
     "hts_ancient_slavery": {
         "title": "Hendrik Goede, Constructing ancient slavery as socio-historic context of the New Testament",
         "url": "https://hts.org.za/index.php/hts/article/view/1297",
