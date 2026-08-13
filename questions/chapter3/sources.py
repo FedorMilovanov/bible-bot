@@ -12,13 +12,13 @@ SOURCE_CATALOG = {
         "kind": "conservative_exposition_position",
     },
     "grudem_noah_1p3_19": {
-        "title": "Wayne Grudem, Christ Preaching through Noah: 1 Peter 3:19-20 in the Light of Dominant Themes in Jewish Literature",
+        "title": "Wayne Grudem, Christ Preaching through Noah: 1 Peter 3:19-20 in the Light of Dominant Themes in Jewish Literature (1987)",
         "url": "https://www.waynegrudem.com/christ-preaching-through-noah-1-peter-319-20-in-the-light-of-dominant-themes-in-jewish-literature",
         "kind": "conservative_scholarship_disputed",
     },
     "jts_crawford_1p3_21": {
-        "title": "Matthew R. Crawford, The Early Church and the Question of 1 Peter 3:21: Reading Eperotema in Context",
-        "url": "https://academic.oup.com/jts/article/72/1/1/6127694",
+        "title": "Matthew R. Crawford, ‘Confessing God from a Good Conscience’: 1 Peter 3:21 and Early Christian Baptismal Theology, JTS 67.1 (2016), 23-37",
+        "url": "https://academic.oup.com/jts/article/67/1/23/2451894",
         "kind": "peer_reviewed_scholarship_disputed",
     },
 }
