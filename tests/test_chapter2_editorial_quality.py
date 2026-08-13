@@ -5,7 +5,7 @@ from questions.chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
 
 
 def _normalize(text: str) -> str:
-    return " ".join(re.findall(r"[\wἀ-῾]+", text.casefold(), flags=re.UNICODE))
+    return " ".join(re.findall(r"[\w\u0370-\u03ff\u1f00-\u1fff]+", text.casefold()))
 
 
 def test_reviewed_options_are_nonempty_and_unique_after_normalization():
