@@ -11,6 +11,8 @@ from .ot_stone import OT_STONE_2_6_8
 from .text import TEXT_2_1_10
 from .text_11_12 import TEXT_2_11_12
 from .text_13 import TEXT_2_13
+from .text_14 import TEXT_2_14
+from .text_15 import TEXT_2_15
 from .text_16_17 import TEXT_2_16_17
 from .text_18_20 import TEXT_2_18_20
 from .text_21_25 import TEXT_2_21_25
@@ -18,9 +20,24 @@ from .theology_21_25 import THEOLOGY_2_21_25
 from .theology_growth import THEOLOGY_GROWTH_2_1_3
 from .theology_house import THEOLOGY_HOUSE_2_4_5
 
-TEXT_2_DRAFT = TEXT_2_1_10 + TEXT_2_11_12 + TEXT_2_13 + TEXT_2_16_17 + TEXT_2_18_20 + TEXT_2_21_25
+TEXT_2_DRAFT = (
+    TEXT_2_1_10
+    + TEXT_2_11_12
+    + TEXT_2_13
+    + TEXT_2_14
+    + TEXT_2_15
+    + TEXT_2_16_17
+    + TEXT_2_18_20
+    + TEXT_2_21_25
+)
 GREEK_2_DRAFT = GREEK_2_1_10 + GREEK_2_11_17 + GREEK_2_18_25
-INTERTEXT_2_DRAFT = OT_PSALM34_2_3 + OT_STONE_2_6_8 + OT_EXODUS19_2_9 + OT_HOSEA_2_10 + OT_ISAIAH53_2_21_25
+INTERTEXT_2_DRAFT = (
+    OT_PSALM34_2_3
+    + OT_STONE_2_6_8
+    + OT_EXODUS19_2_9
+    + OT_HOSEA_2_10
+    + OT_ISAIAH53_2_21_25
+)
 THEOLOGY_2_DRAFT = THEOLOGY_GROWTH_2_1_3 + THEOLOGY_HOUSE_2_4_5 + THEOLOGY_2_21_25
 
 CHAPTER2_DRAFT_QUESTIONS = TEXT_2_DRAFT + GREEK_2_DRAFT + INTERTEXT_2_DRAFT + THEOLOGY_2_DRAFT
