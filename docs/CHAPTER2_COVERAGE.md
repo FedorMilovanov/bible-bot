@@ -7,11 +7,11 @@ Status values: `done`, `partial`, `pending`, `n/a`.
 | 2:1-3 | done | done | done | n/a | done | done | done | done | canonical learning |
 | 2:4-5 | done | done | done | n/a | done | n/a | done | done | canonical learning |
 | 2:6-8 | done | done | done | n/a | done | done | done | done | canonical learning |
-| 2:9-10 | done | done | done | n/a | partial: one editorial quarantine | n/a | done | done | canonical minus quarantine |
-| 2:11-12 | done | done | n/a | partial: one editorial quarantine | done | done | done | done | canonical minus quarantine |
+| 2:9-10 | done | done | done | n/a | done | n/a | done | done | canonical learning |
+| 2:11-12 | done | done | n/a | done | done | done | done | done | canonical learning |
 | 2:13-17 | done | done | n/a | done | done | done | done | done | canonical learning |
-| 2:18-20 | done | done | n/a | partial: one editorial quarantine | done | n/a | done | done | canonical minus quarantine |
-| 2:21-23 | done | done | done | partial: one editorial quarantine | done | n/a | done | done | canonical minus quarantine |
+| 2:18-20 | done | done | n/a | done | done | n/a | done | done | canonical learning |
+| 2:21-23 | done | done | done | done | done | n/a | done | done | canonical learning |
 | 2:24-25 | done | done | done | n/a | done | n/a | done | done | canonical learning |
 
 ## Canonical learning boundary
@@ -27,27 +27,27 @@ Status values: `done`, `partial`, `pending`, `n/a`.
 
 ## Editorial state
 
-The Greek pass and the application pass are complete. Roman-context and civil-authority cards have also received the parallel-alternative pass.
+The Greek, application, history/social, Roman-context, civil-authority, and people-of-God distractor passes are complete.
 
-Current editorial quarantine:
+`CHAPTER2_REVIEW_QUARANTINE_IDS` is empty. Recently re-reviewed cards include:
 
 - `ch2_hist_001`
 - `ch2_hist_003`
 - `ch2_hist_004`
+- `ch2_theol_002`
 - `ch2_theol_010`
 
-These IDs remain in authoring modules but are excluded from the reviewed/canonical bank until rewritten and re-reviewed.
+`ch2_theol_002` is limited to the supported 2:24 proposition and does not decide a broader systematic question.
 
-`ch2_theol_002` is admitted after its proposition was narrowed to the supported 2:24 claim; it does not decide a broader systematic question.
+`tests/test_chapter2_editorial_quality.py` guards normalized option uniqueness, exact/extreme near-duplicate questions, and non-competitive epistemic boundaries. `tests/test_chapter2_product_contract.py` guards canonical-pool equality and isolation from ranking, battle, Challenge, and legacy random pools.
 
 ## Remaining blockers
 
-1. Rewrite or intentionally retire the four quarantined cards.
-2. Add the Telegram menu entry through the canonical `chapter2` pool; do not duplicate question data in client code.
-3. Add a Telegram integration contract for the new entry and learning-only finalization.
-4. Keep ranking admission separate from normal learning admission.
-5. Run fresh exact-head CI, Security Audit, CodeQL, production import, and web/runtime smoke after the final integration tree.
+1. Add the Telegram menu entry through the canonical `chapter2` pool; do not duplicate question data in client code.
+2. Add a Telegram integration contract for the new entry and learning-only finalization.
+3. Keep ranking admission separate from normal learning admission.
+4. Run fresh exact-head CI, Security Audit, CodeQL, production import, and web/runtime smoke after the final integration tree.
 
 ## Definition of complete Chapter 2
 
-Chapter 2 is complete only when the remaining editorial quarantine is resolved, Telegram and Mini App both consume the same canonical learning pool, ranked paths remain isolated, and all required exact-head gates are green.
+Chapter 2 is complete only when Telegram and Mini App both consume the same canonical learning pool, ranked paths remain isolated, and all required exact-head gates are green.
