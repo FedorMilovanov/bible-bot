@@ -20,11 +20,7 @@ from .chapter1 import (
     practical_v17_25_questions as _raw_practical_p2,
 )
 from .chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
-from .content_truth import (
-    RANKING_QUARANTINE_IDS,
-    SOURCE_CATALOG,
-    curate_pool,
-)
+from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
 from .content_truth_review import apply_review_overrides
 from .intro import (
     intro_part1_questions as _raw_intro1,
@@ -32,6 +28,7 @@ from .intro import (
     intro_part3_questions as _raw_intro3,
 )
 from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
+from .source_registry import SOURCE_CATALOG
 
 
 def _canonical(raw: list[dict], key: str) -> list[dict]:
