@@ -1,83 +1,66 @@
-# keep_alive.py
-"""
-HTTP-сервер для поддержания активности на Render / Railway / Replit.
-Отдаёт health-check endpoint и базовую статистику.
-"""
+"""Production HTTP lifecycle for Mini App + API.
 
-import os
-import time
+Imported by bot.py before bot configuration, so .env is loaded here first.
+"""
+from __future__ import annotations
+
 import logging
-from datetime import datetime, timezone
-from threading import Thread
-from flask import Flask, jsonify
+import os
+from threading import Lock, Thread
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from web_api import create_app  # noqa: E402  (env must be loaded first)
 
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-# Время старта — для uptime
-_start_time = time.time()
-_start_dt = datetime.now(timezone.utc).isoformat()
+app = create_app()
+_SERVER_LOCK = Lock()
+_SERVER_STARTED = False
 
 
-@app.route("/")
-def home():
-    """Простой health-check — для UptimeRobot / cron-job / Render."""
-    uptime_sec = int(time.time() - _start_time)
-    hours, remainder = divmod(uptime_sec, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    return jsonify({
-        "status": "alive",
-        "uptime": f"{hours}h {minutes}m {seconds}s",
-        "started_at": _start_dt,
-    })
+def run() -> None:
+    """Run a production WSGI server in the current thread."""
+    from waitress import serve
 
-
-@app.route("/health")
-def health():
-    """Расширенный health-check — проверяет MongoDB."""
-    from database import check_db_connection
-    db_ok = check_db_connection()
-    status_code = 200 if db_ok else 503
-    return jsonify({
-        "status": "healthy" if db_ok else "degraded",
-        "database": "connected" if db_ok else "unavailable",
-        "uptime_seconds": int(time.time() - _start_time),
-    }), status_code
-
-
-@app.route("/stats")
-def stats():
-    """Краткая статистика — для мониторинга (не раскрывает чувствительные данные)."""
-    try:
-        from database import get_total_users, check_db_connection
-        from questions import get_total_question_count, get_all_pool_stats
-        return jsonify({
-            "status": "alive",
-            "database": "connected" if check_db_connection() else "unavailable",
-            "total_users": get_total_users(),
-            "total_questions": get_total_question_count(),
-            "pools": get_all_pool_stats(),
-            "uptime_seconds": int(time.time() - _start_time),
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "detail": str(e)}), 500
-
-
-def run():
-    """Запускает Flask в продакшн-режиме (без дебага)."""
-    port = int(os.getenv("PORT", 8080))
-    app.run(
+    port = int(os.getenv("PORT", "8080"))
+    threads = max(2, int(os.getenv("WEB_THREADS", "4")))
+    max_body = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
+    max_headers = int(os.getenv("MAX_REQUEST_HEADER_BYTES", str(64 * 1024)))
+    logger.info(
+        "HTTP server listening on 0.0.0.0:%s with %s threads (body<=%sB headers<=%sB)",
+        port,
+        threads,
+        max_body,
+        max_headers,
+    )
+    serve(
+        app,
         host="0.0.0.0",
         port=port,
-        debug=False,
-        use_reloader=False,  # не перезапускать — мы внутри бота
+        threads=threads,
+        channel_timeout=120,
+        max_request_body_size=max_body,
+        max_request_header_size=max_headers,
+        clear_untrusted_proxy_headers=True,
+        expose_tracebacks=False,
     )
 
 
-def keep_alive():
-    """Запускает HTTP-сервер в фоновом потоке."""
-    t = Thread(target=run, daemon=True, name="KeepAliveServer")
-    t.start()
-    logger.info("🌐 Keep-alive сервер запущен на порту %s",
-                os.getenv("PORT", 8080))
+def keep_alive() -> None:
+    """Start the HTTP server exactly once in a daemon thread."""
+    if os.getenv("DISABLE_WEB_SERVER", "false").lower() in {"1", "true", "yes"}:
+        return
+
+    global _SERVER_STARTED
+    with _SERVER_LOCK:
+        if _SERVER_STARTED:
+            return
+        Thread(target=run, daemon=True, name="MiniAppHTTP").start()
+        _SERVER_STARTED = True
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    run()

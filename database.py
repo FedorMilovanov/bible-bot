@@ -50,7 +50,7 @@ ALL_LEVEL_KEYS = [
     "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
     "nero", "geography",
     "intro1", "intro2", "intro3",
-    "random20", "hardcore20",
+    "random_all", "random20", "hardcore20",
 ]
 
 _ALL_LEVEL_KEYS_SET = frozenset(ALL_LEVEL_KEYS)
@@ -63,7 +63,7 @@ POINTS_PER_QUESTION = {
     "linguistics_ch1": 3, "linguistics_ch1_2": 3, "linguistics_ch1_3": 3,
     "intro1": 2, "intro2": 2, "intro3": 2,
     "nero": 2, "geography": 2,
-    "random20": 1, "hardcore20": 2,
+    "random_all": 1, "random20": 1, "hardcore20": 2,
 }
 
 REPORT_COOLDOWN_SECONDS = 60
@@ -142,12 +142,6 @@ def _ensure_indexes():
     if quiz_sessions_collection is not None:
         try:
             quiz_sessions_collection.create_index(
-                [("updated_at_dt", ASCENDING)],
-                expireAfterSeconds=21600,
-                name="ttl_updated_at",
-                background=True,
-            )
-            quiz_sessions_collection.create_index(
                 [("user_id", ASCENDING), ("status", ASCENDING)],
                 name="idx_user_status",
                 background=True,
@@ -157,12 +151,6 @@ def _ensure_indexes():
 
     if battles_collection is not None:
         try:
-            battles_collection.create_index(
-                [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=2592000,
-                name="ttl_battles_created_at",
-                background=True,
-            )
             battles_collection.create_index(
                 [("status", ASCENDING), ("created_at_dt", DESCENDING)],
                 background=True,
@@ -189,17 +177,6 @@ def _ensure_indexes():
         except Exception as e:
             logger.warning("leaderboard index: %s", e)
 
-    if reports_collection is not None:
-        try:
-            reports_collection.create_index(
-                [("created_at_dt", ASCENDING)],
-                expireAfterSeconds=7776000,
-                name="ttl_reports_created_at",
-                background=True,
-            )
-        except Exception as e:
-            logger.warning("reports index: %s", e)
-
     if weekly_lb_collection is not None:
         try:
             weekly_lb_collection.create_index(
@@ -225,13 +202,17 @@ _ensure_indexes()
 # QUIZ SESSIONS — CRUD
 # ═══════════════════════════════════════════════
 
+class LegacyQuizSessionPersistenceUnavailable(RuntimeError):
+    """Legacy controller cannot create or reliably resolve a durable quiz session."""
+
+
 def create_quiz_session(user_id: int, mode: str, question_ids: list,
                         questions_data: list,
                         level_key: str = None, level_name: str = None,
                         time_limit: int = None,
                         chat_id: int = None) -> str:
     if quiz_sessions_collection is None:
-        return ""
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
     session_id = str(uuid.uuid4())
     now = _now_utc()
     doc = {
@@ -260,18 +241,20 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
         quiz_sessions_collection.insert_one(doc)
     except Exception as e:
         logger.error("create_quiz_session error: %s", e)
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session insert failed") from e
     return session_id
 
 
 def get_active_quiz_session(user_id: int):
     if quiz_sessions_collection is None:
-        return None
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
     try:
         return quiz_sessions_collection.find_one(
             {"user_id": _uid(user_id), "status": "in_progress"}
         )
-    except Exception:
-        return None
+    except Exception as e:
+        logger.error("get_active_quiz_session error: %s", e)
+        raise LegacyQuizSessionPersistenceUnavailable("active quiz session lookup failed") from e
 
 
 def get_quiz_session(session_id: str):
@@ -285,17 +268,28 @@ def get_quiz_session(session_id: str):
 
 def update_quiz_session(session_id: str, fields: dict):
     if quiz_sessions_collection is None:
-        return
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session storage is unavailable")
+    if not isinstance(fields, dict):
+        raise ValueError("quiz session fields must be a dict")
+    allowed_fields = {"question_sent_at", "status", "end_time"}
+    forbidden = set(fields) - allowed_fields
+    if forbidden:
+        raise ValueError(
+            "generic quiz session update cannot mutate durable progress/spec fields: "
+            + ", ".join(sorted(forbidden))
+        )
     now = _now_utc()
-    fields["updated_at"] = now.isoformat()
-    fields["updated_at_dt"] = now
+    safe_fields = dict(fields)
+    safe_fields["updated_at"] = now.isoformat()
+    safe_fields["updated_at_dt"] = now
     try:
         quiz_sessions_collection.update_one(
             {"_id": session_id},
-            {"$set": fields}
+            {"$set": safe_fields}
         )
     except Exception as e:
         logger.error("update_quiz_session error: %s", e)
+        raise LegacyQuizSessionPersistenceUnavailable("quiz session update failed") from e
 
 
 def advance_quiz_session(session_id: str, qid: str, user_answer: str,
@@ -932,7 +926,8 @@ def get_context_leaderboard(limit=10):
 
 def get_current_week_id():
     d = date.today()
-    return f"{d.year}-W{d.isocalendar()[1]:02d}"
+    iso_year, iso_week, _ = d.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
 
 
 def is_bonus_eligible(user_id: int, mode: str) -> bool:
@@ -1222,9 +1217,9 @@ def get_hardest_questions(limit: int = 10) -> list:
 # ═══════════════════════════════════════════════
 
 def can_submit_report(user_id: int) -> bool:
-    """Проверяет кулдаун через MongoDB (переживает рестарт)."""
-    if collection is None:
-        return True
+    """Проверяет кулдаун только при доступном durable report storage."""
+    if collection is None or reports_collection is None:
+        return False
     try:
         entry = collection.find_one(
             {"_id": _uid(user_id)}, {"last_report_at": 1}
@@ -1232,18 +1227,19 @@ def can_submit_report(user_id: int) -> bool:
         if not entry or "last_report_at" not in entry:
             return True
         last = entry["last_report_at"]
-        if isinstance(last, datetime):
-            elapsed = (_now_utc() - last).total_seconds()
-        else:
-            elapsed = REPORT_COOLDOWN_SECONDS + 1
+        if not isinstance(last, datetime):
+            logger.error("can_submit_report: invalid last_report_at for user %s", user_id)
+            return False
+        elapsed = (_now_utc() - last).total_seconds()
         return elapsed >= REPORT_COOLDOWN_SECONDS
-    except Exception:
-        return True
+    except Exception as e:
+        logger.error("can_submit_report error: %s", e)
+        return False
 
 
 def seconds_until_next_report(user_id: int) -> int:
-    if collection is None:
-        return 0
+    if collection is None or reports_collection is None:
+        return REPORT_COOLDOWN_SECONDS
     try:
         entry = collection.find_one(
             {"_id": _uid(user_id)}, {"last_report_at": 1}
@@ -1251,16 +1247,25 @@ def seconds_until_next_report(user_id: int) -> int:
         if not entry or "last_report_at" not in entry:
             return 0
         last = entry["last_report_at"]
-        if isinstance(last, datetime):
-            elapsed = (_now_utc() - last).total_seconds()
-            return max(0, int(REPORT_COOLDOWN_SECONDS - elapsed))
-        return 0
-    except Exception:
-        return 0
+        if not isinstance(last, datetime):
+            logger.error("seconds_until_next_report: invalid last_report_at for user %s", user_id)
+            return REPORT_COOLDOWN_SECONDS
+        elapsed = (_now_utc() - last).total_seconds()
+        if elapsed < 0:
+            logger.error("seconds_until_next_report: future last_report_at for user %s", user_id)
+            return REPORT_COOLDOWN_SECONDS
+        return max(0, min(REPORT_COOLDOWN_SECONDS, int(REPORT_COOLDOWN_SECONDS - elapsed)))
+    except Exception as e:
+        logger.error("seconds_until_next_report error: %s", e)
+        return REPORT_COOLDOWN_SECONDS
 
 
 def insert_report(user_id: int, username: str, first_name: str,
-                  report_type: str, text: str, context: dict = None) -> str:
+                  report_type: str, text: str, context: dict = None) -> str | None:
+    """Persist report first; never consume cooldown for a failed report insert."""
+    if reports_collection is None or collection is None:
+        return None
+
     report_id = str(uuid.uuid4())
     now = _now_utc()
     text = (text or "")[:2000]
@@ -1279,35 +1284,52 @@ def insert_report(user_id: int, username: str, first_name: str,
         "admin_delivered": False,
     }
 
-    if reports_collection is not None:
-        try:
-            reports_collection.insert_one(doc)
-        except Exception as e:
-            logger.error("insert_report error: %s", e)
+    try:
+        reports_collection.insert_one(doc)
+    except Exception as e:
+        logger.error("insert_report error: %s", e)
+        return None
 
-    # Обновляем кулдаун в коллекции users (переживает рестарт)
-    if collection is not None:
-        try:
-            collection.update_one(
-                {"_id": _uid(user_id)},
-                {"$set": {"last_report_at": now}}
+    try:
+        result = collection.update_one(
+            {"_id": _uid(user_id)},
+            {"$set": {"last_report_at": now}},
+        )
+        if result.modified_count != 1:
+            logger.error(
+                "insert_report: report %s persisted but cooldown was not updated for user %s",
+                report_id,
+                user_id,
             )
-        except Exception:
-            pass
+    except Exception as e:
+        # The report is already durable. Never turn a persisted report into a
+        # phantom failure merely because the secondary cooldown write failed.
+        logger.error(
+            "insert_report: report %s persisted but cooldown update failed: %s",
+            report_id,
+            e,
+        )
 
     return report_id
 
 
-def mark_report_delivered(report_id: str):
+def mark_report_delivered(report_id: str) -> bool:
     if reports_collection is None:
-        return
+        return False
     try:
-        reports_collection.update_one(
-            {"_id": report_id},
-            {"$set": {"admin_delivered": True}}
+        result = reports_collection.update_one(
+            {"_id": report_id, "admin_delivered": {"$ne": True}},
+            {"$set": {"admin_delivered": True}},
         )
+        if result.modified_count == 1:
+            return True
+        existing = reports_collection.find_one(
+            {"_id": report_id}, {"admin_delivered": 1}
+        )
+        return bool(existing and existing.get("admin_delivered") is True)
     except Exception as e:
         logger.error("mark_report_delivered error: %s", e)
+        return False
 
 
 # ═══════════════════════════════════════════════

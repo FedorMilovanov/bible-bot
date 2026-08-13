@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject temporary self-writing patch machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden="$(find .github -type f \( \
+            -path '.github/workflows/oneshot-*' -o \
+            -path '.github/scripts/oneshot_*' \
+          \) -print)"
+          if [[ -n "$forbidden" ]]; then
+            echo "Temporary one-shot patch files are forbidden:" >&2
+            printf '  %s\n' "$forbidden" >&2
+            exit 1
+          fi
+      - name: Validate GitHub Actions workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=/tmp/actionlint.tar.gz
+          mkdir -p /tmp/actionlint
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C /tmp/actionlint
+          /tmp/actionlint/actionlint -color
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11.15'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Verify dependency graph
+        run: pip check
+      - name: Guard tracked tree against secrets
+        run: python scripts/check_secrets.py
+      - name: Lint maintained Python layer
+        run: >-
+          ruff check
+          web_api
+          keep_alive.py
+          intro.py
+          telegram_*.py
+          battle_integrity.py
+          session_integrity.py
+          report_integrity.py
+          legacy_*.py
+          scripts
+          tests
+          --output-format=github
+      - name: Check legacy core for fatal Python errors
+        run: ruff check bot.py database.py --select=E9,F63,F7,F82 --output-format=github
+      - name: Compile Python
+        run: python -m compileall -q .
+      - name: Run tests
+        run: pytest -q
+      - name: Check Mini App JavaScript syntax
+        run: |
+          node --check miniapp/flow_guard.js
+          node --check miniapp/app.js
+          node --check miniapp/lifecycle.js
+      - name: Run Mini App JavaScript unit tests
+        run: node --test tests/js/*.test.js
+      - name: Build production container
+        run: docker build --tag bible-bot-ci .
+      - name: Verify production controller imports in built image
+        run: >-
+          docker run --rm
+          -e ADMIN_USER_ID=1
+          -e BOT_TOKEN=123456:TEST_TOKEN
+          -e DISABLE_WEB_SERVER=true
+          bible-bot-ci
+          python -c "import telegram_production; print('production-import-ok')"
+      - name: Smoke test built web container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --rm --name bible-bot-ci-web -p 18080:8080 bible-bot-ci python keep_alive.py
+          trap 'docker stop bible-bot-ci-web >/dev/null 2>&1 || true' EXIT
+          for _ in {1..20}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/live >/tmp/live.json \
+              && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html \
+              && curl --fail --silent --show-error http://127.0.0.1:18080/flow_guard.js >/tmp/flow_guard.js; then
+              grep -q '"status":"ok"' /tmp/live.json
+              grep -q '<title>Библейский тест — 1 Петра</title>' /tmp/miniapp.html
+              grep -q '<script src="flow_guard.js"></script>' /tmp/miniapp.html
+              grep -q 'class QuizFlowGuard' /tmp/flow_guard.js
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs bible-bot-ci-web
+          exit 1

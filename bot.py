@@ -71,6 +71,15 @@ from database import (
 )
 from utils import safe_send, safe_edit, safe_truncate, generate_result_image, get_rank_name, create_result_gif
 from questions import get_pool_by_key, BATTLE_POOL
+from battle_integrity import (
+    BattleStoreUnavailable, battle_role_for_user,
+    claim_battle_opponent, claim_final_battle,
+    delete_battle_for_participant, record_battle_result,
+)
+from session_integrity import (
+    QuizSessionStoreUnavailable, cancel_owned_quiz_session,
+    get_owned_quiz_session,
+)
 
 # ── Вопросы Введения (для Random20, Hardcore20, Битв) ────────────────────────
 try:
@@ -873,29 +882,16 @@ async def relaxed_mode_handler(update: Update, context):
 
 
 async def random_all_start_handler(update: Update, context):
-    """Случайный режим: 10 вопросов из всех доступных пулов, без таймера."""
+    """Случайный режим: 10 вопросов из канонического random_all пула."""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     _touch(user_id)
 
-    # Собираем все доступные вопросы из всех пулов
-    all_pool_keys = [
-        "easy", "easy_p1", "easy_p2",
-        "medium", "medium_p1", "medium_p2",
-        "hard", "hard_p1", "hard_p2",
-        "practical_ch1", "practical_p1", "practical_p2",
-        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
-        "intro1", "intro2", "intro3",
-    ]
-    all_questions = []
-    seen = set()
-    for key in all_pool_keys:
-        for q in get_pool_by_key(key):
-            qid = get_qid(q)
-            if qid not in seen:
-                seen.add(qid)
-                all_questions.append(q)
+    all_questions = get_pool_by_key("random_all")
+    if not all_questions:
+        await query.edit_message_text("⚠️ Вопросы не найдены.")
+        return
 
     questions = random.sample(all_questions, min(10, len(all_questions)))
     level_name = "🎲 Случайный режим (все темы)"
@@ -903,9 +899,13 @@ async def random_all_start_handler(update: Update, context):
     cancel_active_quiz_session(user_id)
     question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
-        user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key="random_all",
-        level_name=level_name, time_limit=None,
+        user_id=user_id,
+        mode="level",
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key="random_all",
+        level_name=level_name,
+        time_limit=None,
         chat_id=query.message.chat_id,
     )
 
@@ -932,8 +932,7 @@ async def random_all_start_handler(update: Update, context):
         f"*{level_name}*\n\n📝 Вопросов: {len(questions)} · 🧘 Без таймера\nНачинаем!",
         parse_mode="Markdown",
     )
-    await send_question(query.message.get_bot(), user_id, time_limit=None)
-
+    await send_question(context.bot, user_id, time_limit=None)
 
 async def timed_mode_handler(update: Update, context):
     """Режим с таймером TIMED_MODE_TIMEOUT сек, баллы ×1.5."""
@@ -1263,54 +1262,53 @@ async def animate_confetti(bot, chat_id: int) -> None:
 
 
 async def report_inaccuracy_handler(update: Update, context):
-    """
-    Обрабатывает нажатие «⚠️ Неточность?» во время теста.
-    Автоматически определяет текущий вопрос и отправляет сообщение админу в директ.
-    """
+    """Отправляет админу именно тот вопрос, чья кнопка «Неточность?» была нажата."""
     query = update.callback_query
-    await query.answer("✅ Сообщение отправлено автору. Спасибо!", show_alert=False)
-
     user = update.effective_user
     user_id = user.id
     data = user_data.get(user_id, {})
 
-    q_num = data.get("current_question", 0)
+    try:
+        q_num = int((query.data or "").replace("report_inaccuracy_", "", 1))
+    except (TypeError, ValueError):
+        await query.answer("Некорректная кнопка.", show_alert=True)
+        return
+
     q_list = data.get("questions", [])
+    if q_num < 0 or q_num >= len(q_list):
+        await query.answer("Этот вопрос уже недоступен.", show_alert=True)
+        return
+
+    await query.answer("✅ Принято, отправляю автору.", show_alert=False)
+
+    q = q_list[q_num]
     level_name = data.get("level_name", "—")
     username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user_id})"
-
-    if q_list and q_num < len(q_list):
-        q = q_list[q_num]
-        q_text = q.get("question", "—")
-        options = q.get("options", [])
-        correct_idx = q.get("correct", 0)
-        correct_ans = options[correct_idx] if options else "—"
-        options_str = "\n".join(f"  {i+1}. {opt}" for i, opt in enumerate(options))
-        msg = (
-            f"⚠️ *СООБЩЕНИЕ О НЕТОЧНОСТИ*\n\n"
-            f"👤 От: {username}\n"
-            f"📚 Тест: _{level_name}_\n"
-            f"❓ Вопрос {q_num + 1}: _{q_text}_\n\n"
-            f"📋 Варианты:\n{options_str}\n\n"
-            f"✅ Правильный ответ в базе: _{correct_ans}_"
-        )
-    else:
-        msg = (
-            f"⚠️ *СООБЩЕНИЕ О НЕТОЧНОСТИ*\n\n"
-            f"👤 От: {username}\n"
-            f"📚 Тест: _{level_name}_\n"
-            f"❓ Вопрос: {q_num + 1} (детали недоступны)"
-        )
+    q_text = q.get("question", "—")
+    options = q.get("options", [])
+    correct_idx = q.get("correct", 0)
+    correct_ans = options[correct_idx] if isinstance(correct_idx, int) and 0 <= correct_idx < len(options) else "—"
+    options_str = "\n".join(f"  {i + 1}. {opt}" for i, opt in enumerate(options))
+    msg = (
+        "⚠️ СООБЩЕНИЕ О НЕТОЧНОСТИ\n\n"
+        f"👤 От: {username}\n"
+        f"📚 Тест: {level_name}\n"
+        f"❓ Вопрос {q_num + 1}: {q_text}\n\n"
+        f"📋 Варианты:\n{options_str}\n\n"
+        f"✅ Правильный ответ в базе: {correct_ans}"
+    )
 
     try:
-        await context.bot.send_message(
-            chat_id=ADMIN_USER_ID,
-            text=msg,
-            parse_mode="Markdown",
-        )
-    except Exception as e:
-        logger.warning("report_inaccuracy: не удалось отправить сообщение админу: %s", e)
-
+        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=msg)
+    except Exception as exc:
+        logger.warning("report_inaccuracy: не удалось отправить сообщение админу: %s", exc)
+        try:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⚠️ Не удалось доставить сообщение автору. Попробуй ещё раз позже.",
+            )
+        except Exception:
+            pass
 
 async def _handle_question_timeout(bot, user_id: int, q_num_at_send: int, timeout_seconds: int):
     """
@@ -2032,22 +2030,26 @@ async def quiz_inline_answer(update: Update, context):
 # ═══════════════════════════════════════════════
 
 async def retry_errors(update: Update, context):
-    query   = update.callback_query
-    await query.answer()
+    query = update.callback_query
     user_id = query.from_user.id
-    target_id = int(query.data.replace("retry_errors_", ""))
 
-    # Защита: нельзя повторять чужие ошибки
+    try:
+        target_id = int((query.data or "").replace("retry_errors_", "", 1))
+    except (TypeError, ValueError):
+        await query.answer("⚠️ Некорректная кнопка.", show_alert=True)
+        return ConversationHandler.END
+
     if target_id != user_id:
         await query.answer("⚠️ Это не ваша сессия.", show_alert=True)
         return ConversationHandler.END
 
     if target_id not in user_data:
+        await query.answer()
         await query.edit_message_text("⚠️ Данные сессии устарели. Начни новый тест.")
         return ConversationHandler.END
 
     prev_data = user_data[target_id]
-    answered  = prev_data.get("answered_questions", [])
+    answered = prev_data.get("answered_questions", [])
     wrong_questions = [
         item["question_obj"] for item in answered
         if _is_wrong(item)
@@ -2055,8 +2057,9 @@ async def retry_errors(update: Update, context):
 
     if not wrong_questions:
         await query.answer("Ошибок нет!", show_alert=True)
-        return
+        return ConversationHandler.END
 
+    await query.answer()
     user_data[user_id] = _create_session_data(
         user_id=user_id,
         session_id=None,
@@ -2080,7 +2083,6 @@ async def retry_errors(update: Update, context):
     )
     await send_question(context.bot, user_id)
     return ANSWERING
-
 
 # ═══════════════════════════════════════════════
 # ПАГИНАЦИЯ РАЗБОРА ОШИБОК
@@ -2134,25 +2136,29 @@ async def noop_handler(update: Update, context):
 async def review_test_handler(update: Update, context):
     """Листание вопросов теста с правильными ответами после завершения."""
     query = update.callback_query
-    await query.answer()
-
     user_id = query.from_user.id
-    data    = user_data.get(user_id, {})
+    data = user_data.get(user_id, {})
 
-    q_index  = int(query.data.split("_")[-1])
+    try:
+        q_index = int((query.data or "").rsplit("_", 1)[-1])
+    except (TypeError, ValueError):
+        await query.answer("Некорректная кнопка.", show_alert=True)
+        return
+
     answered = data.get("answered_questions", [])
-
-    if not answered or q_index >= len(answered):
+    if not answered or q_index < 0 or q_index >= len(answered):
+        await query.answer()
         await query.edit_message_text("❌ Данные теста не найдены. Пройди тест заново.")
         return
 
-    total       = len(answered)
+    await query.answer()
+    total = len(answered)
     answer_data = answered[q_index]
-    q           = answer_data.get("question_obj", {})
+    q = answer_data.get("question_obj", {})
     user_answer = answer_data.get("user_answer", "—")
     correct_answer = _correct_text(q)
-    is_correct  = (user_answer == correct_answer)
-    status      = "✅" if is_correct else "❌"
+    is_correct = user_answer == correct_answer
+    status = "✅" if is_correct else "❌"
 
     text = (
         f"📖 *Просмотр теста* ({q_index + 1}/{total})\n\n"
@@ -2167,13 +2173,13 @@ async def review_test_handler(update: Update, context):
         else:
             marker = "⬜"
         arrow = " ← твой ответ" if opt == user_answer and not is_correct else ""
-        text += f"{marker} {i+1}. {opt}{arrow}\n"
+        text += f"{marker} {i + 1}. {opt}{arrow}\n"
 
     text += f"\n*Твой ответ:* {user_answer} {status}"
-
     explanation = q.get("explanation") or q.get("fun_fact")
     if explanation:
         text += f"\n\n💡 *Пояснение:*\n_{explanation}_"
+
     nav_row = []
     if q_index > 0:
         nav_row.append(InlineKeyboardButton("⬅️ Пред.", callback_data=f"review_test_{q_index - 1}"))
@@ -2182,40 +2188,53 @@ async def review_test_handler(update: Update, context):
         nav_row.append(InlineKeyboardButton("➡️ След.", callback_data=f"review_test_{q_index + 1}"))
 
     buttons = [nav_row, [InlineKeyboardButton("🏠 В меню", callback_data="back_to_main")]]
-
     await query.edit_message_text(
         text=text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-
 async def review_errors_handler(update: Update, context):
-    """Показывает/листает ошибки внутри одного сообщения."""
-    query   = update.callback_query
-    await query.answer()
+    """Показывает только собственные ошибки пользователя."""
+    query = update.callback_query
     user_id = query.from_user.id
-    data_cb = query.data
+    data_cb = query.data or ""
 
     if data_cb.startswith("review_errors_"):
-        # Первый вход: review_errors_{uid}_{idx}
-        parts     = data_cb.split("_")
-        target_id = int(parts[2])
-        index     = int(parts[3])
+        parts = data_cb.split("_")
+        if len(parts) != 4:
+            await query.answer("Некорректная кнопка.", show_alert=True)
+            return
+        try:
+            target_id = int(parts[2])
+            index = int(parts[3])
+        except (TypeError, ValueError):
+            await query.answer("Некорректная кнопка.", show_alert=True)
+            return
+        if target_id != user_id:
+            await query.answer("Нет доступа к чужому разбору ошибок.", show_alert=True)
+            return
     elif data_cb.startswith("review_nav_"):
         suffix = data_cb.replace("review_nav_", "")
         if suffix == "noop":
+            await query.answer()
             return
-        index     = int(suffix)
+        try:
+            index = int(suffix)
+        except (TypeError, ValueError):
+            await query.answer("Некорректная кнопка.", show_alert=True)
+            return
         target_id = user_id
     else:
+        await query.answer()
         return
 
+    await query.answer()
     if target_id not in user_data:
         await query.edit_message_text("⚠️ Данные устарели. Начни новый тест.")
         return
 
-    wrong = user_data[target_id].get("wrong_answers", [])
+    wrong = user_data[user_id].get("wrong_answers", [])
     if not wrong:
         await query.edit_message_text("✅ Ошибок нет!")
         return
@@ -2225,10 +2244,9 @@ async def review_errors_handler(update: Update, context):
 
     try:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    except Exception as e:
-        if "not modified" not in str(e).lower():
+    except Exception as exc:
+        if "not modified" not in str(exc).lower():
             raise
-
 
 # ═══════════════════════════════════════════════
 # ВОССТАНОВЛЕНИЕ СЕССИИ ПОСЛЕ РЕСТАРТА
@@ -2301,9 +2319,13 @@ async def resume_session_handler(update: Update, context):
     user_id = query.from_user.id
     _touch(user_id)
 
-    db_session = get_quiz_session(session_id)
+    try:
+        db_session = get_owned_quiz_session(session_id, user_id)
+    except QuizSessionStoreUnavailable:
+        await query.edit_message_text("⚠️ База сессий временно недоступна. Попробуй позже.")
+        return
     if not db_session or db_session.get("status") != "in_progress":
-        await query.edit_message_text("⚠️ Сессия не найдена или уже завершена.")
+        await query.edit_message_text("⚠️ Сессия не найдена, уже завершена или принадлежит другому пользователю.")
         return
 
     await _restore_session_to_memory(user_id, db_session)
@@ -2340,11 +2362,14 @@ async def restart_session_handler(update: Update, context):
     user_id = query.from_user.id
     _touch(user_id)
 
-    db_session = get_quiz_session(session_id)
-    cancel_quiz_session(session_id)
+    try:
+        db_session = cancel_owned_quiz_session(session_id, user_id)
+    except QuizSessionStoreUnavailable:
+        await query.edit_message_text("⚠️ База сессий временно недоступна. Попробуй позже.")
+        return
 
     if not db_session:
-        await query.edit_message_text("⚠️ Сессия не найдена.")
+        await query.edit_message_text("⚠️ Сессия не найдена, уже завершена или принадлежит другому пользователю.")
         return
 
     mode = db_session.get("mode", "level")
@@ -2422,9 +2447,21 @@ async def cancel_session_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
     session_id = query.data.replace("cancel_session_", "")
-    cancel_quiz_session(session_id)
-    await query.edit_message_text("❌ Тест отменён.", reply_markup=_main_keyboard())
+    user_id = query.from_user.id
 
+    try:
+        cancelled = cancel_owned_quiz_session(session_id, user_id)
+    except QuizSessionStoreUnavailable:
+        await query.edit_message_text("⚠️ База сессий временно недоступна. Попробуй позже.")
+        return
+    if not cancelled:
+        await query.edit_message_text("⚠️ Сессия не найдена, уже завершена или принадлежит другому пользователю.")
+        return
+
+    local = user_data.get(user_id)
+    if local and str(local.get("session_id")) == str(session_id):
+        user_data.pop(user_id, None)
+    await query.edit_message_text("❌ Тест отменён.", reply_markup=_main_keyboard())
 
 # ═══════════════════════════════════════════════
 # РЕЖИМ БИТВЫ — MongoDB-backed (задание 1.2)
@@ -2478,58 +2515,60 @@ async def create_battle(update: Update, context):
 
 
 async def join_battle(update: Update, context):
-    query    = update.callback_query
-    await query.answer()
+    query = update.callback_query
     battle_id = query.data.replace("join_battle_", "")
-    user_id   = query.from_user.id
+    user_id = query.from_user.id
     user_name = query.from_user.first_name
 
     battle = get_battle(battle_id)
     if not battle or battle.get("status") != "waiting":
-        await query.edit_message_text(
-            "❌ Битва не найдена или уже началась.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
-        )
+        await query.answer("Битва не найдена или уже началась.", show_alert=True)
         return
-
-    if battle["creator_id"] == user_id:
+    if battle.get("creator_id") == user_id:
         await query.answer("Нельзя присоединиться к своей битве!", show_alert=True)
         return
-    if battle["opponent_id"] is not None:
-        await query.answer("К этой битве уже присоединился другой игрок!", show_alert=True)
+
+    try:
+        battle = claim_battle_opponent(battle_id, user_id, user_name)
+    except BattleStoreUnavailable:
+        await query.answer("База битв временно недоступна. Попробуй ещё раз.", show_alert=True)
+        return
+    if not battle:
+        await query.answer("Эту битву уже занял другой игрок.", show_alert=True)
         return
 
-    update_battle(battle_id, {
-        "opponent_id":   user_id,
-        "opponent_name": user_name,
-        "status":        "in_progress",
-    })
-
+    await query.answer()
     await query.edit_message_text(
         f"⚔️ *БИТВА НАЧАЛАСЬ!*\n\n"
         f"👤 Ты vs 👤 {battle['creator_name']}\n\n"
         "📝 10 вопросов\n⏱ Время учитывается!\nНажми «Начать»",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ Начать отвечать", callback_data=f"start_battle_{battle_id}_opponent")],
-            [InlineKeyboardButton("⬅️ Назад",           callback_data="battle_menu")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")],
         ]),
         parse_mode="Markdown",
     )
 
-
 async def start_battle_questions(update: Update, context):
     query = update.callback_query
-    await query.answer()
     data_parts = query.data.replace("start_battle_", "").rsplit("_", 1)
-    battle_id  = data_parts[0]
-    role       = data_parts[1]
-    user_id    = query.from_user.id
-
-    battle = get_battle(battle_id)
-    if not battle:
-        await query.edit_message_text("❌ Битва не найдена.")
+    if len(data_parts) != 2 or data_parts[1] not in {"creator", "opponent"}:
+        await query.answer("Некорректная кнопка битвы.", show_alert=True)
         return
 
+    battle_id, requested_role = data_parts
+    user_id = query.from_user.id
+    battle = get_battle(battle_id)
+    if not battle:
+        await query.answer("Битва не найдена.", show_alert=True)
+        return
+
+    persisted_role = battle_role_for_user(battle, user_id)
+    if persisted_role is None or persisted_role != requested_role:
+        await query.answer("Эта кнопка принадлежит другому участнику.", show_alert=True)
+        return
+
+    await query.answer()
     user_data[user_id] = _create_session_data(
         user_id=user_id,
         session_id=battle_id,
@@ -2537,20 +2576,19 @@ async def start_battle_questions(update: Update, context):
         level_name="⚔️ PvP Битва",
         chat_id=query.message.chat_id,
         battle_id=battle_id,
-        role=role,
+        role=persisted_role,
         correct_answers=0,
         start_time=time.time(),
         last_activity=time.time(),
         is_battle=True,
         battle_points=0,
         battle_chat_id=query.message.chat_id,
-        battle_role=role,
+        battle_role=persisted_role,
     )
 
     await query.edit_message_text("⚔️ *БИТВА: Вопрос 1/10*\n\nНачинаем! 🍀", parse_mode="Markdown")
     await send_battle_question(context.bot, query.message.chat_id, user_id)
     return BATTLE_ANSWERING
-
 
 async def send_battle_question(bot, chat_id: int, user_id: int):
     """Отправляет или редактирует вопрос битвы. bot передаётся явно — всегда context.bot."""
@@ -2605,39 +2643,52 @@ async def send_battle_question(bot, chat_id: int, user_id: int):
 
 
 async def battle_answer(update: Update, context):
-    """Обрабатывает нажатие inline-кнопки ответа в битве (callback_data=ba_<index>)."""
-    query   = update.callback_query
+    """Обрабатывает ответ битвы и безопасно переживает stale/retry callbacks."""
+    query = update.callback_query
     user_id = query.from_user.id
 
     if user_id not in user_data or not user_data[user_id].get("is_battle"):
-        await query.answer()
+        await query.answer("Эта кнопка битвы уже устарела.")
         return
 
     data = user_data[user_id]
+    chat_id = data.get("battle_chat_id") or query.message.chat_id
 
-    # Защита от двойного нажатия
+    if data.get("current_question", 0) >= len(data.get("questions", [])):
+        pending = bool(data.get("battle_result_pending"))
+        await query.answer(
+            "Повторяю сохранение результата…" if pending else "Этот ответ уже обработан."
+        )
+        if pending:
+            await finish_battle_for_user(context.bot, chat_id, user_id)
+        return
+
     if data.get("processing_answer"):
-        await query.answer()
+        await query.answer("Ответ уже обрабатывается.")
         return
     data["processing_answer"] = True
 
-    # chat_id: предпочитаем зафиксированный при старте, fallback — текущий апдейт
-    chat_id = data.get("battle_chat_id") or query.message.chat_id
-
     try:
-        idx = int(query.data.replace("ba_", ""))
+        try:
+            idx = int(query.data.replace("ba_", ""))
+        except (TypeError, ValueError):
+            await query.answer("Некорректный ответ.", show_alert=True)
+            return
         current_options = data.get("current_options", [])
-        if idx >= len(current_options):
-            await query.answer()
+        if idx < 0 or idx >= len(current_options):
+            await query.answer("Некорректный ответ.", show_alert=True)
             return
 
-        q_num        = data["current_question"]
-        q            = data["questions"][q_num]
-        user_answer  = current_options[idx]
+        q_num = data["current_question"]
+        if q_num < 0 or q_num >= len(data["questions"]):
+            await query.answer("Этот вопрос уже закрыт.")
+            return
+        q = data["questions"][q_num]
+        user_answer = current_options[idx]
         correct_text = data.get("current_correct_text") or q["options"][q["correct"]]
 
-        sent_at     = data.get("question_sent_at", time.time())
-        elapsed     = min(time.time() - sent_at, 7.0)
+        sent_at = data.get("question_sent_at", time.time())
+        elapsed = min(time.time() - sent_at, 7.0)
 
         if user_answer == correct_text:
             data["correct_answers"] += 1
@@ -2657,63 +2708,95 @@ async def battle_answer(update: Update, context):
     else:
         await finish_battle_for_user(context.bot, chat_id, user_id)
 
+async def _retire_battle_message(bot, chat_id: int, data: dict):
+    message_id = data.get("battle_message_id")
+    if not message_id:
+        return
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+
 
 async def finish_battle_for_user(bot, chat_id: int, user_id: int):
-    """Записывает результат игрока в Mongo. Если оба закончили — рассылает итоги."""
-    data          = user_data[user_id]
-    battle_id     = data["battle_id"]
-    role          = data["role"]
-    time_taken    = time.time() - data["start_time"]
-    battle_points = data.get("battle_points", 0)
-
-    battle = get_battle(battle_id)
-    if not battle:
-        await bot.send_message(chat_id=chat_id, text="❌ Битва не найдена.")
+    """Идемпотентно сохраняет игрока и ровно один раз выдаёт общий итог битвы."""
+    data = user_data.get(user_id)
+    if not data or not data.get("is_battle"):
         return
 
-    if role == "creator":
-        update_battle(battle_id, {
-            "creator_score":    data["correct_answers"],
-            "creator_time":     time_taken,
-            "creator_points":   battle_points,
-            "creator_finished": True,
-        })
-    else:
-        update_battle(battle_id, {
-            "opponent_score":    data["correct_answers"],
-            "opponent_time":     time_taken,
-            "opponent_points":   battle_points,
-            "opponent_finished": True,
-        })
+    battle_id = data["battle_id"]
+    role = data.get("role")
+    correct_answers = int(data.get("correct_answers", 0))
+    time_taken = max(0.0, time.time() - data.get("start_time", time.time()))
+    battle_points = int(data.get("battle_points", 0))
+    data["battle_result_pending"] = True
 
-    # Перечитываем актуальное состояние из БД
-    battle = get_battle(battle_id)
-    if battle.get("creator_finished") and battle.get("opponent_finished"):
-        await show_battle_results(bot, battle_id)
-    else:
+    try:
+        battle = record_battle_result(
+            battle_id,
+            user_id,
+            role,
+            score=correct_answers,
+            time_seconds=time_taken,
+            points=battle_points,
+        )
+    except BattleStoreUnavailable:
         await bot.send_message(
             chat_id=chat_id,
-            text=(
-                f"✅ *Ты закончил!*\n\n"
-                f"📊 Твой результат: {data['correct_answers']}/10\n"
-                f"⏱ Время: {format_time(time_taken)}\n\n"
-                "⏳ Ожидание соперника..."
-            ),
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")]]),
+            text="⚠️ Не удалось сохранить результат битвы. Нажми последнюю кнопку ещё раз через несколько секунд.",
         )
-
-
-async def show_battle_results(bot, battle_id: str):
-    """
-    Формирует итоговый текст и отправляет его ОБОИМ участникам через context.bot.
-    Вызывается только когда creator_finished и opponent_finished == True.
-    """
-    battle = get_battle(battle_id)
-    if not battle:
         return
 
-    creator_points  = battle.get("creator_points", 0)
+    if battle is None:
+        # Другой concurrent finisher may already have atomically claimed and
+        # removed the completed battle. Its shared result delivery covers us.
+        await _retire_battle_message(bot, chat_id, data)
+        user_data.pop(user_id, None)
+        return
+
+    final_battle = None
+    if battle.get("creator_finished") and battle.get("opponent_finished"):
+        try:
+            final_battle = claim_final_battle(battle_id)
+        except BattleStoreUnavailable:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Итог битвы сохранён частично. Нажми последнюю кнопку ещё раз для безопасного повтора.",
+            )
+            return
+
+    await _retire_battle_message(bot, chat_id, data)
+    data["battle_result_pending"] = False
+    user_data.pop(user_id, None)
+
+    if final_battle is not None:
+        await show_battle_results(bot, final_battle)
+        return
+    if battle.get("creator_finished") and battle.get("opponent_finished"):
+        # Another finisher claimed the completed battle and will deliver the
+        # shared result to both participants.
+        return
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ *Ты закончил!*\n\n"
+            f"📊 Твой результат: {correct_answers}/10\n"
+            f"⏱ Время: {format_time(time_taken)}\n\n"
+            "⏳ Ожидание соперника..."
+        ),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")]]),
+    )
+
+
+async def show_battle_results(bot, battle: dict):
+    """Отправляет уже атомарно claimed итог битвы обоим участникам."""
+    creator_points = battle.get("creator_points", 0)
     opponent_points = battle.get("opponent_points", 0)
 
     if creator_points > opponent_points:
@@ -2723,17 +2806,7 @@ async def show_battle_results(bot, battle_id: str):
     else:
         winner, winner_name = "draw", None
 
-    if winner == "creator":
-        update_battle_stats(battle["creator_id"], "win")
-        update_battle_stats(battle["opponent_id"], "lose")
-    elif winner == "opponent":
-        update_battle_stats(battle["creator_id"], "lose")
-        update_battle_stats(battle["opponent_id"], "win")
-    else:
-        update_battle_stats(battle["creator_id"], "draw")
-        update_battle_stats(battle["opponent_id"], "draw")
-
-    text  = "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
+    text = "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
     text += f"🏆 *Победитель: {winner_name}!*\n\n" if winner != "draw" else "🤝 *НИЧЬЯ!*\n\n"
     text += (
         f"👤 *{battle['creator_name']}*\n"
@@ -2749,10 +2822,9 @@ async def show_battle_results(bot, battle_id: str):
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Новая битва", callback_data="battle_menu")],
-        [InlineKeyboardButton("⬅️ В меню",       callback_data="back_to_main")],
+        [InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")],
     ])
 
-    # Гарантированно отправляем обоим — каждый получит в свой личный чат
     for uid in (battle["creator_id"], battle["opponent_id"]):
         try:
             await bot.send_message(
@@ -2761,22 +2833,47 @@ async def show_battle_results(bot, battle_id: str):
                 reply_markup=keyboard,
                 parse_mode="Markdown",
             )
-        except Exception as e:
-            logger.warning("Battle result delivery to %s failed: %s", uid, e)
-
-    delete_battle(battle_id)
-
+        except Exception as exc:
+            logger.warning("Battle result delivery to %s failed: %s", uid, exc)
 
 async def cancel_battle(update: Update, context):
     query = update.callback_query
-    await query.answer()
     battle_id = query.data.replace("cancel_battle_", "")
-    delete_battle(battle_id)
+    user_id = query.from_user.id
+
+    local = user_data.get(user_id)
+    if (
+        local
+        and local.get("is_battle")
+        and local.get("battle_id") == battle_id
+        and local.get("battle_result_pending")
+    ):
+        await query.answer("Результат битвы ещё синхронизируется; отмена временно недоступна.", show_alert=True)
+        return
+
+    battle = get_battle(battle_id)
+    if not battle:
+        await query.answer("Битва уже завершена или удалена.", show_alert=True)
+        return
+    if battle_role_for_user(battle, user_id) is None:
+        await query.answer("Ты не участник этой битвы.", show_alert=True)
+        return
+
+    try:
+        deleted = delete_battle_for_participant(battle_id, user_id)
+    except BattleStoreUnavailable:
+        await query.answer("База битв временно недоступна.", show_alert=True)
+        return
+    if not deleted:
+        await query.answer("Битва уже завершена или изменена.", show_alert=True)
+        return
+
+    user_data.pop(user_id, None)
+    await query.answer()
     await query.edit_message_text(
         "❌ Битва отменена.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="battle_menu")]]),
     )
-
 
 # ═══════════════════════════════════════════════
 # INLINE MODE — Вызов на дуэль (задание 4.1)
@@ -2872,45 +2969,55 @@ async def stats_command(update: Update, context):
 
 
 async def random_command(update: Update, context):
-    """Команда /random — сразу запускает случайный тест из всех тем."""
+    """Команда /random — запускает тот же канонический random_all режим."""
     user_id = update.effective_user.id
     _touch(user_id)
-    all_pool_keys = [
-        "easy", "easy_p1", "easy_p2",
-        "medium", "medium_p1", "medium_p2",
-        "hard", "hard_p1", "hard_p2",
-        "practical_ch1", "practical_p1", "practical_p2",
-        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
-        "intro1", "intro2", "intro3",
-    ]
-    all_questions = []
-    seen = set()
-    for key in all_pool_keys:
-        for q in get_pool_by_key(key):
-            qid = get_qid(q)
-            if qid not in seen:
-                seen.add(qid)
-                all_questions.append(q)
+
+    all_questions = get_pool_by_key("random_all")
     if not all_questions:
         await update.message.reply_text("⚠️ Вопросы не найдены.", reply_markup=_main_keyboard())
         return
+
     questions = random.sample(all_questions, min(10, len(all_questions)))
     level_name = "🎲 Случайный режим (все темы)"
     cancel_active_quiz_session(user_id)
+
     question_ids = [get_qid(q) for q in questions]
     session_id = create_quiz_session(
-        user_id=user_id, mode="level", question_ids=question_ids,
-        questions_data=questions, level_key="random_all",
-        level_name=level_name, time_limit=None,
+        user_id=user_id,
+        mode="level",
+        question_ids=question_ids,
+        questions_data=questions,
+        level_key="random_all",
+        level_name=level_name,
+        time_limit=None,
         chat_id=update.effective_chat.id,
     )
-    context.user_data["session_id"] = str(session_id)
+
+    user_data[user_id] = _create_session_data(
+        user_id=user_id,
+        session_id=session_id,
+        questions=questions,
+        level_name=level_name,
+        chat_id=update.effective_chat.id,
+        level_key="random_all",
+        correct_answers=0,
+        start_time=time.time(),
+        last_activity=time.time(),
+        is_battle=False,
+        battle_points=0,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+        quiz_mode="relaxed",
+        score_multiplier=1.0,
+        quiz_time_limit=None,
+    )
+
     await update.message.reply_text(
-        f"🎲 *Случайный тест*\n10 вопросов из всех тем\n\nНачинаем!",
+        f"🎲 *Случайный тест*\n{len(questions)} вопросов из всех тем\n\nНачинаем!",
         parse_mode="Markdown",
     )
-    await send_question(update, context, questions, 0, user_id, update.effective_chat.id, time_limit=None)
-
+    await send_question(context.bot, user_id, time_limit=None)
 
 async def admin_command(update: Update, context):
     """Команда /admin — только для администратора."""
@@ -4085,22 +4192,24 @@ async def report_menu(update: Update, context):
 
 async def report_start(update: Update, context):
     query = update.callback_query
-    await query.answer()
-    report_type = query.data.replace("report_start_", "")
+    report_type = (query.data or "").replace("report_start_", "", 1)
     if report_type == "bug_direct":
         report_type = "bug"
-    user_id = query.from_user.id
+    if report_type not in REPORT_TYPE_LABELS:
+        await query.answer("Некорректный тип сообщения.", show_alert=True)
+        return ConversationHandler.END
 
+    user_id = query.from_user.id
     if not can_submit_report(user_id):
         remaining = seconds_until_next_report(user_id)
         await query.answer(f"⏳ Слишком часто. Попробуй через {remaining} сек.", show_alert=True)
-        return
+        return ConversationHandler.END
 
+    await query.answer()
     report_drafts[user_id] = {"type": report_type, "text": None, "photo_file_id": None}
-    label = REPORT_TYPE_LABELS.get(report_type, report_type)
+    label = REPORT_TYPE_LABELS[report_type]
     await safe_edit(query, f"{label}\n\n✏️ Напиши своё сообщение.\n\nДля отмены: /cancelreport")
     return REPORT_TEXT
-
 
 async def report_receive_text(update: Update, context):
     user_id = update.effective_user.id

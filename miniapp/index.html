@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a2e">
+<title>Библейский тест — 1 Петра</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="header-top">
+      <div class="logo">📖 1 Петра</div>
+      <div class="header-actions">
+        <span id="userBadge" class="user-badge hidden"></span>
+        <button id="streakBadge" class="streak hidden" type="button">🔥 0</button>
+      </div>
+    </div>
+    <div id="progressBar" class="progress-bar hidden" aria-hidden="true">
+      <div id="progressFill" class="progress-fill"></div>
+      <span id="progressText" class="progress-text">1 / 10</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="screen-home" class="screen active">
+      <div class="hero">
+        <div class="hero-icon" aria-hidden="true">✨</div>
+        <h1>Библейский<br>тест-бот</h1>
+        <p>Изучаем 1-е послание Петра<br>глубоко и с удовольствием</p>
+      </div>
+
+      <div class="menu-grid">
+        <button class="card card-primary" data-action="chapter1" type="button">
+          <span class="card-emoji" aria-hidden="true">📖</span>
+          <span class="card-title">Глава 1</span>
+          <span class="card-desc">Уровни от фактов до лингвистики</span>
+        </button>
+        <button class="card" data-action="historical" type="button">
+          <span class="card-emoji" aria-hidden="true">🏛</span>
+          <span class="card-title">Контекст</span>
+          <span class="card-desc">Нерон • География • Введение</span>
+        </button>
+        <button class="card card-accent" data-action="challenge" type="button">
+          <span class="card-emoji" aria-hidden="true">🎲</span>
+          <span class="card-title">Challenge 20</span>
+          <span class="card-desc">Дневной бонус • недельный рейтинг</span>
+        </button>
+        <button class="card" data-action="battle" type="button">
+          <span class="card-emoji" aria-hidden="true">⚔️</span>
+          <span class="card-title">Битва</span>
+          <span class="card-desc">PvP с друзьями в боте</span>
+        </button>
+      </div>
+
+      <div class="menu-list">
+        <button class="list-btn" data-action="leaderboard" type="button">🏆 Таблица лидеров</button>
+        <button class="list-btn" data-action="stats" type="button">📊 Моя статистика</button>
+        <button class="list-btn" data-action="about" type="button">ℹ️ О проекте</button>
+      </div>
+
+      <div class="hint">🔐 Ответы и баллы проверяются на сервере. Прогресс синхронизируется с ботом через общую MongoDB.</div>
+      <button id="openBotBtn" class="btn btn-outline" type="button">🤖 Открыть в боте</button>
+    </section>
+
+    <section id="screen-levels" class="screen">
+      <button class="back" data-back="home" type="button">← Назад</button>
+      <h2 id="levelsTitle">Выбери уровень</h2>
+      <div id="levelsList" class="levels-list"></div>
+    </section>
+
+    <section id="screen-quiz" class="screen">
+      <div class="quiz-top">
+        <button class="back small" id="quizExit" type="button">✕ Выйти</button>
+        <div id="quizTimer" class="timer hidden" role="timer" aria-live="off">⏱ 30</div>
+      </div>
+      <div id="quizProgress" class="quiz-progress" aria-hidden="true"></div>
+      <h2 id="quizQuestion" class="quiz-question">Загрузка…</h2>
+      <div id="quizOptions" class="quiz-options"></div>
+      <div id="quizFeedback" class="feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+    </section>
+
+    <section id="screen-result" class="screen">
+      <div class="result-card">
+        <div id="resultEmoji" class="result-emoji" aria-hidden="true">🏆</div>
+        <h2 id="resultTitle">Отлично!</h2>
+        <div id="resultScore" class="result-score">8 / 10</div>
+        <div id="resultBar" class="result-bar" aria-hidden="true"><div id="resultBarFill"></div></div>
+        <p id="resultDesc" class="result-desc"></p>
+        <div id="resultStats" class="result-stats"></div>
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary" id="resultReview" type="button">📖 Разбор ответов</button>
+        <button class="btn" id="resultRetry" type="button">🔁 Пройти заново</button>
+        <button class="btn btn-outline" id="resultHome" type="button">🏠 В меню</button>
+        <button class="btn btn-ghost" id="resultShare" type="button">📤 Поделиться</button>
+      </div>
+    </section>
+
+    <section id="screen-review" class="screen">
+      <button class="back" data-back="result" type="button">← К результату</button>
+      <h2>Разбор</h2>
+      <div id="reviewList"></div>
+    </section>
+
+    <section id="screen-leaderboard" class="screen">
+      <button class="back" data-back="home" type="button">← Назад</button>
+      <h2>🏆 Лидеры</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="general" type="button">Общий</button>
+        <button class="tab" data-tab="context" type="button">Контекст</button>
+        <button class="tab" data-tab="hard" type="button">Богословы</button>
+      </div>
+      <div id="lbList" class="lb-list" aria-live="polite"><p class="muted">Загрузка…</p></div>
+    </section>
+
+    <section id="screen-about" class="screen">
+      <button class="back" data-back="home" type="button">← Назад</button>
+      <h2>📚 О проекте</h2>
+      <div class="about">
+        <p><b>Библейский тест-бот: 1 Петра</b> — интерактивный инструмент для глубокого изучения Писания.</p>
+        <p>Вопросы по тексту и контексту · 3 режима скорости · Challenge 20 · PvP · достижения</p>
+        <ul>
+          <li>🟢 Лёгкий — факты, имена, даты</li>
+          <li>🟡 Средний — контекст и связи</li>
+          <li>🔴 Сложный — богословие</li>
+          <li>🙏 Применение — практика жизни</li>
+          <li>🔬 Лингвистика — греческие слова</li>
+          <li>🏛 Контекст — Нерон, география, авторство</li>
+        </ul>
+        <p>Режимы: 🧘 спокойно · ⏱ 30 сек ×1.5 · ⚡ 15 сек ×2</p>
+        <p class="muted">Mini App v2.3 · server-authoritative scoring · Soli Deo Gloria</p>
+        <button class="btn btn-primary" data-action="chapter1" type="button">🎯 Начать тест</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+</div>
+<script src="flow_guard.js"></script>
+<script src="app.js"></script>
+<script src="lifecycle.js"></script>
+</body>
+</html>
