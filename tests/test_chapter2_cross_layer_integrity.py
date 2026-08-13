@@ -1,4 +1,5 @@
 from questions.chapter2 import CHAPTER2_DRAFT_QUESTIONS
+from questions.chapter2.application_freedom_2_15_16 import APPLICATION_FREEDOM_2_15_16
 from questions.chapter2.application_growth import APPLICATION_GROWTH_2_1_3
 from questions.chapter2.application_identity import APPLICATION_IDENTITY_2_4_10
 from questions.chapter2.application_suffering import APPLICATION_SUFFERING_2_18_25
@@ -18,6 +19,7 @@ ALL_CHAPTER2_REVIEWED_ITEMS = (
     + APPLICATION_GROWTH_2_1_3
     + APPLICATION_IDENTITY_2_4_10
     + APPLICATION_WITNESS_2_11_12
+    + APPLICATION_FREEDOM_2_15_16
     + APPLICATION_SUFFERING_2_18_25
     + HISTORY_OIKETAI_2_18
     + HISTORY_BODILY_2_18_25
