@@ -10,6 +10,7 @@ from questions import (
 
 
 EXCLUDED_COMPETITIVE_PREFIXES = ("prac", "ling", "intro", "nero", "geo")
+SOURCE_REVIEWED_COMPETITIVE_IDS = {"easy_12", "med_02", "hard_02", "hard_12"}
 
 
 def _ids(items):
@@ -32,6 +33,12 @@ def test_competitive_pool_is_unique_and_quarantines_debated_items():
     assert all(ids)
     assert not (set(ids) & NON_COMPETITIVE_IDS)
     assert not any(qid.startswith(EXCLUDED_COMPETITIVE_PREFIXES) for qid in ids)
+
+
+def test_source_reviewed_items_are_competitive():
+    competitive_ids = set(_ids(COMPETITIVE_POOL))
+    assert SOURCE_REVIEWED_COMPETITIVE_IDS <= competitive_ids
+    assert not (SOURCE_REVIEWED_COMPETITIVE_IDS & NON_COMPETITIVE_IDS)
 
 
 def test_casual_random_keeps_noncompetitive_learning_categories():
