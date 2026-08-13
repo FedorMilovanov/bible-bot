@@ -23,7 +23,10 @@ from .theology_civil import THEOLOGY_CIVIL_2_13_17
 from .theology_people_text import THEOLOGY_PEOPLE_TEXT
 
 
-CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset({"ch2_theol_002"})
+# Explicit quarantine remains part of the contract even when empty. New items
+# that overclaim their evidence must be excluded here rather than silently
+# leaking into the reviewed bank.
+CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset()
 
 _SUPPLEMENTAL_REVIEWED = (
     APPLICATION_GROWTH_2_1_3
