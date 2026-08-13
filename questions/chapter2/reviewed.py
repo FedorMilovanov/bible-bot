@@ -23,14 +23,7 @@ from .theology_civil import THEOLOGY_CIVIL_2_13_17
 from .theology_people_text import THEOLOGY_PEOPLE_TEXT
 
 
-CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset(
-    {
-        "ch2_hist_001",
-        "ch2_hist_003",
-        "ch2_hist_004",
-        "ch2_theol_010",
-    }
-)
+CHAPTER2_REVIEW_QUARANTINE_IDS = frozenset()
 
 _SUPPLEMENTAL_REVIEWED = (
     APPLICATION_GROWTH_2_1_3
