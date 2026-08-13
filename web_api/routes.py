@@ -19,8 +19,8 @@ from .quiz import (
     prepare_question,
     public_question,
     question_id,
-    start_quiz,
 )
+from .quiz_start import start_quiz
 from .ttl_cache import TTLValueCache
 
 logger = logging.getLogger(__name__)
