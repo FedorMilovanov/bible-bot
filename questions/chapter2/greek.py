@@ -37,7 +37,7 @@ GREEK_2_1_10 = [
         "confidence": "medium",
         "position": "neutral",
         "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter", "gty_1p2_1_3", "tgc_1p_commentary"],
+        "sources": ["sblgnt", "morphgnt_1peter", "gty_1p2_1_3", "tgc_1p_commentary", "schreiner_nac_1peter"],
     },
     {
         "id": "ch2_gr_003",
