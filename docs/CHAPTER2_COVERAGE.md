@@ -6,8 +6,8 @@ A row is not complete until its evidence domains have been intentionally reviewe
 
 | Passage | Text | Greek | OT/LXX | History/social | Theology | Disputed | Application | Source review | Production |
 |---|---|---|---|---|---|---|---|---|---|
-| 2:1-3 | done | done | done (Ps 33/34) | n/a | done (growth) | partial (`logikon` remains lexical-review sensitive) | done | partial | draft only |
-| 2:4-5 | done | done | partial (temple/priesthood background still merits final review) | n/a | done (spiritual house/priesthood) | n/a | done | partial | draft only |
+| 2:1-3 | done | done | done (Ps 33/34) | n/a | done (growth) | done (`logikon` lexical range reviewed and kept non-competitive) | done | partial | draft only |
+| 2:4-5 | done | done | done as background (temple/priesthood imagery reviewed; not mislabeled as a standalone explicit quotation) | n/a | done (spiritual house/priesthood) | n/a | done | partial | draft only |
 | 2:6-8 | done | done | done (Isa 28; Ps 117/118; Isa 8) | n/a | done contextually (Christ/stone logic + 2:8 review) | done (appointment/accountability mapped) | done via 2:4-10 identity application | partial | draft only |
 | 2:9-10 | done | done | done (Exod 19 + Hosea 1-2) | n/a | done at passage level (people-of-God synthesis) | n/a (whole-canon church/Israel system is intentionally not forced from one passage) | done | partial | draft only |
 | 2:11-12 | done | done | n/a | done (social/spiritual exile distinction reviewed) | done contextually (identity and witness) | done (`day of visitation` mapped) | done | partial | draft only |
@@ -29,19 +29,18 @@ Key reviewed modules include:
 - `theology_growth.py`, `theology_house.py`, `theology_civil.py`, `theology_people_text.py`, `theology_21_25.py`;
 - `disputed_2_8.py`, `disputed_2_12.py`;
 - `application_growth.py`, `application_identity.py`, `application_witness.py`, `application_freedom_2_15_16.py`, `application_suffering.py`;
+- `sources_logikon.py` and `sources_temple.py` — independent controls for the two previously open exegetical reviews;
 - `tests/test_chapter2_draft_quality.py`, `tests/test_chapter2_supplemental_quality.py`, `tests/test_chapter2_new_review_modules.py`, `tests/test_chapter2_cross_layer_integrity.py`, and `tests/test_chapter2_intertext_exports.py`.
 
 The chapter remains intentionally absent from `POOL_REGISTRY`. Do not expose a partial chapter in Telegram or Mini App merely to make progress visible.
 
 ## Remaining chapter-2 blockers
 
-1. Finish the lexical review of `logikon` in 2:2 without collapsing lexical range into a preferred application.
-2. Finish the temple/priesthood OT-background review for 2:4-5 without inventing an explicit quotation where there is only background/allusion.
-3. Finish the Roman administrative/social-background review for 2:13-17 and keep later Pliny/Trajan evidence clearly labelled as later comparative evidence, not direct proof of 60s procedure.
-4. Run a chapter-wide source audit: every source ID, URL, claim type, confidence, position, and competitive flag.
-5. Run duplicate/wording/answer-leak review across base and supplemental modules.
-6. Build one canonical chapter-2 aggregate only after the previous steps are green.
-7. Add canonical pool/Telegram/Mini App exposure only after the complete chapter passes exact-head CI, Security Audit, CodeQL, and runtime smoke checks.
+1. Finish the Roman administrative/social-background review for 2:13-17 and keep later Pliny/Trajan evidence clearly labelled as later comparative evidence, not direct proof of 60s procedure.
+2. Run a chapter-wide source audit: every source ID, URL, claim type, confidence, position, and competitive flag.
+3. Run duplicate/wording/answer-leak review across base and supplemental modules.
+4. Build one canonical chapter-2 aggregate only after the previous steps are green.
+5. Add canonical pool/Telegram/Mini App exposure only after the complete chapter passes exact-head CI, Security Audit, CodeQL, and runtime smoke checks.
 
 ## Definition of complete chapter 2
 
