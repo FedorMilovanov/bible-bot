@@ -30,7 +30,7 @@ def test_live_quiz_runtime_is_not_owned_by_conversation_state():
         in SOURCE
     )
     assert (
-        'app.add_handler(CallbackQueryHandler(quiz.challenge_start, pattern="^challenge_start_"))'
+        'app.add_handler(CallbackQueryHandler(challenge.challenge_start, pattern="^challenge_start_"))'
         in SOURCE
     )
     assert 'CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:")' in SOURCE
