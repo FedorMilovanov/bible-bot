@@ -276,6 +276,18 @@ def test_strict_session_create_rejects_unacknowledged_insert(monkeypatch):
         )
 
 
+def test_legacy_session_create_rejects_unacknowledged_insert(monkeypatch):
+    monkeypatch.setattr(database, "quiz_sessions_collection", UnacknowledgedInsertCollection())
+
+    with pytest.raises(database.LegacyQuizSessionPersistenceUnavailable):
+        database.create_quiz_session(
+            user_id=123,
+            mode="normal",
+            question_ids=["q1"],
+            questions_data=[{"id": "q1"}],
+        )
+
+
 def test_waitress_default_envelope_remains_one_megabyte(monkeypatch):
     captured = {}
 
