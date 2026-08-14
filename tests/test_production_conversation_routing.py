@@ -15,11 +15,16 @@ SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 
 def test_quiz_routing_is_stateless_at_ptb_composition_layer():
     assert "quiz_conv = ConversationHandler(" not in SOURCE
-    assert 'app.add_handler(CommandHandler("test", quiz.test_command))' in SOURCE
+    assert 'app.add_handler(CommandHandler("test", courses.choose_level))' in SOURCE
     assert (
-        'app.add_handler(CallbackQueryHandler(legacy.level_selected, pattern=r"^level_"))'
+        'app.add_handler(CallbackQueryHandler(courses.legacy_level_callback, pattern=r"^level_"))'
         in SOURCE
     )
+    assert (
+        'app.add_handler(CallbackQueryHandler(courses.course_mode_callback, pattern=r"^course_mode:"))'
+        in SOURCE
+    )
+    assert "CallbackQueryHandler(legacy.level_selected" not in SOURCE
     assert 'app.add_handler(CommandHandler("cancel", quiz.cancel))' in SOURCE
 
 
@@ -35,6 +40,62 @@ def test_live_quiz_runtime_is_not_owned_by_conversation_state():
     )
     assert 'CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:")' in SOURCE
     assert 'CallbackQueryHandler(quiz.challenge_inline_answer, pattern=r"^cha:")' in SOURCE
+
+
+def test_learning_navigation_routes_through_catalog_surface_not_legacy_authority():
+    assert "import telegram_course_surface as courses" in SOURCE
+    assert "legacy.choose_level =" not in SOURCE
+    assert "legacy.LEVEL_CONFIG" not in SOURCE
+    assert "courses.start_course_deep_link" in SOURCE
+    assert "CallbackQueryHandler(legacy.chapter_1_menu" not in SOURCE
+    assert "CallbackQueryHandler(legacy.historical_menu" not in SOURCE
+
+
+def test_start_course_deep_link_is_handled_before_legacy_controller(monkeypatch):
+    calls = []
+
+    async def no_battle(_update, _context):
+        return False
+
+    async def handle_course(_update, _context, key):
+        calls.append(("course", key))
+        return True
+
+    async def forbidden_legacy_start(_update, _context):
+        raise AssertionError("catalog course deep link reached legacy quiz.start")
+
+    monkeypatch.setattr(production.battle_share, "handle_start_deep_link", no_battle)
+    monkeypatch.setattr(production.courses, "start_course_deep_link", handle_course)
+    monkeypatch.setattr(production.quiz, "start", forbidden_legacy_start)
+    context = SimpleNamespace(args=["chapter3"])
+
+    asyncio.run(production._start(SimpleNamespace(), context))
+
+    assert calls == [("course", "chapter3")]
+    assert context.args == ["chapter3"]
+
+
+def test_unknown_start_token_cannot_reach_legacy_level_config_branch(monkeypatch):
+    seen = []
+
+    async def no_battle(_update, _context):
+        return False
+
+    async def unknown_course(_update, _context, _key):
+        return False
+
+    async def safe_legacy_start(_update, context):
+        seen.append(list(context.args or []))
+
+    monkeypatch.setattr(production.battle_share, "handle_start_deep_link", no_battle)
+    monkeypatch.setattr(production.courses, "start_course_deep_link", unknown_course)
+    monkeypatch.setattr(production.quiz, "start", safe_legacy_start)
+    context = SimpleNamespace(args=["stale-chapter-token"])
+
+    asyncio.run(production._start(SimpleNamespace(), context))
+
+    assert seen == [[]]
+    assert context.args == ["stale-chapter-token"]
 
 
 def test_report_text_state_accepts_the_cancel_button_it_renders():
