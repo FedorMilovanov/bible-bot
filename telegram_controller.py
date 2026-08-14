@@ -1448,7 +1448,9 @@ async def reset_session_inline(update: Update, context):
 
 async def _status_session(user_id: int):
     try:
-        session = await _run_blocking_io(get_active_quiz_session_strict, user_id)
+        session = await _run_blocking_io(
+            lambda: get_active_quiz_session_strict(user_id)
+        )
     except QuizSessionAccessUnavailable:
         return None, "unavailable"
     except QuizSessionAccessSchemaInvalid:
