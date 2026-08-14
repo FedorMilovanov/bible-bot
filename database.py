@@ -238,7 +238,13 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
         "updated_at_dt": now,
     }
     try:
-        quiz_sessions_collection.insert_one(doc)
+        write = quiz_sessions_collection.insert_one(doc)
+        if getattr(write, "acknowledged", True) is not True:
+            raise LegacyQuizSessionPersistenceUnavailable(
+                "quiz session insert was not acknowledged"
+            )
+    except LegacyQuizSessionPersistenceUnavailable:
+        raise
     except Exception as e:
         logger.error("create_quiz_session error: %s", e)
         raise LegacyQuizSessionPersistenceUnavailable("quiz session insert failed") from e
