@@ -14,7 +14,7 @@ from .research_handoff import (
     RESEARCH_HANDOFF_V2,
     RESEARCH_REPOSITORY,
 )
-from .review_registry import PRODUCT_REVIEW_BY_CARD_ID
+from .review_registry import PRODUCT_REVIEW_BY_CARD_ID, product_card_content_digest
 
 _PRIVATE_RUNTIME_KEYS = frozenset({
     "research_id", "research_claim_id", "research_effective_claim_digest",
@@ -48,6 +48,10 @@ def validate_review_binding(
 
     _fail(card.get("review_record_id") != review.get("product_review_record_id"), "review record link mismatch")
     _fail(card.get("id") != review.get("product_card_id"), "product card id mismatch")
+    _fail(
+        review.get("product_card_content_digest_sha256") != product_card_content_digest(card),
+        "product card content digest mismatch",
+    )
     _fail(review.get("research_repository") != RESEARCH_REPOSITORY, "Research repository mismatch")
     _fail(review.get("research_authority_sha") != RESEARCH_AUTHORITY_SHA, "Research SHA mismatch")
     _fail(
