@@ -20,6 +20,7 @@ from .chapter1 import (
     practical_v17_25_questions as _raw_practical_p2,
 )
 from .chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
+from .chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from .chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from .chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
@@ -165,9 +166,6 @@ def _build_chapter3_authorized_competitive_pool() -> list[dict]:
     return result
 
 
-# Challenge has an independent Chapter-1 taxonomy (easy/medium/hard). Preserve
-# that authority as a dedicated fallback source before extending the general
-# competitive/Battle surface with Chapter 3.
 CHAPTER1_COMPETITIVE_POOL = _build_chapter1_competitive_pool()
 CHAPTER3_AUTHORIZED_COMPETITIVE_POOL = _build_chapter3_authorized_competitive_pool()
 COMPETITIVE_POOL = CHAPTER1_COMPETITIVE_POOL + CHAPTER3_AUTHORIZED_COMPETITIVE_POOL
@@ -185,14 +183,54 @@ NON_COMPETITIVE_IDS = frozenset(
 # Chapter-3 cards join this surface; the other 153 Chapter-3 cards remain out.
 BATTLE_POOL = COMPETITIVE_POOL
 
+
+def _resolve_chapter3_challenge_taxonomy() -> dict[str, list[dict]]:
+    """Resolve reviewed taxonomy IDs against the exact authorized Chapter-3 pool."""
+    authorized_by_id = {
+        str(question.get("id") or "").strip(): question
+        for question in CHAPTER3_AUTHORIZED_COMPETITIVE_POOL
+    }
+    resolved: dict[str, list[dict]] = {}
+    seen: set[str] = set()
+    for level in ("easy", "medium", "hard"):
+        level_ids = tuple(CHAPTER3_CHALLENGE_TAXONOMY[level])
+        missing = [qid for qid in level_ids if qid not in authorized_by_id]
+        if missing:
+            raise ValueError(
+                f"Chapter 3 Challenge taxonomy contains unresolved {level} ids: {missing}"
+            )
+        if seen.intersection(level_ids):
+            overlap = sorted(seen.intersection(level_ids))
+            raise ValueError(f"Chapter 3 Challenge taxonomy overlaps across levels: {overlap}")
+        seen.update(level_ids)
+        resolved[level] = [authorized_by_id[qid] for qid in level_ids]
+
+    if seen != set(CHAPTER3_RANKING_AUTHORIZED_IDS):
+        missing = sorted(set(CHAPTER3_RANKING_AUTHORIZED_IDS) - seen)
+        extra = sorted(seen - set(CHAPTER3_RANKING_AUTHORIZED_IDS))
+        raise ValueError(
+            "Chapter 3 Challenge taxonomy must cover ranking authority exactly: "
+            f"missing={missing}, extra={extra}"
+        )
+    return resolved
+
+
+CHAPTER3_CHALLENGE_POOLS = _resolve_chapter3_challenge_taxonomy()
+
+# Challenge keeps its established category quotas. Chapter 3 enters only through
+# the reviewed taxonomy: 6 easy + 6 medium + 0 hard. Hard remains Chapter-1-only.
 CHALLENGE_POOLS: dict[str, list[dict]] = {
-    "easy": [question for question in _POOLS["easy"] if ranking_eligible(question)],
-    "medium": [question for question in _POOLS["medium"] if ranking_eligible(question)],
-    "hard": [question for question in _POOLS["hard"] if ranking_eligible(question)],
+    "easy": [question for question in _POOLS["easy"] if ranking_eligible(question)]
+    + CHAPTER3_CHALLENGE_POOLS["easy"],
+    "medium": [question for question in _POOLS["medium"] if ranking_eligible(question)]
+    + CHAPTER3_CHALLENGE_POOLS["medium"],
+    "hard": [question for question in _POOLS["hard"] if ranking_eligible(question)]
+    + CHAPTER3_CHALLENGE_POOLS["hard"],
 }
 
-# Challenge fallback must remain Chapter-1-only until Chapter 3 has an explicit
-# easy/medium/hard taxonomy. Never fall back to the enlarged COMPETITIVE_POOL.
+# Fallback stays Chapter-1-only even after explicit Chapter-3 taxonomy admission.
+# Chapter 3 can enter Challenge only by its reviewed difficulty bucket, never by
+# a generic shortage fallback from the general competitive pool.
 CHALLENGE_FALLBACK_POOL = CHAPTER1_COMPETITIVE_POOL
 
 _CHALLENGE_DISTRIBUTION = {
@@ -202,7 +240,7 @@ _CHALLENGE_DISTRIBUTION = {
 
 
 def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list[dict]:
-    """Return exactly 20 unique Chapter-1-taxonomized ranking questions."""
+    """Return exactly 20 unique ranking-authorized questions by reviewed taxonomy."""
     distribution = _CHALLENGE_DISTRIBUTION.get(mode)
     if distribution is None:
         raise ValueError(f"Неизвестный competitive Challenge mode: {mode!r}")
@@ -289,6 +327,7 @@ __all__ = [
     "CHAPTER3_AUTHORIZED_COMPETITIVE_POOL",
     "COMPETITIVE_POOL",
     "BATTLE_POOL",
+    "CHAPTER3_CHALLENGE_POOLS",
     "CHALLENGE_POOLS",
     "CHALLENGE_FALLBACK_POOL",
     "pick_competitive_challenge_questions",
