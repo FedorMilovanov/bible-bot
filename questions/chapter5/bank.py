@@ -5,18 +5,40 @@ Every card remains noncompetitive until a separate ranking authority explicitly 
 """
 
 # NOTE: The full 72-card bank is intentionally data-driven below. Options are kept
-# fixed (no runtime shuffle); answer positions are balanced 18/18/18/18.
+# fixed (no runtime shuffle); answer positions are balanced 18/18/18/18. Canonical
+# text is authoring data, never a presentation/layout surface.
 
 CHAPTER5_STAGING_QUESTIONS = []
 
 
 def _add(cid, verse, topic, claim_type, confidence, position, question, options, correct, explanation, sources):
-    width = max(len(option) for option in options)
+    normalized_options = [str(option) for option in options]
+    normalized_sources = [str(source_id) for source_id in sources]
+    scalar_values = {
+        "verse": verse,
+        "topic": topic,
+        "claim_type": claim_type,
+        "confidence": confidence,
+        "position": position,
+        "question": question,
+        "explanation": explanation,
+    }
+    for label, value in scalar_values.items():
+        if not isinstance(value, str) or not value or value != value.strip():
+            raise ValueError(f"Chapter-5 {label} must be nonempty normalized text")
+    if len(normalized_options) != 4:
+        raise ValueError("Chapter-5 cards require exactly four canonical options")
+    if any(not option or option != option.strip() for option in normalized_options):
+        raise ValueError("Chapter-5 canonical options must not contain outer whitespace")
+    if len({option.casefold() for option in normalized_options}) != 4:
+        raise ValueError("Chapter-5 canonical option surfaces must be unique")
+    if any(not source_id or source_id != source_id.strip() for source_id in normalized_sources):
+        raise ValueError("Chapter-5 source IDs must be nonempty normalized text")
     CHAPTER5_STAGING_QUESTIONS.append({
         "id": f"ch5_w3q_{cid:03d}",
         "research_candidate_id": f"w3q_{cid:03d}",
         "question": question,
-        "options": [option.ljust(width) for option in options],
+        "options": normalized_options,
         "correct": correct,
         "explanation": explanation,
         "verse": verse,
@@ -25,7 +47,7 @@ def _add(cid, verse, topic, claim_type, confidence, position, question, options,
         "confidence": confidence,
         "position": position,
         "competitive": False,
-        "sources": sources,
+        "sources": normalized_sources,
     })
 
 
