@@ -20,16 +20,20 @@ SOURCE_CATALOG = {
         "title": "Wayne Grudem, Christ Preaching through Noah: 1 Peter 3:19-20 in the Light of Dominant Themes in Jewish Literature, Trinity Journal 7.2 (Fall 1986), 3-31",
         "url": "https://www.waynegrudem.com/christ-preaching-through-noah-1-peter-319-20-in-the-light-of-dominant-themes-in-jewish-literature",
         "kind": "evangelical_scholarship_disputed",
+        "metadata_status": "verified",
     },
     "jts_crawford_1p3_21": {
         "title": "Matthew R. Crawford, 'Confessing God from a Good Conscience': 1 Peter 3:21 and Early Christian Baptismal Theology, JTS 67.1 (2016), 23-37",
         "url": "https://academic.oup.com/jts/article/67/1/23/2451894",
         "kind": "peer_reviewed_scholarship_disputed",
+        "inspection_scope": "publisher_abstract_inspected",
+        "limits": "Full JTS article was not inspected in this lane. The abstract supports ambiguity and reports Crawford's contractual/pledge argument; it does not license lexical certainty.",
     },
     "ubs_handbook_1p3_21": {
         "title": "Daniel C. Arichea and Eugene A. Nida, A Handbook on The First Letter from Peter: translation commentary on 1 Peter 3:21 (UBS Handbook Series, 1980)",
         "url": "https://tips.translation.bible/tip_term/translation-commentary-on-1-peter-321/",
         "kind": "translation_handbook_lexical_control",
+        "inspection_scope": "passage_inspected",
     },
     "pierce_spirits_2011": {
         "title": "Chad T. Pierce, Spirits and the Proclamation of Christ: 1 Peter 3:18-22 in Light of Sin and Punishment Traditions in Early Jewish and Christian Literature (WUNT II/305, 2011)",
@@ -75,6 +79,7 @@ SOURCE_CATALOG = {
         "title": "Cynthia Long Westfall, The Relationship between the Resurrection, the Proclamation to the Spirits in Prison and Baptismal Regeneration: 1 Peter 3:19-22, in Resurrection (JSNTSup 186, 1999), 106-135",
         "url": "https://bible.ixtheo.de/Record/1535231688",
         "kind": "academic_chapter_baptism_disputed",
+        "metadata_status": "verified",
     },
     "lsj_eperotema": {
         "title": "LSJ, s.v. ἐπερώτημα, Scaife ATLAS",
@@ -90,6 +95,8 @@ SOURCE_CATALOG = {
         "title": "1 Enoch 10-14, R. H. Charles translation (primary Second Temple witness in translation)",
         "url": "https://www.ccel.org/c/charles/otpseudepig/enoch.htm",
         "kind": "primary_second_temple_translation",
+        "inspection_scope": "public_domain_translation_passages_inspected",
+        "limits": "Bounded primary witness in translation, not a critical textual edition. It may establish relevant Watchers motifs but cannot prove direct literary dependence by 1 Peter.",
     },
 }
 
