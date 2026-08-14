@@ -82,12 +82,12 @@ TEXTUAL_CONTROL = {
     "5:2A": {
         "candidate_id": "w3q_050",
         "unit": "ἐπισκοποῦντες",
-        "route": "ECM-based Williams-Horrell treatment; not direct project dECM witness-table readback",
+        "route": "ECM-based Williams-Horrell treatment; not direct dECM project witness-table readback",
     },
     "5:2B": {
         "candidate_id": "w3q_051",
         "unit": "κατὰ θεόν",
-        "route": "separate unit; Williams-Horrell plus published Stanojevic ECM comparison; not direct project dECM readback",
+        "route": "separate unit; Williams-Horrell plus published Stanojevic ECM comparison; not direct dECM project readback",
     },
     "5:10": {
         "candidate_id": "w3q_068",
@@ -97,7 +97,7 @@ TEXTUAL_CONTROL = {
     "5:12": {
         "candidate_id": "w3q_075",
         "unit": "στῆτε / ἑστήκατε",
-        "route": "explicit ECM-based published treatment; editorial decision is not a direct full witness census",
+        "route": "explicit ECM-based published treatment; not direct dECM project witness-table readback; editorial decision is not a full witness census",
     },
     "5:13": {
         "candidate_id": "w3q_144",
