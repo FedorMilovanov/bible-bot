@@ -1,0 +1,21 @@
+"""Pinned immutable Research authority for the Chapter 4-5 product handoff.
+
+This module contains identities only. It carries no source inspection depth and
+creates no runtime network dependency on Research.
+"""
+
+RESEARCH_REPOSITORY = "FedorMilovanov/Research"
+RESEARCH_RELEASE_REPOSITORY_SHA = "8d6e5bc3f303d0a6a2d1a15969e042907f3387db"
+RESEARCH_AUTHORITY_SHA = "0142430af8ba80f28e0fd9cde669d32611a1d2af"
+RESEARCH_AUTHORITY_DIGEST_SHA256 = "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d"
+RESEARCH_HANDOFF_SCHEMA_VERSION = 2
+RESEARCH_RELEASE_ID = RESEARCH_AUTHORITY_DIGEST_SHA256
+
+__all__ = [
+    "RESEARCH_REPOSITORY",
+    "RESEARCH_RELEASE_REPOSITORY_SHA",
+    "RESEARCH_AUTHORITY_SHA",
+    "RESEARCH_AUTHORITY_DIGEST_SHA256",
+    "RESEARCH_HANDOFF_SCHEMA_VERSION",
+    "RESEARCH_RELEASE_ID",
+]
