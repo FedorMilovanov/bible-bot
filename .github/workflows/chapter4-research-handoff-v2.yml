@@ -4,7 +4,12 @@ on:
   pull_request:
     paths:
       - 'questions/chapter4/**'
+      - 'questions/__init__.py'
+      - 'questions/pool_policy.py'
+      - 'questions/source_registry.py'
+      - 'web_api/**'
       - 'data/chapter4-**'
+      - 'docs/CHAPTER4_RELEASE_AUDIT.md'
       - 'tests/test_chapter4_**'
       - 'scripts/verify_chapter4_research_snapshot.py'
       - '.github/workflows/chapter4-research-handoff-v2.yml'
@@ -65,5 +70,20 @@ jobs:
         with:
           name: chapter4-research-handoff-v2
           path: /tmp/chapter4-research-v2
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload Chapter 4 product audit source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chapter4-product-audit-source
+          path: |
+            questions/chapter4
+            questions/__init__.py
+            questions/pool_policy.py
+            questions/source_registry.py
+            tests/test_chapter4_*.py
+            data/chapter4-*.json
+            docs/CHAPTER4_RELEASE_AUDIT.md
+            web_api
           if-no-files-found: error
           retention-days: 7
