@@ -1,7 +1,12 @@
 """Project synthesis plus explicit contested boundaries for 1 Peter 3:1-7."""
-CNS=("davids_1peter_1990","schreiner_1peter_2003")
+
+# These two witnesses were inspected as full passage expositions during this lane.
+CNS = ("macarthur_1p3_1_7", "piper_fearless_submission")
+
+
 def P(i,q,o,c,e,v,t,s=()):
- return {"id":f"ch3_theol_{i}","question":q,"options":o,"correct":c,"explanation":e,"verse":v,"topic":t,"claim_type":"interpretation","confidence":"medium","position":"project","competitive":False,"sources":["sblgnt",*CNS,*s]}
+ sources=list(dict.fromkeys(["sblgnt",*CNS,*s]))
+ return {"id":f"ch3_theol_{i}","question":q,"options":o,"correct":c,"explanation":e,"verse":v,"topic":t,"claim_type":"interpretation","confidence":"medium","position":"project","competitive":False,"sources":sources}
 def D(i,q,o,c,e,v,t,s):
  return {"id":f"ch3_disp_{i}","question":q,"options":o,"correct":c,"explanation":e,"verse":v,"topic":t,"claim_type":"interpretation","confidence":"contested","position":"neutral","competitive":False,"sources":["sblgnt",*s]}
 THEOLOGY_3_1_7=[
