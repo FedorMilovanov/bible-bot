@@ -1,6 +1,6 @@
 """Lane-local reviewed sources for the 1 Peter 3:1-7 evidence slice.
 
-This catalog is intentionally not wired into the shared source registry.  Agent A's
+This catalog is intentionally not wired into the shared source registry. Agent A's
 foundation tests resolve every card against this module only.
 """
 
@@ -110,6 +110,15 @@ CONSERVATIVE_SOURCE_IDS = frozenset({
     "piper_fearless_submission",
 })
 
+# These witnesses were actually inspected in passage-level web text during this lane.
+# Bibliographic-only commentary entries above are not allowed to satisfy the project
+# source quorum merely because their URLs resolve.
+INSPECTED_CONSERVATIVE_SOURCE_IDS = frozenset({
+    "macarthur_1p3_1_7",
+    "macarthur_husbands",
+    "piper_fearless_submission",
+})
+
 PRIMARY_SOCIAL_HISTORY_IDS = frozenset({
     "plutarch_conjugal_precepts",
     "aristotle_politics_1",
@@ -127,6 +136,7 @@ MODERN_SOCIAL_HISTORY_IDS = frozenset({
 __all__ = [
     "SOURCE_CATALOG",
     "CONSERVATIVE_SOURCE_IDS",
+    "INSPECTED_CONSERVATIVE_SOURCE_IDS",
     "PRIMARY_SOCIAL_HISTORY_IDS",
     "MODERN_SOCIAL_HISTORY_IDS",
 ]
