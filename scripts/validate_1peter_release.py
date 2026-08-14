@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-closed release validator for the canonical 1 Peter Chapter 1-5 stack."""
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
