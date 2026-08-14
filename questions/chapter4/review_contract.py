@@ -48,10 +48,6 @@ def validate_review_binding(
 
     _fail(card.get("review_record_id") != review.get("product_review_record_id"), "review record link mismatch")
     _fail(card.get("id") != review.get("product_card_id"), "product card id mismatch")
-    _fail(
-        review.get("product_card_content_digest_sha256") != product_card_content_digest(card),
-        "product card content digest mismatch",
-    )
     _fail(review.get("research_repository") != RESEARCH_REPOSITORY, "Research repository mismatch")
     _fail(review.get("research_authority_sha") != RESEARCH_AUTHORITY_SHA, "Research SHA mismatch")
     _fail(
@@ -101,6 +97,13 @@ def validate_review_binding(
     _fail(not reviewer.get("reviewer_id") or not reviewer.get("reviewer_role"), "explicit reviewer record missing")
     _fail(review.get("ranking_considered") is not False, "card-level ranking review unexpectedly enabled")
     _fail("ranking_review_id" in review, "ranking_review_id present without ranking consideration")
+
+    # Content digest is a final seal after specific authority/promotion guards so
+    # adversarial tests can prove the intended fail-closed boundary independently.
+    _fail(
+        review.get("product_card_content_digest_sha256") != product_card_content_digest(card),
+        "product card content digest mismatch",
+    )
 
     options = card.get("options")
     _fail(not isinstance(options, list) or len(options) != 4, "product card must have exactly four options")
