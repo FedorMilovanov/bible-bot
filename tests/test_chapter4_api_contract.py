@@ -1,6 +1,7 @@
 import database
 
-from web_api import quiz_start
+from questions.chapter4.authoring import CHAPTER4_STAGING_QUESTIONS
+from web_api import quiz, quiz_start
 
 
 class MemorySessions:
@@ -13,6 +14,35 @@ class MemorySessions:
     def insert_one(self, document):
         self.inserted = document
         return None
+
+
+def _assert_public_question_is_safe(question):
+    assert set(question) == {"id", "question", "options"}
+    forbidden = {
+        "correct",
+        "explanation",
+        "review_record_id",
+        "research_id",
+        "research_claim_id",
+        "research_effective_claim_digest",
+        "research_authority_sha",
+        "source_ids",
+        "sources",
+        "claim_inspection_edge_ids",
+        "reviewer",
+        "review_decision",
+    }
+    assert forbidden.isdisjoint(question)
+
+
+def test_public_question_cannot_leak_correct_or_private_review_metadata(monkeypatch):
+    monkeypatch.setattr(quiz.random, "shuffle", lambda values: None)
+    card = CHAPTER4_STAGING_QUESTIONS[0]
+    prepared = quiz.prepare_question(card)
+    assert "review_record_id" not in prepared
+    assert "research_claim_id" not in prepared
+    public = quiz.public_question(prepared)
+    _assert_public_question_is_safe(public)
 
 
 def test_chapter4_starts_through_server_authoritative_quiz_path(monkeypatch):
@@ -35,8 +65,7 @@ def test_chapter4_starts_through_server_authoritative_quiz_path(monkeypatch):
     assert body["challenge"] is False
     assert body["total"] == 10
     assert body["question"]["id"].startswith("ch4_")
-    assert "correct" not in body["question"]
-    assert "explanation" not in body["question"]
+    _assert_public_question_is_safe(body["question"])
 
     assert sessions.inserted is not None
     assert sessions.inserted["pool_key"] == "chapter4"
@@ -44,6 +73,8 @@ def test_chapter4_starts_through_server_authoritative_quiz_path(monkeypatch):
     assert sessions.inserted["is_challenge"] is False
     assert sessions.inserted["question_count"] == 10
     assert all("correct" in item for item in sessions.inserted["questions"])
+    assert all("review_record_id" not in item for item in sessions.inserted["questions"])
+    assert all("research_claim_id" not in item for item in sessions.inserted["questions"])
 
 
 def test_chapter4_cannot_enter_challenge_path(monkeypatch):
