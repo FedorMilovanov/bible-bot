@@ -11,7 +11,6 @@ import base64
 import hashlib
 import io
 import json
-import lzma
 import tarfile
 from pathlib import Path
 
