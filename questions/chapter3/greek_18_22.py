@@ -1,120 +1,59 @@
 """MorphGNT-backed Greek questions for 1 Peter 3:18-22."""
 
+BASE = ["sblgnt", "morphgnt_1peter"]
+
+CORRECT_POSITION = {
+    "ch3_gr_001": 1,
+    "ch3_gr_002": 3,
+    "ch3_gr_003": 2,
+    "ch3_gr_004": 0,
+    "ch3_gr_005": 2,
+    "ch3_gr_006": 1,
+    "ch3_gr_007": 3,
+    "ch3_gr_008": 0,
+    "ch3_gr_009": 1,
+    "ch3_gr_010": 2,
+    "ch3_gr_011": 3,
+    "ch3_gr_012": 0,
+    "ch3_gr_013": 2,
+    "ch3_gr_014": 1,
+    "ch3_gr_015": 0,
+}
+
+
+def _pack(qid, answer, wrong):
+    correct = CORRECT_POSITION[qid]
+    options = list(wrong)
+    options.insert(correct, answer)
+    return options, correct
+
+
+def _g(qid, form, verse, answer, wrong, parse, lemma, note=""):
+    options, correct = _pack(qid, answer, wrong)
+    return {"id": qid, "question": f"Как MorphGNT разбирает {form} в {verse}?",
+            "options": options, "correct": correct,
+            "explanation": f"{form} = {parse} от {lemma}. {note}".strip(), "verse": verse,
+            "topic": "греческая морфология", "claim_type": "greek", "confidence": "high",
+            "position": "neutral", "competitive": False, "sources": list(BASE),
+            "morphgnt": {"form": form, "parse": parse, "lemma": lemma}}
+
+
 GREEK_3_18_22 = [
-    {
-        "id": "ch3_gr_001",
-        "question": "Как MorphGNT разбирает ἔπαθεν в 1 Пет. 3:18?",
-        "options": [
-            "Аористный активный индикатив, 3-е лицо ед. числа",
-            "Аористный активный субжунктив, 3-е лицо ед. числа",
-            "Настоящий активный индикатив, 3-е лицо ед. числа",
-            "Аористный пассивный индикатив, 3-е лицо ед. числа",
-        ],
-        "correct": 0,
-        "explanation": "MorphGNT размечает ἔπαθεν как 3AAI-S-- от πάσχω. Морфология устанавливает форму глагола, но не решает сама по себе все богословские вопросы 3:18.",
-        "verse": "1 Пет. 3:18",
-        "topic": "греческая морфология",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter"],
-    },
-    {
-        "id": "ch3_gr_002",
-        "question": "Как MorphGNT разбирает προσαγάγῃ в 1 Пет. 3:18?",
-        "options": [
-            "Аористный активный субжунктив, 3-е лицо ед. числа",
-            "Аористный активный индикатив, 3-е лицо ед. числа",
-            "Настоящий активный субжунктив, 3-е лицо ед. числа",
-            "Аористный пассивный субжунктив, 3-е лицо ед. числа",
-        ],
-        "correct": 0,
-        "explanation": "προσαγάγῃ размечено как 3AAS-S-- и стоит после ἵνα в целевой конструкции «чтобы привести вас к Богу».",
-        "verse": "1 Пет. 3:18",
-        "topic": "греческая морфология и синтаксис",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter"],
-    },
-    {
-        "id": "ch3_gr_003",
-        "question": "Как MorphGNT разбирает ἐκήρυξεν в 1 Пет. 3:19?",
-        "options": [
-            "Аористный активный индикатив, 3-е лицо ед. числа, от κηρύσσω",
-            "Аористный активный субжунктив, 3-е лицо ед. числа, от κηρύσσω",
-            "Перфектный активный индикатив, 3-е лицо ед. числа, от κηρύσσω",
-            "Аористный пассивный индикатив, 3-е лицо ед. числа, от κηρύσσω",
-        ],
-        "correct": 0,
-        "explanation": "ἐκήρυξεν размечено как 3AAI-S--, lemma κηρύσσω. Эта морфология не идентифицирует сама по себе «духов в темнице» и не определяет содержание провозглашения.",
-        "verse": "1 Пет. 3:19",
-        "topic": "греческая морфология",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter"],
-    },
-    {
-        "id": "ch3_gr_004",
-        "question": "Как MorphGNT разбирает διεσώθησαν в 1 Пет. 3:20?",
-        "options": [
-            "Аористный пассивный индикатив, 3-е лицо мн. числа",
-            "Аористный активный индикатив, 3-е лицо мн. числа",
-            "Настоящий пассивный индикатив, 3-е лицо мн. числа",
-            "Аористный пассивный субжунктив, 3-е лицо мн. числа",
-        ],
-        "correct": 0,
-        "explanation": "διεσώθησαν размечено как 3API-P-- от διασῴζω и относится к восьми людям, проведённым через воду.",
-        "verse": "1 Пет. 3:20",
-        "topic": "греческая морфология",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter"],
-    },
-    {
-        "id": "ch3_gr_005",
-        "question": "Как MorphGNT размечает ἀντίτυπον в 1 Пет. 3:21?",
-        "options": [
-            "Прилагательное, именительный падеж, средний род, ед. число",
-            "Существительное, именительный падеж, средний род, ед. число",
-            "Прилагательное, винительный падеж, средний род, ед. число",
-            "Наречие без падежа и рода",
-        ],
-        "correct": 0,
-        "explanation": "ἀντίτυπον размечено A- ----NSN- и связано с βάπτισμα. От морфологии нельзя автоматически перейти к одной полной модели крещения.",
-        "verse": "1 Пет. 3:21",
-        "topic": "греческая морфология",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter"],
-    },
-    {
-        "id": "ch3_gr_006",
-        "question": "Как MorphGNT размечает ἐπερώτημα в 1 Пет. 3:21?",
-        "options": [
-            "Существительное, именительный падеж, средний род, ед. число",
-            "Существительное, родительный падеж, средний род, ед. число",
-            "Прилагательное, именительный падеж, средний род, ед. число",
-            "Глагольный инфинитив настоящего времени",
-        ],
-        "correct": 0,
-        "explanation": "ἐπερώτημα размечено N- ----NSN-. Морфология надёжна; перевод и точный оттенок слова в выражении 3:21 требуют отдельной лексико-исторической экзегезы.",
-        "verse": "1 Пет. 3:21",
-        "topic": "греческая морфология и лексика",
-        "claim_type": "greek",
-        "confidence": "high",
-        "position": "neutral",
-        "competitive": False,
-        "sources": ["sblgnt", "morphgnt_1peter", "jts_crawford_1p3_21"],
-    },
+    _g("ch3_gr_001", "ἔπαθεν", "1 Пет. 3:18", "Aor. act. ind., 3 sg.", ["Aor. act. subj.", "Pres. act. ind.", "Aor. pass. ind."], "3AAI-S--", "πάσχω", "Parsing не выбирает модель искупления."),
+    _g("ch3_gr_002", "προσαγάγῃ", "1 Пет. 3:18", "Aor. act. subj., 3 sg.", ["Aor. act. ind.", "Pres. act. subj.", "Aor. pass. subj."], "3AAS-S--", "προσάγω", "Стоит после ἵνα; богословский смысл цели — отдельный шаг."),
+    _g("ch3_gr_003", "ἐκήρυξεν", "1 Пет. 3:19", "Aor. act. ind., 3 sg.", ["Aor. act. subj.", "Perf. act. ind.", "Aor. pass. ind."], "3AAI-S--", "κηρύσσω", "Форма не определяет адресатов, время или содержание провозглашения."),
+    _g("ch3_gr_004", "διεσώθησαν", "1 Пет. 3:20", "Aor. pass. ind., 3 pl.", ["Aor. act. ind.", "Pres. pass. ind.", "Aor. pass. subj."], "3API-P--", "διασῴζω", "Роль воды требует контекста."),
+    _g("ch3_gr_005", "ἀντίτυπον", "1 Пет. 3:21", "Adj., nom. neut. sg.", ["Noun, nom. neut. sg.", "Adj., acc. neut. sg.", "Adverb"], "A- ----NSN-", "ἀντίτυπος", "Морфология не доказывает полный typological referent."),
+    _g("ch3_gr_006", "ἐπερώτημα", "1 Пет. 3:21", "Noun, nom. neut. sg.", ["Noun, gen. neut. sg.", "Adj., nom. neut. sg.", "Infinitive"], "N- ----NSN-", "ἐπερώτημα", "Appeal/pledge/confession — lexical-history dispute, не parsing fact."),
+    _g("ch3_gr_007", "ἅπαξ", "1 Пет. 3:18", "Adverb", ["Adjective", "Preposition", "Noun"], "D- --------", "ἅπαξ", "Единократность в контексте — экзегетический вывод."),
+    _g("ch3_gr_008", "θανατωθεὶς", "1 Пет. 3:18", "Aor. pass. ptc., nom. masc. sg.", ["Pres. act. ptc.", "Infinitive", "Aor. act. ind."], "-APPNSM-", "θανατόω", "Параллельно ζῳοποιηθεὶς; функция σαρκί/πνεύματι спорна."),
+    _g("ch3_gr_009", "ζῳοποιηθεὶς", "1 Пет. 3:18", "Aor. pass. ptc., nom. masc. sg.", ["Pres. act. ptc.", "Infinitive", "Perf. pass. ind."], "-APPNSM-", "ζῳοποιέω", "Морфология не выбирает reading πνεύματι."),
+    _g("ch3_gr_010", "ᾧ", "1 Пет. 3:19", "Relative pronoun, dat. neut. sg.", ["Personal pronoun", "Demonstrative", "Conjunction"], "RR ----DSN-", "ὅς", "Референт ἐν ᾧ требует синтаксической экзегезы."),
+    _g("ch3_gr_011", "πνεύμασιν", "1 Пет. 3:19", "Noun, dat. neut. pl.", ["Noun, dat. masc. pl.", "Noun, gen. neut. pl.", "Adjective, dat. neut. pl."], "N- ----DPN-", "πνεῦμα", "Форма не идентифицирует духов; semantic referent требует экзегезы."),
+    _g("ch3_gr_012", "ἀπειθήσασίν", "1 Пет. 3:20", "Aor. act. ptc., dat. masc. pl.", ["Pres. act. ptc.", "Aor. pass. ind.", "Infinitive"], "-AAPDPM-", "ἀπειθέω", "Контекст связывает непослушание с днями Ноя."),
+    _g("ch3_gr_013", "σῴζει", "1 Пет. 3:21", "Pres. act. ind., 3 sg.", ["Aor. act. ind.", "Pres. pass. subj.", "Perf. mid. inf."], "3PAI-S--", "σῴζω", "Модель baptismal efficacy требует всего 3:21."),
+    _g("ch3_gr_014", "ὑποταγέντων", "1 Пет. 3:22", "Aor. pass. ptc., gen. masc. pl.", ["Pres. act. ptc.", "Aor. pass. ind.", "Perf. mid. inf."], "-APPGPM-", "ὑποτάσσω", "Связано с ἀγγέλων, ἐξουσιῶν, δυνάμεων."),
+    _g("ch3_gr_015", "πορευθεὶς", "1 Пет. 3:19", "Aor. pass. ptc., nom. masc. sg.", ["Aor. act. ind., 3 sg.", "Pres. mid. ptc.", "Aor. pass. ptc., gen. masc. pl."], "-APPNSM-", "πορεύομαι", "Форма сама по себе не датирует journey и не определяет место назначения."),
 ]
 
 __all__ = ["GREEK_3_18_22"]

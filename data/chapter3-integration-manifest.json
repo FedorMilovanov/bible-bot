@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "status": "STAGING_INTEGRATED_NOT_PRODUCTION",
+  "base": "9eefbae4cf91d178e9f488e695df9264478197c0",
+  "frozen_lanes": {
+    "A_3_1_7": "8b194513420ae6dc5adf853b051539ca1f499ed0",
+    "B_3_8_12": "b7cc829e31a0aefc851b12245d7933afcb6561e8",
+    "C_3_13_17": "d64656dbcfb8c8c894a11d6cc5e764a189de9336",
+    "D_3_18_22": "d4151176053aec4a6bce7685922cb90dfc5f2a77",
+    "E_audit": "8c045204190edb8e175b25863c9d87b70d194bc1"
+  },
+  "card_counts": {
+    "3:1-7": 56,
+    "3:8-12": 37,
+    "3:13-17": 27,
+    "3:18-22": 45,
+    "total": 165
+  },
+  "agent_e_blocker_count": 0,
+  "id_collisions_at_frozen_audit": 0,
+  "competitive_cards": 0,
+  "production_wiring": false,
+  "root_pool_registry_mutated": false,
+  "ranking_authorized": false,
+  "chapter_complete_claimed": false,
+  "source_resolution_policy": "LANE_NAMESPACED_NO_CROSS_LANE_METADATA_UPGRADE",
+  "project_policy": {
+    "1Pet3_19_20_spirits": {
+      "course_position": "fallen_spirits_watchers_victory_proclamation",
+      "position": "project",
+      "confidence": "contested",
+      "competitive": false,
+      "alternatives_retained": [
+        "christ_through_noah",
+        "human_dead_descensus_reception"
+      ],
+      "note": "Owner/integration position for later authoring only; not a neutral lexical or historical fact."
+    },
+    "1Pet3_21_eperotema": {
+      "course_policy": "NO_FORCED_SINGLE_RUSSIAN_GLOSS",
+      "live_readings": [
+        "appeal_request",
+        "pledge_stipulation",
+        "confession_response_related"
+      ],
+      "confidence": "contested",
+      "competitive": false
+    },
+    "1Pet3_21_baptism": {
+      "course_boundary": "Do not equate salvation with external dirt-removal or derive a complete sacramental mechanism from one lexeme; teach the clause with good conscience and Christ's resurrection while preserving serious systematic alternatives.",
+      "position": "project",
+      "confidence": "contested",
+      "competitive": false,
+      "denominational_mechanism_forced": false
+    }
+  },
+  "substantive_nonblocking_holds": {
+    "A": [
+      "referent of phobos in 3:2",
+      "normative force of external-adornment contrast",
+      "theological force of Sarah / Gen 18:12 reuse",
+      "content/object of kata gnosin",
+      "dimension of asthenestero skeuei",
+      "discourse force of homoios",
+      "no universal legal/social profile for every wife"
+    ],
+    "B": [
+      "eis touto attachment",
+      "no authorial motive claimed for Psalm truncation",
+      "broader Psalm role remains interpretation",
+      "Greaux remains abstract-bounded"
+    ],
+    "C": [
+      "Isaiah reuse classification and Christological force remain interpretation",
+      "Moyise 2005 is not author-independent from 2002 coauthored study",
+      "metadata-only Jobes/Achtemeier/BDAG remain nonclaim controls"
+    ],
+    "D": [
+      "spirits/timing/proclamation remain scholarly dispute despite project position",
+      "eperotema remains lexically/translation contested",
+      "baptism systematics remains contested",
+      "flesh/spirit force remains contested",
+      "direct literary dependence on 1 Enoch remains unproved"
+    ]
+  },
+  "next_gate": "fresh integration CI + Security Audit + CodeQL, then product-side editorial curation/admission review"
+}

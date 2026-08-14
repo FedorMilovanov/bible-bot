@@ -22,27 +22,77 @@ def test_chapter3_foundation_ids_are_unique_and_sources_resolve():
         assert set(item["sources"]) <= _all_source_ids(), item["id"]
 
 
+def test_stable_foundation_ids_remain_present():
+    greek_ids = {item["id"] for item in GREEK_3_18_22}
+    disputed_ids = {item["id"] for item in DISPUTED_3_18_22}
+    assert {f"ch3_gr_{n:03d}" for n in range(1, 7)} <= greek_ids
+    assert {f"ch3_disp_{n:03d}" for n in range(1, 5)} <= disputed_ids
+
+
 def test_chapter3_greek_is_morphgnt_backed_and_noncompetitive():
     for item in GREEK_3_18_22:
         assert item["claim_type"] == "greek"
         assert item["confidence"] == "high"
         assert item["position"] == "neutral"
         assert item["competitive"] is False
-        assert {"sblgnt", "morphgnt_1peter"} <= set(item["sources"])
+        assert set(item["sources"]) == {"sblgnt", "morphgnt_1peter"}
+        assert "morphgnt" in item
 
 
 def test_chapter3_disputed_map_cannot_enter_ranking():
     for item in DISPUTED_3_18_22:
         assert item["claim_type"] == "interpretation"
         assert item["confidence"] == "contested"
+        assert item["position"] == "neutral"
         assert item["competitive"] is False
+        assert len(item.get("readings", [])) >= 2
 
 
-def test_spirits_question_preserves_competing_conservative_readings():
+def test_spirits_question_preserves_materially_different_readings_and_inspected_quorum():
     item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_001")
-    assert {"gty_1p3_18_20", "grudem_noah_1p3_19"} <= set(item["sources"])
+    assert {
+        "fallen_spirits_watchers",
+        "christ_through_noah",
+        "human_dead_descensus_reception",
+    } <= set(item["readings"])
+    assert {
+        "gty_1p3_18_20",
+        "tgc_storms_1p3_18_22",
+        "grudem_noah_1p3_19",
+        "lei_descensus_2025",
+    } <= set(item["sources"])
+    assert CHAPTER3_SOURCES["gty_1p3_18_20"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["tgc_storms_1p3_18_22"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["grudem_noah_1p3_19"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["lei_descensus_2025"]["inspection_scope"] == "publisher_abstract_inspected"
 
 
-def test_eperotema_question_requires_primary_greek_and_peer_reviewed_control():
+def test_eperotema_question_requires_morphology_lexical_history_and_bounded_peer_review():
     item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_003")
-    assert {"sblgnt", "morphgnt_1peter", "jts_crawford_1p3_21"} <= set(item["sources"])
+    assert {"appeal_request", "pledge_stipulation", "confession_response_related"} <= set(item["readings"])
+    assert {
+        "sblgnt",
+        "morphgnt_1peter",
+        "lsj_eperotema",
+        "ubs_handbook_1p3_21",
+        "jts_crawford_1p3_21",
+    } <= set(item["sources"])
+    assert CHAPTER3_SOURCES["lsj_eperotema"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["ubs_handbook_1p3_21"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["jts_crawford_1p3_21"]["inspection_scope"] == "publisher_abstract_inspected"
+
+
+def test_baptism_dispute_keeps_multiple_systematic_readings_without_catalog_only_sources():
+    item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_004")
+    assert {
+        "sacramental_efficacy",
+        "faith_appeal_or_pledge_instrumentality",
+        "sign_confession_resurrection_relation",
+    } <= set(item["readings"])
+    assert {
+        "jts_crawford_1p3_21",
+        "ubs_handbook_1p3_21",
+        "gty_1p3_20_22",
+        "tgc_storms_1p3_18_22",
+    } <= set(item["sources"])
+    assert not {"westfall_baptism_1999", "schreiner_1peter_nac", "horrell_williams_icc_v2"} & set(item["sources"])
