@@ -29,8 +29,8 @@ def test_morphgnt_snapshot():
       ("ἔπαθεν","3AAI-S--"),("προσαγάγῃ","3AAS-S--"),("ἐκήρυξεν","3AAI-S--"),
       ("διεσώθησαν","3API-P--"),("ἀντίτυπον","A- ----NSN-"),("ἐπερώτημα","N- ----NSN-"),
       ("ἅπαξ","D- --------"),("θανατωθεὶς","-APPNSM-"),("ζῳοποιηθεὶς","-APPNSM-"),
-      ("ᾧ","RR ----DSN-"),("πνεύμασιν","N- ----DPN-"),("ἀπειθήσασίν","-AAPDPM-"),
-      ("σῴζει","3PAI-S--"),("ὑποταγέντων","-APPGPM-")}
+      ("ᾧ","RR ----DSN-"),("πνεύμασιν","N- ----DPN-"),("πορευθεὶς","-APPNSM-"),
+      ("ἀπειθήσασίν","-AAPDPM-"),("σῴζει","3PAI-S--"),("ὑποταγέντων","-APPGPM-")}
     assert want<=got
     assert all({"sblgnt","morphgnt_1peter"}<=set(x["sources"]) for x in G)
 
@@ -41,4 +41,4 @@ def test_intertext_and_project_quorum():
     for x in [x for x in H if x["position"]=="project"]:
         src=set(x["sources"])
         assert any(v.startswith("gty_") for v in src)
-        assert src&{"davids_1peter_nicnt","schreiner_1peter_nac"}
+        assert "schreiner_1peter_nac" in src
