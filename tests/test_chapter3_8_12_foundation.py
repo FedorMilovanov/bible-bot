@@ -1,3 +1,4 @@
+from collections import Counter
 from difflib import SequenceMatcher
 import re
 import unicodedata
@@ -75,6 +76,19 @@ def test_editorial_option_integrity_and_valid_correct_index():
     assert all(fragment not in all_option_text for fragment in banned_absurdity_fragments)
 
 
+def test_answer_key_positions_are_balanced_without_declaration_order_leakage():
+    positions = Counter(item["correct"] for item in ALL_ITEMS)
+    assert set(positions) == {0, 1, 2, 3}
+    assert sorted(positions.values()) == [9, 9, 9, 10]
+
+    declaration_order = [item["correct"] for item in ALL_ITEMS]
+    for index in range(len(declaration_order) - 2):
+        assert len(set(declaration_order[index : index + 3])) > 1, (
+            f"three identical correct positions in a row at declaration index {index}: "
+            f"{declaration_order[index:index + 3]}"
+        )
+
+
 def test_no_exact_or_near_duplicate_question_stems():
     normalized = [(item["id"], _normalize(item["question"])) for item in ALL_ITEMS]
     stems = [stem for _, stem in normalized]
@@ -129,6 +143,23 @@ def test_psalm_quote_is_sustained_adaptation_and_exact_differences_are_pinned():
     assert "παυσάτω" in FIRST_PETER_3_10_12[10]
     assert "τοῦ ἐξολεθρεῦσαι ἐκ γῆς τὸ μνημόσυνον αὐτῶν" in LXX_PS33_13_17[17]
     assert "ἐξολεθρεῦσαι" not in FIRST_PETER_3_10_12[12]
+
+
+def test_psalm_correct_options_still_match_their_textual_anchors_after_reordering():
+    items = {item["id"]: item for item in INTERTEXT_3_8_12}
+
+    opening = items["ch3_ot_202"]["options"][items["ch3_ot_202"]["correct"]]
+    person = items["ch3_ot_203"]["options"][items["ch3_ot_203"]["correct"]]
+    possessives = items["ch3_ot_204"]["options"][items["ch3_ot_204"]["correct"]]
+    truncation = items["ch3_ot_205"]["options"][items["ch3_ot_205"]["correct"]]
+
+    assert opening.startswith("Вместо вопроса")
+    assert "инфинитивом" in opening
+    assert "второе лицо единственного числа" in person
+    assert "третье лицо единственного числа" in person
+    assert "опускает оба \u03c3\u03bf\u03c5" in possessives
+    assert "стирании их памяти с земли" in truncation
+    assert "не утверждает авторский мотив omission" in items["ch3_ot_205"]["explanation"]
 
 
 def test_psalm_function_separates_local_text_fact_from_broader_interpretation():
