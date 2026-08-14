@@ -32,7 +32,7 @@ def test_release_audit_v2_pins_exact_immutable_research_authority():
     assert AUDIT["schema_version"] == 2
     assert RESEARCH_HANDOFF_SCHEMA_VERSION == 2
     assert RESEARCH_REPOSITORY == "FedorMilovanov/Research"
-    assert RESEARCH_AUTHORITY_SHA == "7e0140129a4aba59a09737701967c3820ff1af57"
+    assert RESEARCH_AUTHORITY_SHA == "0142430af8ba80f28e0fd9cde669d32611a1d2af"
     assert RESEARCH_AUTHORITY_DIGEST_SHA256 == "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d"
     assert AUDIT["lineage"]["research_repository"] == RESEARCH_REPOSITORY
     assert AUDIT["lineage"]["research_authority_sha"] == RESEARCH_AUTHORITY_SHA
