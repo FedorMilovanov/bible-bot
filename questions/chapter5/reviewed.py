@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 
+from .adversarial_review_v2 import validate_second_pass
 from .bank import CHAPTER5_STAGING_QUESTIONS
 from .bank_identity_v2 import validate_product_bank_identity
 from .research_metadata_v2 import validate_all_research_metadata
@@ -10,12 +11,14 @@ from .sources import SOURCE_CATALOG
 
 CHAPTER5_REVIEW_QUARANTINE_IDS = frozenset()
 
-# Admission is intentionally fail-closed in three independent layers: exact
-# product blob identity, exact effective Research metadata, then the immutable
-# per-card Research/product review contract.
+# Admission is intentionally fail-closed in four independent layers: exact
+# product blob identity, exact effective Research metadata, immutable per-card
+# Research/product review records, then the post-green independent adversarial
+# readback.
 validate_product_bank_identity()
 validate_all_research_metadata(CHAPTER5_STAGING_QUESTIONS)
 validate_full_bank()
+validate_second_pass()
 
 
 def _review_copy(item: dict) -> dict:
