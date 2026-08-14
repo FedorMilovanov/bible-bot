@@ -1,8 +1,23 @@
 """Pastoral application for 1 Peter 3:18-22; explicitly project-level."""
 
+CORRECT_POSITION = {
+    "ch3_app_001": 1,
+    "ch3_app_002": 3,
+    "ch3_app_003": 2,
+    "ch3_app_004": 3,
+}
+
+
+def _pack(qid, answer, wrong):
+    correct = CORRECT_POSITION[qid]
+    options = list(wrong)
+    options.insert(correct, answer)
+    return options, correct
+
 
 def _a(qid, q, answer, wrong, exp, verse, sources):
-    return {"id": qid, "question": q, "options": [answer, *wrong], "correct": 0,
+    options, correct = _pack(qid, answer, wrong)
+    return {"id": qid, "question": q, "options": options, "correct": correct,
             "explanation": exp, "verse": verse, "topic": "применение",
             "claim_type": "application", "confidence": "medium", "position": "project",
             "competitive": False, "sources": sources}
@@ -16,8 +31,8 @@ APPLICATION_3_18_22 = [
            "Поскольку Христова vindication уникальна, применять к страдающим читателям следует только Его нравственный пример, не связывая его с надеждой 3:21-22",
            "Подчинение сил в 3:22 лучше применять прежде всего как обещание скорого социального переворота в пользу верующих",
        ],
-       "Применение следует движению от страдания к vindication и не превращает 3:22 в обещание лёгкой жизни или немедленной социальной победы.",
-       "1 Пет. 3:18-22", ["sblgnt", "gty_1p3_18", "schreiner_1peter_nac"]),
+       "Применение следует движению от страдания к vindication и не превращает 3:22 в обещание лёгкой жизни или немедленной социальной победы. GTY и Storms relevant sections реально inspected.",
+       "1 Пет. 3:18-22", ["sblgnt", "gty_1p3_18", "gty_1p3_20_22", "tgc_storms_1p3_18_22"]),
     _a("ch3_app_002", "Как преподавать «духов в темнице» без ложной уверенности?",
        "Сначала отделить текстовые и морфологические факты, затем честно показать materially different serious readings и их аргументы",
        [
@@ -25,8 +40,8 @@ APPLICATION_3_18_22 = [
            "Свести урок к равноправному перечислению школ без объяснения, какие данные текста и intertext реально используются каждой стороной",
            "Избежать спорного места почти полностью и преподавать только общий triumph theme, чтобы не знакомить учащихся с экзегетической неопределённостью",
        ],
-       "Пастырская ясность требует различать данные текста, argumentative evidence и reconstruction; это не ranking exercise и не повод скрывать спор.",
-       "1 Пет. 3:19-20", ["sblgnt", "gty_1p3_18_20", "grudem_noah_1p3_19", "pierce_spirits_2011", "lei_descensus_2025"]),
+       "Пастырская ясность требует различать текст, morphology, argument и reconstruction. MacArthur/Storms и Grudem relevant sections дают реально inspected competing readings; Lei используется только в пределах publisher synopsis для descensus-reception family.",
+       "1 Пет. 3:19-20", ["sblgnt", "gty_1p3_18_20", "tgc_storms_1p3_18_22", "grudem_noah_1p3_19", "lei_descensus_2025"]),
     _a("ch3_app_003", "Как избежать двух противоположных overclaims при преподавании 3:21?",
        "Не отрицать сильную формулировку «крещение спасает» и не превращать внешнюю воду в автоматический механизм; читать всю квалификацию и воскресение",
        [
@@ -34,8 +49,8 @@ APPLICATION_3_18_22 = [
            "Чтобы сохранить буквальность σῴζει, преподавать water efficacy как установленный результат текста и считать οὐ ... ἀλλὰ лишь уточнением вида омовения",
            "Сделать перевод ἐπερώτημα решающим: выбрать «обет» или «просьба» и из этой одной глоссы вывести окончательную baptismal systematics",
        ],
-       "Project guardrail сохраняет сильный текст, учитывает οὐ ... ἀλλὰ и resurrection clause, но оставляет owner-level baptismal systematics в HOLD.",
-       "1 Пет. 3:21", ["sblgnt", "gty_1p3_20_22", "schreiner_1peter_nac", "jts_crawford_1p3_21", "westfall_baptism_1999"]),
+       "Project guardrail сохраняет сильный текст и resurrection clause, но оставляет owner-level systematics в HOLD. GTY/Storms passage sections реально inspected; UBS passage section и Crawford abstract удерживают translation dispute.",
+       "1 Пет. 3:21", ["sblgnt", "gty_1p3_20_22", "tgc_storms_1p3_18_22", "ubs_handbook_1p3_21", "jts_crawford_1p3_21"]),
     _a("ch3_app_004", "Как 3:22 должен влиять на преподавание сложного 3:19?",
        "Держать ясный финальный центр на возвышенном Христе и подчинённых Ему силах, не используя этот финал для искусственного закрытия спорных деталей 3:19",
        [
@@ -43,8 +58,8 @@ APPLICATION_3_18_22 = [
            "Сделать идентичность духов главным pastoral центром абзаца, а 3:22 рассматривать лишь как подтверждение выбранной реконструкции",
            "Отделить 3:22 от 3:18-21 как самостоятельную ангелологическую заметку и не связывать небесную сессию с suffering-to-vindication trajectory",
        ],
-       "Финал абзаца даёт ясный центр — Христос одесную Бога, небесные силы Ему подчинены — при сохранении честного HOLD по 3:19.",
-       "1 Пет. 3:22", ["sblgnt", "gty_1p3_20_22", "grindheim_spirits_2024", "schreiner_1peter_nac"]),
+       "Финал абзаца даёт ясный центр — Христос одесную Бога, небесные силы Ему подчинены — при сохранении честного HOLD по 3:19. GTY и Storms relevant sections inspected.",
+       "1 Пет. 3:22", ["sblgnt", "gty_1p3_20_22", "tgc_storms_1p3_18_22"]),
 ]
 
 __all__ = ["APPLICATION_3_18_22"]
