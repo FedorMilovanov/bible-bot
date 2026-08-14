@@ -103,7 +103,7 @@ async def _run_blocking_io(
 ) -> _T:
     """Run one synchronous persistence/network boundary outside the PTB loop.
 
-    Mongo remains the durable concurrency authority.  This helper is only an
+    Mongo remains the durable concurrency authority. This helper is only an
     event-loop scheduling boundary; it deliberately adds no process-local
     locking or retry semantics of its own.
     """
@@ -380,12 +380,13 @@ async def show_results(bot, user_id: int):
 
     try:
         outcome = await _run_blocking_io(
-            finalize_live_persisted_attempt,
-            user_id=user_id,
-            data=data,
-            username=data.get("username"),
-            first_name=data.get("first_name"),
-            achievement_rewards=_achievement_rewards(),
+            lambda: finalize_live_persisted_attempt(
+                user_id=user_id,
+                data=data,
+                username=data.get("username"),
+                first_name=data.get("first_name"),
+                achievement_rewards=_achievement_rewards(),
+            )
         )
     except LegacyLiveFinalizationPending:
         data["result_pending"] = True
@@ -408,12 +409,13 @@ async def show_challenge_results(bot, user_id: int):
         return
     try:
         outcome = await _run_blocking_io(
-            finalize_live_persisted_attempt,
-            user_id=user_id,
-            data=data,
-            username=data.get("username"),
-            first_name=data.get("first_name"),
-            achievement_rewards=_achievement_rewards(),
+            lambda: finalize_live_persisted_attempt(
+                user_id=user_id,
+                data=data,
+                username=data.get("username"),
+                first_name=data.get("first_name"),
+                achievement_rewards=_achievement_rewards(),
+            )
         )
     except LegacyLiveFinalizationPending:
         data["result_pending"] = True
@@ -468,16 +470,17 @@ async def _launch_attempt(
     question_ids = [legacy.get_qid(question) for question in questions]
     try:
         outcome = await _run_blocking_io(
-            launch_quiz_attempt,
-            user_id=user.id,
-            mode=mode,
-            question_ids=question_ids,
-            questions_data=questions,
-            level_key=level_key,
-            level_name=level_name,
-            time_limit=time_limit,
-            chat_id=chat_id,
-            is_retry=is_retry,
+            lambda: launch_quiz_attempt(
+                user_id=user.id,
+                mode=mode,
+                question_ids=question_ids,
+                questions_data=questions,
+                level_key=level_key,
+                level_name=level_name,
+                time_limit=time_limit,
+                chat_id=chat_id,
+                is_retry=is_retry,
+            )
         )
     except LegacySessionLaunchActiveAttempt as exc:
         await bot.send_message(
@@ -877,13 +880,15 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
             logger.error("question Telegram delivery failed for user %s", user_id, exc_info=True)
             return
 
+    sent_at = time.time()
     try:
         canonical_sent_at = await _run_blocking_io(
-            mark_live_question_sent,
-            user_id,
-            data,
-            target,
-            sent_at=time.time(),
+            lambda: mark_live_question_sent(
+                user_id,
+                data,
+                target,
+                sent_at=sent_at,
+            )
         )
     except (
         LegacyLiveAnswerStale,
@@ -959,14 +964,16 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
 
     lock = legacy.user_locks.setdefault(user_id, asyncio.Lock())
     async with lock:
+        answer_now = time.time()
         try:
             outcome = await _run_blocking_io(
-                apply_live_answer_once,
-                user_id,
-                data,
-                query.data,
-                prefix,
-                now=time.time(),
+                lambda: apply_live_answer_once(
+                    user_id,
+                    data,
+                    query.data,
+                    prefix,
+                    now=answer_now,
+                )
             )
         except LegacyLiveAnswerStale:
             await query.answer("Эта кнопка уже устарела.")
@@ -1070,14 +1077,16 @@ async def _handle_question_timeout(
         return
     lock = legacy.user_locks.setdefault(user_id, asyncio.Lock())
     async with lock:
+        timeout_now = time.time()
         try:
             outcome = await _run_blocking_io(
-                apply_live_timeout_once,
-                user_id,
-                data,
-                expected_index,
-                expected_attempt_id=expected_attempt_id,
-                now=time.time(),
+                lambda: apply_live_timeout_once(
+                    user_id,
+                    data,
+                    expected_index,
+                    expected_attempt_id=expected_attempt_id,
+                    now=timeout_now,
+                )
             )
         except LegacyLiveAnswerStale:
             return
@@ -1200,7 +1209,9 @@ async def resume_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = await _run_blocking_io(resolve_session_action, query.data, "res", user_id)
+        resolved = await _run_blocking_io(
+            lambda: resolve_session_action(query.data, "res", user_id)
+        )
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1219,7 +1230,9 @@ async def restart_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = await _run_blocking_io(resolve_session_action, query.data, "rst", user_id)
+        resolved = await _run_blocking_io(
+            lambda: resolve_session_action(query.data, "rst", user_id)
+        )
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1255,17 +1268,18 @@ async def restart_session_handler(update: Update, context):
 
     try:
         result = await _run_blocking_io(
-            restart_owned_quiz_attempt,
-            resolved.session_id,
-            user_id,
-            expected_attempt_id=resolved.attempt_id,
-            mode=mode,
-            question_ids=[legacy.get_qid(item) for item in questions],
-            questions_data=questions,
-            level_key=session.get("level_key"),
-            level_name=session.get("level_name"),
-            time_limit=session.get("time_limit"),
-            chat_id=query.message.chat_id,
+            lambda: restart_owned_quiz_attempt(
+                resolved.session_id,
+                user_id,
+                expected_attempt_id=resolved.attempt_id,
+                mode=mode,
+                question_ids=[legacy.get_qid(item) for item in questions],
+                questions_data=questions,
+                level_key=session.get("level_key"),
+                level_name=session.get("level_name"),
+                time_limit=session.get("time_limit"),
+                chat_id=query.message.chat_id,
+            )
         )
     except QuizSessionLifecycleUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
@@ -1297,7 +1311,9 @@ async def cancel_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = await _run_blocking_io(resolve_session_action, query.data, "can", user_id)
+        resolved = await _run_blocking_io(
+            lambda: resolve_session_action(query.data, "can", user_id)
+        )
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1306,10 +1322,11 @@ async def cancel_session_handler(update: Update, context):
         return
     try:
         await _run_blocking_io(
-            cancel_owned_incomplete_quiz_attempt,
-            resolved.session_id,
-            user_id,
-            expected_attempt_id=resolved.attempt_id,
+            lambda: cancel_owned_incomplete_quiz_attempt(
+                resolved.session_id,
+                user_id,
+                expected_attempt_id=resolved.attempt_id,
+            )
         )
     except QuizSessionLifecycleUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
@@ -1330,7 +1347,9 @@ async def cancel_session_handler(update: Update, context):
 
 async def _cancel_current(user_id: int) -> tuple[bool, str]:
     try:
-        result = await _run_blocking_io(cancel_current_incomplete_session, user_id)
+        result = await _run_blocking_io(
+            lambda: cancel_current_incomplete_session(user_id)
+        )
     except LegacySessionResultPending:
         return False, "result_pending"
     except LegacySessionControlUnavailable:
