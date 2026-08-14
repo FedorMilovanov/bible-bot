@@ -157,8 +157,8 @@ def test_psalm_correct_options_still_match_their_textual_anchors_after_reorderin
     assert "инфинитивом" in opening
     assert "второе лицо единственного числа" in person
     assert "третье лицо единственного числа" in person
-    assert "опускает оба \u03c3\u03bf\u03c5" in possessives
-    assert "стирании их памяти с земли" in truncation
+    assert "\u043e\u0431\u0430 \u03c3\u03bf\u03c5" in possessives
+    assert "\u0441\u0442\u0438\u0440\u0430\u043d\u0438\u0438 \u0438\u0445 \u043f\u0430\u043c\u044f\u0442\u0438 \u0441 \u0437\u0435\u043c\u043b\u0438" in truncation
     assert "не утверждает авторский мотив omission" in items["ch3_ot_205"]["explanation"]
 
 
