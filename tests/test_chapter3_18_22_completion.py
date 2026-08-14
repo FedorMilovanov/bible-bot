@@ -4,7 +4,6 @@ from itertools import combinations
 import re
 import unicodedata
 
-import questions
 from questions.chapter3.application_18_22 import APPLICATION_3_18_22 as A
 from questions.chapter3.disputed_18_22 import DISPUTED_3_18_22 as D
 from questions.chapter3.greek_18_22 import GREEK_3_18_22 as G
