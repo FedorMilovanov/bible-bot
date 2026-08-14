@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import hashlib
 import json
 from copy import deepcopy
@@ -37,7 +38,7 @@ def _ids(items) -> set[str]:
 
 def _git_blob_sha(raw: bytes) -> str:
     header = f"blob {len(raw)}\0".encode()
-    return hashlib.sha1(header + raw).hexdigest()  # noqa: S324 - Git object identity
+    return hashlib.sha1(header + raw).hexdigest()
 
 
 def test_exact_product_bank_blob_and_no_padding_machinery():
