@@ -1,0 +1,68 @@
+# 1 Peter 3:18-22 — research notes
+
+Start verified: `agent/ch3-d1` = `9eefbae4cf91d178e9f488e695df9264478197c0`. No production/root wiring.
+
+## Evidence boundaries
+
+**TEXT** = SBLGNT wording only. **GREEK** = SBLGNT + MorphGNT; parsing cannot decide disputed referents/theology. **INTERPRETATION** = competing readings explicit, `competitive=False`. **PROJECT** = evangelical synthesis explicitly `position="project"`.
+
+## MorphGNT control
+
+Reviewed against `81-1Pe-morphgnt.txt`:
+`ἅπαξ D- --------`; `ἔπαθεν 3AAI-S--`; `προσαγάγῃ 3AAS-S--`; `θανατωθεὶς -APPNSM-`; `ζῳοποιηθεὶς -APPNSM-`; `ᾧ RR ----DSN-`; `πνεύμασιν N- ----DPN-`; `πορευθεὶς -APPNSM-`; `ἐκήρυξεν 3AAI-S--`; `ἀπειθήσασίν -AAPDPM-`; `διεσώθησαν 3API-P--`; `ἀντίτυπον A- ----NSN-`; `σῴζει 3PAI-S--`; `ἐπερώτημα N- ----NSN-`; `ὑποταγέντων -APPGPM-`.
+
+## 3:18
+
+TEXT: Christ `ἅπαξ περὶ ἁμαρτιῶν ἔπαθεν`, `δίκαιος ὑπὲρ ἀδίκων`, purpose `ἵνα ... προσαγάγῃ τῷ θεῷ`, then `θανατωθεὶς μὲν σαρκί / ζῳοποιηθεὶς δὲ πνεύματι`.
+
+GREEK: `ἅπαξ` is adverbial; `προσαγάγῃ` is aorist active subjunctive after `ἵνα`; both participles are aorist passive nom. masc. sg. The `σαρκί / πνεύματι` dative contrast still needs syntax/exegesis.
+
+PROJECT: substitution/reconciliation comes from the clause complex: the righteous Christ suffers for sins/the unrighteous to bring people to God. Do not make `ὑπέρ` alone a complete atonement theory. Resurrection is explicit in 3:21; exaltation in 3:22.
+
+## 3:19-20
+
+TEXT: proclamation to `τοῖς ἐν φυλακῇ πνεύμασιν`; disobedience is linked with Noah, divine patience and the ark; eight persons `διεσώθησαν δι’ ὕδατος`.
+
+Retained reading families:
+1. **fallen spirits / Watchers** — Genesis 6 + Watchers tradition; victory/judgment proclamation. MacArthur, Pierce, Grindheim, ICC.
+2. **Christ through Noah** — Grudem: Christ preached through Noah in Noah's generation.
+3. **descensus / human dead** — early reception plus modern control such as Lei.
+
+`πνεύμασιν` morphology cannot choose a family. `ἐκήρυξεν` alone cannot establish time/content. `ἐν ᾧ` likewise needs exegesis.
+
+Primary background: LXX Genesis 6 is narrative background, not a lexical definition. 1 Enoch 10:4-14 depicts confinement/judgment of rebellious Watchers; 12:4-14:6 depicts Enoch carrying a judicial message. Treat this as **probable Second Temple background for one reading**, not explicit quotation. Marcar controls wider Noah/flood usage.
+
+## 3:20-21
+
+Keep the whole sequence: `δι’ ὕδατος`; `ἀντίτυπον ... βάπτισμα ... νῦν σῴζει`; `οὐ σαρκὸς ἀπόθεσις ῥύπου`; `ἀλλὰ συνειδήσεως ἀγαθῆς ἐπερώτημα εἰς θεόν`; `δι’ ἀναστάσεως Ἰησοῦ Χριστοῦ`.
+
+`ἀντίτυπον` = adj. nom. neut. sg.; its exact typological referent/scope is exegetical.
+
+### `ἐπερώτημα`
+
+Parsing: noun nom. neut. sg. Translation: disputed. LSJ preserves question/request and legal-stipulation history; Crawford (JTS 67.1, 2016, 23-37) reviews baptismal/legal reception and relation to confession. Keep `appeal/request`, `pledge/stipulation`, and `confession/response-related` distinct.
+
+### Baptismal efficacy
+
+Do not weaken `σῴζει` or isolate it from `οὐ ... ἀλλὰ` and resurrection. Viable families include sacramental efficacy/instrumentality and evangelical faith/appeal/pledge/confessional readings. Crawford, Westfall and major commentaries control the dispute.
+
+PROJECT guardrail: not mere external dirt-removal or automatic water; read with good-conscience `ἐπερώτημα` and Christ's resurrection. Denominational precision is HOLD.
+
+## 3:22
+
+Christ is at God's right hand, has gone into heaven, and angels, authorities and powers are subjected to him. This is the clear exaltation/triumph endpoint even while 3:19 remains disputed.
+
+## Source map
+
+**Primary:** SBLGNT; MorphGNT; LXX Genesis 6; 1 Enoch 10:4-14; 12:4-14:6.
+**Peer-reviewed/specialist:** Crawford JTS; Grindheim Biblica 2024; Marcar NTS 2017; Pierce WUNT II/305; Lei WUNT II/636; Horrell/Williams ICC vol. 2; Elliott AYB; Westfall JSNTSup.
+**Evangelical/project:** MacArthur 3:18-22; Grudem; Davids NICNT; Schreiner NAC.
+**Lexical:** LSJ `ἐπερώτημα` plus historical/exegetical control.
+
+## HOLD
+
+1. `HOLD-PROJECT-SPIRITS`: integration owner decides whether to adopt fallen-spirit/Watchers + victory proclamation.
+2. `HOLD-EPEROTEMA-TRANSLATION`: no course-wide Russian standard (`просьба` / `обет` / `исповедание/ответ`).
+3. `HOLD-BAPTISM-SYSTEMATICS`: no denominationally precise regeneration formula without owner decision.
+4. `HOLD-RANKING`: every lane item remains `competitive=False`.
+5. `HOLD-PRODUCTION-WIRING`: no root registry/aggregate/production mutation.
