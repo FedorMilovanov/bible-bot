@@ -1,0 +1,141 @@
+{
+  "schema_version": 2,
+  "status": "CHAPTER4_V2_SECOND_ADVERSARIAL_PASS_COMPLETE",
+  "lineage": {
+    "bible_bot_base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
+    "research_repository": "FedorMilovanov/Research",
+    "research_authority_sha": "7e0140129a4aba59a09737701967c3820ff1af57",
+    "research_authority_digest_sha256": "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d",
+    "research_handoff_schema_version": 2
+  },
+  "counts": {
+    "effective_research_claims": 72,
+    "research_mcq_prototypes": 32,
+    "effective_research_holds": 0,
+    "research_competitive_candidates": 0,
+    "product_cards": 52,
+    "product_review_records_v2": 52,
+    "reviewed_cards": 52,
+    "review_quarantine": 0,
+    "product_card_dispositions": 52,
+    "retained_research_support_dispositions": 20,
+    "prototype_safe_template": 13,
+    "prototype_needs_rewrite": 10,
+    "prototype_noncompetitive_only": 6,
+    "prototype_rejected_reference_drift": 3,
+    "ranking_discrepancies_reviewed": 1,
+    "ranking_ready": 0,
+    "battle_admitted": 0,
+    "challenge_admitted": 0
+  },
+  "review_contract": {
+    "runtime_private_research_metadata": false,
+    "runtime_review_link_only": true,
+    "exact_product_card_content_digest_required": true,
+    "exact_research_claim_digest_required": true,
+    "exact_source_edge_pairing_required": true,
+    "project_to_neutral_promotion_allowed": false,
+    "confidence_promotion_allowed": false,
+    "claim_type_promotion_allowed": false,
+    "competitive_flag_allowed": false,
+    "all_cards_independently_read_back": true,
+    "distractor_absolute_certainty_findings": 0
+  },
+  "prototype_reconciliation": {
+    "all_32_reconciled": true,
+    "unsafe_mechanical_copy_validator": true,
+    "w3mcq_003_w3q_005": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED",
+    "w3mcq_037_w3q_014": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED",
+    "w3mcq_047_w3q_038": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED"
+  },
+  "w3q_123": {
+    "ranking_review_id": "ch4rankv2_w3q_123_no_admission",
+    "decision": "NO_RANKING_ADMISSION",
+    "competitive_pool": false,
+    "battle": false,
+    "challenge": false
+  },
+  "epistemic_boundaries": {
+    "chapter4_4_6_course_position_visible": true,
+    "chapter4_4_6_neutral_dispute_preserved": true,
+    "morphology_does_not_decide_chronology_location_addressees": true,
+    "malachi_3_serious_proposed_background_not_formal_exclusive_quotation": true,
+    "chapter4_4_14_ecm_decision_not_manuscript_unanimity": true,
+    "sinaiticus_fact_not_ausgangstext_decision": true,
+    "chapter4_4_16_sblgnt_onoma_not_ecm_na28_merei": true,
+    "textual_criticism_noncompetitive": true
+  },
+  "normal_learning": {
+    "pool_key": "chapter4",
+    "reviewed_only": true,
+    "non_scoring": true,
+    "random_all": false,
+    "competitive_pool": false,
+    "battle": false,
+    "challenge": false,
+    "challenge_fallback": false,
+    "points": 0,
+    "daily_bonus": 0,
+    "achievements": false,
+    "ranked_total_counters": false,
+    "perfect_counters": false,
+    "progress_keys": [
+      "chapter4_attempts",
+      "chapter4_correct",
+      "chapter4_total",
+      "chapter4_best_score"
+    ]
+  },
+  "source_boundary": {
+    "root_registry": "IDENTITY_ONLY",
+    "global_strongest_depth_field": false,
+    "existing_root_authority_overwritten": false,
+    "claim_level_source_ids_and_edge_ids_live_in_private_review_registry": true
+  },
+  "negative_tests": [
+    "forged_research_claim_id",
+    "wrong_effective_claim_digest",
+    "swapped_claim_inspection_edge_id",
+    "source_without_edge",
+    "project_to_neutral",
+    "confidence_promotion",
+    "interpretation_to_text",
+    "competitive_flag",
+    "random_all_injection",
+    "competitive_pool_injection",
+    "battle_injection",
+    "challenge_injection",
+    "challenge_fallback_injection",
+    "public_correct_answer_leak",
+    "public_review_metadata_leak"
+  ],
+  "first_green_exact_head": {
+    "head_sha": "2f9ae1cb03b5d6817efefe0988e7e619c2fd5afc",
+    "ci": {"run_number": 1361, "run_id": 31843872381, "conclusion": "success"},
+    "security_audit": {"run_number": 1241, "run_id": 31843872280, "conclusion": "success"},
+    "codeql": {"run_number": 335, "run_id": 31843872423, "conclusion": "success"},
+    "research_handoff_v2": {"run_number": 27, "run_id": 31843872269, "conclusion": "success"}
+  },
+  "second_adversarial_content_pass": {
+    "audit_file": "data/chapter4-second-adversarial-pass-v2.json",
+    "status": "COMPLETE",
+    "required_cards": 52,
+    "reviewed_cards": 52,
+    "finding_cards_before_fix": 16,
+    "finding_category": "ANSWER_LENGTH_OR_OPTION_SHAPE_CUEING",
+    "correct_option_longest_before": 36,
+    "correct_option_longest_after": 29,
+    "severe_correct_length_ratio_gt_1_8_before": 13,
+    "severe_correct_length_ratio_gt_1_8_after": 0,
+    "changed_cards_received_new_review_record_ids": true,
+    "open_findings": 0
+  },
+  "required_exact_head_workflows": [
+    "CI",
+    "Security Audit",
+    "CodeQL",
+    "Chapter 4 Research Handoff v2"
+  ],
+  "merge_authorized": false,
+  "main_mutated": false
+}

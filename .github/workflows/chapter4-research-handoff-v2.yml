@@ -1,0 +1,95 @@
+name: Chapter 4 Research Handoff v2
+
+on:
+  pull_request:
+    paths:
+      - 'questions/chapter4/**'
+      - 'questions/__init__.py'
+      - 'questions/pool_policy.py'
+      - 'questions/source_registry.py'
+      - 'web_api/**'
+      - 'data/chapter4-**'
+      - 'docs/CHAPTER4_RELEASE_AUDIT.md'
+      - 'tests/test_chapter4_**'
+      - 'scripts/verify_chapter4_research_snapshot.py'
+      - 'scripts/validate_chapter4_product_v2.py'
+      - '.github/workflows/chapter4-research-handoff-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chapter4-handoff-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  research-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout bible-bot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout immutable Research authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: FedorMilovanov/Research
+          ref: 7e0140129a4aba59a09737701967c3820ff1af57
+          path: .research-authority
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11.15'
+      - name: Recompute immutable Research handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/chapter4-research-v2
+          python .research-authority/1_PETER_BOT/scripts/validate_product_handoff_ci.py \
+            --emit-dir /tmp/chapter4-research-v2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('/tmp/chapter4-research-v2')
+          summary = json.loads((root/'integrity-summary.json').read_text(encoding='utf-8'))
+          assert summary['schema_version'] == 2
+          assert summary['authority_digest_sha256'] == '1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d'
+          assert summary['chapter4'] == 72
+          assert summary['current_holds'] == 0
+          assert summary['competitive_candidates'] == 0
+          ch4 = json.loads((root/'chapter4-product-handoff.json').read_text(encoding='utf-8'))
+          assert len(ch4['records']) == 72
+          print('chapter4-research-handoff-v2-ok')
+          PY
+      - name: Verify product-side Research projection
+        run: python scripts/verify_chapter4_research_snapshot.py --generated-dir /tmp/chapter4-research-v2
+      - name: Validate Chapter 4 product v2 against Agent-E prototypes
+        run: >-
+          python scripts/validate_chapter4_product_v2.py
+          --research-root .research-authority/1_PETER_BOT
+          --generated-dir /tmp/chapter4-research-v2
+      - name: Upload recomputed handoff artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chapter4-research-handoff-v2
+          path: /tmp/chapter4-research-v2
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload Chapter 4 product audit source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chapter4-product-audit-source
+          path: |
+            questions/chapter4
+            questions/__init__.py
+            questions/pool_policy.py
+            questions/source_registry.py
+            tests/test_chapter4_*.py
+            data/chapter4-*.json
+            docs/CHAPTER4_RELEASE_AUDIT.md
+            web_api
+          if-no-files-found: error
+          retention-days: 7
