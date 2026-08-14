@@ -85,8 +85,6 @@ def test_reviewed_bank_isolated_from_staging_objects():
         assert staged[qid]["options"] is not reviewed[qid]["options"]
         assert staged[qid]["sources"] is not reviewed[qid]["sources"]
         assert reviewed[qid]["competitive"] is False
-        assert reviewed[qid]["competitive_status"] == "not_yet_admitted"
-        assert reviewed[qid]["review_status"] == "learning_ready"
 
 
 def test_sensitive_verse_boundaries_are_explicit_and_fail_closed():

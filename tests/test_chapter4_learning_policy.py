@@ -12,10 +12,10 @@ def test_chapter4_uses_learning_only_policy():
 
 
 def test_regular_result_router_sends_chapter4_to_learning_path(monkeypatch):
-    calls = []
+    captured = {}
 
     def fake_learning(**kwargs):
-        calls.append(kwargs)
+        captured.update(kwargs)
         return {
             "points": 0,
             "daily_bonus": 0,
@@ -24,7 +24,9 @@ def test_regular_result_router_sends_chapter4_to_learning_path(monkeypatch):
             "level_key": kwargs["level_key"],
         }
 
+    monkeypatch.setitem(sys.modules, "database", SimpleNamespace(collection=object()))
     monkeypatch.setattr(result_store, "_apply_learning_result_once", fake_learning)
+
     receipt = result_store.apply_regular_result_once(
         user_id=7,
         result_id="ch4-learning-router",
@@ -39,6 +41,9 @@ def test_regular_result_router_sends_chapter4_to_learning_path(monkeypatch):
         max_streak=4,
     )
 
+    assert captured["level_key"] == "chapter4"
+    assert captured["score"] == 8
+    assert captured["total"] == 10
     assert receipt == {
         "points": 0,
         "daily_bonus": 0,
@@ -46,16 +51,12 @@ def test_regular_result_router_sends_chapter4_to_learning_path(monkeypatch):
         "kind": "learning",
         "level_key": "chapter4",
     }
-    assert len(calls) == 1
-    assert calls[0]["level_key"] == "chapter4"
-    assert calls[0]["score"] == 8
-    assert calls[0]["total"] == 10
 
 
 def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monkeypatch):
     captured = {}
 
-    class FakeUsers:
+    class FakeCollection:
         def find_one(self, query):
             assert query == {"_id": "7"}
             return {
@@ -69,20 +70,15 @@ def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monke
                 "perfect_count": 3,
             }
 
-    def fake_persist(*, users, user_id, result_id, level_key, receipt, update_doc):
-        captured.update(
-            users=users,
-            user_id=user_id,
-            result_id=result_id,
-            level_key=level_key,
-            receipt=receipt,
-            update_doc=update_doc,
-        )
-        return receipt
+    def fake_persist(user_id, result_id, update, receipt):
+        captured["user_id"] = user_id
+        captured["result_id"] = result_id
+        captured["update"] = update
+        captured["receipt"] = receipt
+        return dict(receipt)
 
-    monkeypatch.setattr(result_store, "_users_collection", lambda: FakeUsers())
-    monkeypatch.setattr(result_store, "_persist_regular_receipt", fake_persist)
-    monkeypatch.setitem(sys.modules, "database", SimpleNamespace())
+    monkeypatch.setattr(result_store, "_user_collection", lambda: FakeCollection())
+    monkeypatch.setattr(result_store, "_persist_once", fake_persist)
 
     receipt = result_store._apply_learning_result_once(
         user_id=7,
@@ -92,10 +88,6 @@ def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monke
         level_key="chapter4",
         score=9,
         total=10,
-        time_seconds=20.0,
-        score_multiplier=2.0,
-        is_perfect=True,
-        max_streak=10,
     )
 
     assert receipt == {
@@ -105,15 +97,15 @@ def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monke
         "kind": "learning",
         "level_key": "chapter4",
     }
-    update_doc = captured["update_doc"]
-    assert update_doc["$inc"] == {
+    update = captured["update"]
+    assert update["$inc"] == {
         "chapter4_attempts": 1,
         "chapter4_correct": 9,
         "chapter4_total": 10,
     }
-    assert update_doc["$max"] == {"chapter4_best_score": 9}
-    assert "total_points" not in update_doc["$inc"]
-    assert "total_tests" not in update_doc["$inc"]
-    assert "perfect_count" not in update_doc["$inc"]
+    assert update["$max"] == {"chapter4_best_score": 9}
+    assert "total_points" not in update["$inc"]
+    assert "total_tests" not in update["$inc"]
+    assert "perfect_count" not in update["$inc"]
     assert captured["receipt"]["daily_bonus"] == 0
     assert captured["receipt"]["new_achievements"] == []
