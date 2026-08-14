@@ -8,9 +8,14 @@ explicit LegacyDeliveryPermanentFailure settles the delivery obligation while
 retaining a durable terminal-failure marker. If a remote send completed but the
 Mongo acknowledgement later fails, the lease is left to expire rather than
 being released immediately, reducing duplicate-send risk.
+
+All durable storage boundaries are synchronous PyMongo operations. They are
+executed in worker threads so lease acquisition/acknowledgement cannot stall the
+PTB asyncio loop around latency-sensitive Telegram sends.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -77,7 +82,7 @@ async def deliver_battle_recipient_once(
     sender: Callable[[dict, str], Awaitable[Any]],
 ) -> bool:
     """Attempt one leased battle-result delivery for one participant."""
-    claim = claim_battle_result_delivery(battle_id, user_id)
+    claim = await asyncio.to_thread(claim_battle_result_delivery, battle_id, user_id)
     if claim is None:
         return False
     battle = claim.get("battle")
@@ -91,30 +96,35 @@ async def deliver_battle_recipient_once(
     try:
         await sender(battle, role)
     except LegacyDeliveryPermanentFailure as exc:
-        if not settle_battle_result_delivery_failure(
+        settled = await asyncio.to_thread(
+            settle_battle_result_delivery_failure,
             battle_id,
             user_id,
             token,
             error=exc.detail,
-        ):
+        )
+        if not settled:
             raise LegacyDeliveryAcknowledgementPending(
                 "battle permanent failure could not be durably settled"
             ) from exc
         return False
     except LegacyDeliveryDeferred as exc:
-        if not defer_battle_result_delivery(
+        deferred = await asyncio.to_thread(
+            defer_battle_result_delivery,
             battle_id,
             user_id,
             token,
             delay_seconds=exc.delay_seconds,
             error=exc.detail or str(exc),
-        ):
+        )
+        if not deferred:
             raise LegacyDeliveryAcknowledgementPending(
                 "battle result deferral could not be acknowledged"
             ) from exc
         return False
     except Exception as exc:
-        release_battle_result_delivery(
+        await asyncio.to_thread(
+            release_battle_result_delivery,
             battle_id,
             user_id,
             token,
@@ -122,7 +132,13 @@ async def deliver_battle_recipient_once(
         )
         raise
 
-    if not mark_battle_result_delivered(battle_id, user_id, token):
+    acknowledged = await asyncio.to_thread(
+        mark_battle_result_delivered,
+        battle_id,
+        user_id,
+        token,
+    )
+    if not acknowledged:
         raise LegacyDeliveryAcknowledgementPending(
             "battle result was sent but acknowledgement is pending"
         )
@@ -134,7 +150,7 @@ async def _deliver_report_stage_once(
     stage: str,
     sender: Callable[[dict], Awaitable[Any]],
 ) -> bool:
-    claim = claim_report_delivery_stage(report_id, stage)
+    claim = await asyncio.to_thread(claim_report_delivery_stage, report_id, stage)
     if claim is None:
         return False
     report = claim.get("report")
@@ -144,7 +160,8 @@ async def _deliver_report_stage_once(
     if not isinstance(token, str) or not token:
         raise LegacyDeliveryStateInvalid("report delivery claim token is missing")
     if stage == "photo" and not report.get("photo_file_id"):
-        release_report_delivery_stage(
+        await asyncio.to_thread(
+            release_report_delivery_stage,
             report_id,
             stage,
             token,
@@ -157,30 +174,35 @@ async def _deliver_report_stage_once(
     try:
         await sender(report)
     except LegacyDeliveryPermanentFailure as exc:
-        if not settle_report_delivery_stage_failure(
+        settled = await asyncio.to_thread(
+            settle_report_delivery_stage_failure,
             report_id,
             stage,
             token,
             error=exc.detail,
-        ):
+        )
+        if not settled:
             raise LegacyDeliveryAcknowledgementPending(
                 f"report {stage} permanent failure could not be durably settled"
             ) from exc
         return False
     except LegacyDeliveryDeferred as exc:
-        if not defer_report_delivery_stage(
+        deferred = await asyncio.to_thread(
+            defer_report_delivery_stage,
             report_id,
             stage,
             token,
             delay_seconds=exc.delay_seconds,
             error=exc.detail or str(exc),
-        ):
+        )
+        if not deferred:
             raise LegacyDeliveryAcknowledgementPending(
                 f"report {stage} deferral could not be acknowledged"
             ) from exc
         return False
     except Exception as exc:
-        release_report_delivery_stage(
+        await asyncio.to_thread(
+            release_report_delivery_stage,
             report_id,
             stage,
             token,
@@ -188,7 +210,13 @@ async def _deliver_report_stage_once(
         )
         raise
 
-    if not mark_report_delivery_stage_delivered(report_id, stage, token):
+    acknowledged = await asyncio.to_thread(
+        mark_report_delivery_stage_delivered,
+        report_id,
+        stage,
+        token,
+    )
+    if not acknowledged:
         raise LegacyDeliveryAcknowledgementPending(
             f"report {stage} was sent but acknowledgement is pending"
         )
@@ -203,7 +231,11 @@ async def deliver_report_once(
     """Deliver photo before text without mistaking another worker's lease for ack."""
     photo = await _deliver_report_stage_once(report_id, "photo", photo_sender)
     if not photo:
-        photo_state = get_report_delivery_stage_state(report_id, "photo")
+        photo_state = await asyncio.to_thread(
+            get_report_delivery_stage_state,
+            report_id,
+            "photo",
+        )
         if photo_state is None:
             raise LegacyDeliveryStateInvalid(
                 "report disappeared while checking photo delivery state"
