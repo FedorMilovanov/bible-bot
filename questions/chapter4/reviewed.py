@@ -17,6 +17,10 @@ def _review_copy(item: dict) -> dict:
         question = str(reviewed["question"]).strip()
         if not question.startswith("[Позиция курса]"):
             reviewed["question"] = f"[Позиция курса] {question}"
+    if reviewed["id"] == "ch4_tc_001":
+        question = str(reviewed["question"]).strip()
+        if "SBLGNT" not in question or "ECM/NA28" not in question:
+            reviewed["question"] = f"{question} (SBLGNT vs ECM/NA28)"
     reviewed["competitive"] = False
     return reviewed
 
