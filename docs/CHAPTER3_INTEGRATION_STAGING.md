@@ -25,11 +25,14 @@ Agent E's frozen audit records 165 cards, zero exact ID collisions, clean canoni
 TOTAL   = 165
 ```
 
-Every integrated card remains `competitive=False`. The package exposes `CHAPTER3_STAGING_QUESTIONS` only inside `questions.chapter3`. Root `questions/__init__.py`, `POOL_REGISTRY`, `COMPETITIVE_POOL`, Battle, Challenge, and `random_all` are intentionally unchanged.
+The audited per-card `competitive` flags are preserved byte-for-byte. Some objective A-lane cards are deliberately marked `competitive=True` as **future ranking candidates**; contested, project, and application cards remain `competitive=False`.
+
+That metadata is not production admission. The package exposes `CHAPTER3_STAGING_QUESTIONS` only inside `questions.chapter3`. Root `questions/__init__.py`, `POOL_REGISTRY`, `COMPETITIVE_POOL`, Battle, Challenge, and `random_all` are intentionally unchanged, and cross-lane tests require every Chapter-3 ID — including every `competitive=True` candidate — to remain absent from those production/ranking surfaces.
 
 Therefore:
 
 ```text
+competitive=True ON A STAGING CARD != RANKING_ADMITTED
 STAGING_INTEGRATED != PRODUCTION_ADMITTED
 STAGING_INTEGRATED != RANKING_AUTHORIZED
 PASS_WITH_HOLD != PUBLICATION_READY
@@ -73,14 +76,14 @@ The course may reject a reading that treats external washing itself as the whole
 
 ## Nonblocking substantive HOLDs
 
-The unresolved exegetical/historical questions preserved by A/B/C/D and Agent E remain noncompetitive. They include household/social reconstruction, `φόβος`, `ἀσθενεστέρῳ σκεύει`, `εἰς τοῦτο`, broader Psalm function, Isaiah/Christological force, flesh/spirit syntax, spirits/proclamation alternatives, `ἐπερώτημα`, baptismal systematics, and direct-dependence claims about 1 Enoch.
+The unresolved exegetical/historical questions preserved by A/B/C/D and Agent E remain quarantined from ranking wherever they are contested/project/application. They include household/social reconstruction, `φόβος`, `ἀσθενεστέρῳ σκεύει`, `εἰς τοῦτο`, broader Psalm function, Isaiah/Christological force, flesh/spirit syntax, spirits/proclamation alternatives, `ἐπερώτημα`, baptismal systematics, and direct-dependence claims about 1 Enoch.
 
-These are not integration blockers because the cards already encode the uncertainty and remain outside ranking. They become blockers only if a later production author tries to present one of them as an undisputed fact or promote it to competitive assessment.
+These are not integration blockers because the cards encode the uncertainty and are not admitted to production. They become blockers if a later production author presents one as an undisputed fact or tries to promote a contested/project/application claim into ranking.
 
 ## Next admission gate
 
 1. Fresh CI, Security Audit, and CodeQL must pass on the exact integration head.
 2. Run a product-side editorial curation pass over the 165-card staging bank; the roadmap's 100–130 planning range is not a quota, and staging volume is not a reason to publish redundant cards.
 3. Build the Chapter-3 reviewed/admitted aggregate only after curation and source review, analogous to Chapter 2's reviewed boundary.
-4. Keep Chapter 3 outside ranking unless objective cards are explicitly source-reviewed and separately promoted.
+4. Preserve audited `competitive=True` only as candidate metadata until objective cards are explicitly source-reviewed and separately admitted to root ranking surfaces.
 5. Only after the reviewed aggregate, coverage matrix, and fresh exact-head gates may Chapter 3 be considered for normal-learning production exposure.
