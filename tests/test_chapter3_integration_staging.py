@@ -89,10 +89,15 @@ def test_lane_source_resolution_is_namespaced_and_never_cross_upgrades_metadata(
 
     catalogs = list(CHAPTER3_SOURCE_CATALOGS.values())
     assert len({id(catalog) for catalog in catalogs}) == len(catalogs)
-    duplicate_ids = set(catalogs[0])
-    for catalog in catalogs[1:]:
-        duplicate_ids &= set(catalog)
-    assert {"sblgnt", "morphgnt_1peter"} <= duplicate_ids
+
+    # Some lanes intentionally reuse work IDs while encoding inspection depth
+    # with different lane-local schemas. Their records must stay distinct;
+    # a shallower record may never inherit a stronger neighbor's metadata.
+    for source_id in ("sblgnt", "morphgnt_1peter"):
+        holders = [catalog[source_id] for catalog in catalogs if source_id in catalog]
+        assert len(holders) >= 2
+        assert len({tuple(sorted(metadata)) for metadata in holders}) >= 2
+
     assert MANIFEST["source_resolution_policy"] == "LANE_NAMESPACED_NO_CROSS_LANE_METADATA_UPGRADE"
 
 
