@@ -1,9 +1,11 @@
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
-from pymongo.errors import ServerSelectionTimeoutError
+from pymongo.errors import DuplicateKeyError, ServerSelectionTimeoutError
 
 import database
 from web_api import result_store
@@ -21,24 +23,82 @@ class ReceiptUserCollection:
 
 
 class FakeWeeklyCollection:
-    def __init__(self, *, fail_updates=0):
+    def __init__(self, *, fail_writes=0):
         self.docs = {}
-        self.fail_updates = fail_updates
-        self.update_calls = 0
+        self.fail_writes = fail_writes
+        self.write_calls = 0
+
+    def _maybe_fail(self):
+        self.write_calls += 1
+        if self.fail_writes:
+            self.fail_writes -= 1
+            raise ServerSelectionTimeoutError("temporary weekly leaderboard outage")
 
     def find_one(self, query):
         doc = self.docs.get(query["_id"])
         return copy.deepcopy(doc) if doc else None
 
+    def insert_one(self, doc):
+        self._maybe_fail()
+        if doc["_id"] in self.docs:
+            raise DuplicateKeyError("weekly best already exists")
+        self.docs[doc["_id"]] = copy.deepcopy(doc)
+        return SimpleNamespace(acknowledged=True, inserted_id=doc["_id"])
+
     def update_one(self, query, update, **kwargs):
-        self.update_calls += 1
-        if self.fail_updates:
-            self.fail_updates -= 1
-            raise ServerSelectionTimeoutError("temporary weekly leaderboard outage")
+        self._maybe_fail()
         doc = copy.deepcopy(self.docs.get(query["_id"], {"_id": query["_id"]}))
         doc.update(copy.deepcopy(update.get("$set", {})))
         self.docs[query["_id"]] = doc
-        return SimpleNamespace(modified_count=1)
+        return SimpleNamespace(modified_count=1, acknowledged=True)
+
+
+class BarrierWeeklyCollection(FakeWeeklyCollection):
+    """Force two writers to observe the same absent weekly-best snapshot."""
+
+    def __init__(self):
+        super().__init__()
+        self._lock = threading.Lock()
+        self._barrier = threading.Barrier(2)
+        self._initial_reads = 0
+
+    def find_one(self, query):
+        wait = False
+        with self._lock:
+            if self._initial_reads < 2:
+                self._initial_reads += 1
+                wait = True
+            doc = self.docs.get(query["_id"])
+            result = copy.deepcopy(doc) if doc else None
+        if wait:
+            self._barrier.wait(timeout=2)
+        return result
+
+    def insert_one(self, doc):
+        with self._lock:
+            self.write_calls += 1
+            if doc["_id"] in self.docs:
+                raise DuplicateKeyError("weekly best already exists")
+            self.docs[doc["_id"]] = copy.deepcopy(doc)
+            return SimpleNamespace(acknowledged=True, inserted_id=doc["_id"])
+
+    def update_one(self, query, update, **kwargs):
+        with self._lock:
+            current = self.docs.get(query["_id"])
+            if current is None:
+                return SimpleNamespace(modified_count=0, acknowledged=True)
+            candidate = update["$set"]
+            current_score = int(current.get("best_score", -1))
+            current_time = float(current.get("best_time", float("inf")))
+            candidate_score = int(candidate["best_score"])
+            candidate_time = float(candidate["best_time"])
+            if candidate_score < current_score or (
+                candidate_score == current_score and candidate_time >= current_time
+            ):
+                return SimpleNamespace(modified_count=0, acknowledged=True)
+            self.write_calls += 1
+            current.update(copy.deepcopy(candidate))
+            return SimpleNamespace(modified_count=1, acknowledged=True)
 
 
 def _receipt():
@@ -60,7 +120,7 @@ def test_iso_week_id_uses_iso_year_at_calendar_boundary():
 
 def test_existing_challenge_receipt_retries_weekly_sync_after_transient_failure(monkeypatch):
     users = ReceiptUserCollection(_receipt())
-    weekly = FakeWeeklyCollection(fail_updates=1)
+    weekly = FakeWeeklyCollection(fail_writes=1)
     monkeypatch.setattr(database, "collection", users)
     monkeypatch.setattr(database, "weekly_lb_collection", weekly)
 
@@ -81,7 +141,7 @@ def test_existing_challenge_receipt_retries_weekly_sync_after_transient_failure(
     recovered = result_store.apply_challenge_result_once(**kwargs)
 
     assert recovered["points"] == 120
-    assert weekly.update_calls == 2
+    assert weekly.write_calls == 2
     stored = weekly.docs["2026-W32_random20_123"]
     assert stored["best_score"] == 20
     assert stored["best_time"] == 88.5
@@ -153,7 +213,7 @@ def test_weekly_sync_keeps_better_existing_result(monkeypatch):
         week_id="2026-W32",
     )
 
-    assert weekly.update_calls == 0
+    assert weekly.write_calls == 0
     assert weekly.docs["2026-W32_random20_123"]["best_time"] == 70.0
 
 
@@ -176,5 +236,31 @@ def test_weekly_sync_replaces_equal_score_with_faster_time(monkeypatch):
         week_id="2026-W32",
     )
 
-    assert weekly.update_calls == 1
+    assert weekly.write_calls == 1
     assert weekly.docs["2026-W32_hardcore20_123"]["best_time"] == 90.0
+
+
+def test_concurrent_weekly_sync_cannot_regress_a_better_result(monkeypatch):
+    weekly = BarrierWeeklyCollection()
+    monkeypatch.setattr(database, "weekly_lb_collection", weekly)
+
+    def write(score, elapsed):
+        result_store._sync_weekly_challenge_result(
+            user_id=123,
+            username="tester",
+            first_name="Test",
+            mode="random20",
+            score=score,
+            time_seconds=elapsed,
+            week_id="2026-W32",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        better = pool.submit(write, 20, 80.0)
+        worse = pool.submit(write, 18, 60.0)
+        better.result(timeout=3)
+        worse.result(timeout=3)
+
+    stored = weekly.docs["2026-W32_random20_123"]
+    assert stored["best_score"] == 20
+    assert stored["best_time"] == 80.0
