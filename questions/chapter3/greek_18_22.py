@@ -25,6 +25,7 @@ GREEK_3_18_22 = [
     _g("ch3_gr_012", "ἀπειθήσασίν", "1 Пет. 3:20", "Aor. act. ptc., dat. masc. pl.", ["Pres. act. ptc.", "Aor. pass. ind.", "Infinitive"], "-AAPDPM-", "ἀπειθέω", "Контекст связывает непослушание с днями Ноя."),
     _g("ch3_gr_013", "σῴζει", "1 Пет. 3:21", "Pres. act. ind., 3 sg.", ["Aor. act. ind.", "Pres. pass. subj.", "Perf. mid. inf."], "3PAI-S--", "σῴζω", "Модель baptismal efficacy требует всего 3:21.", ("jts_crawford_1p3_21",)),
     _g("ch3_gr_014", "ὑποταγέντων", "1 Пет. 3:22", "Aor. pass. ptc., gen. masc. pl.", ["Pres. act. ptc.", "Aor. pass. ind.", "Perf. mid. inf."], "-APPGPM-", "ὑποτάσσω", "Связано с ἀγγέλων, ἐξουσιῶν, δυνάμεων."),
+    _g("ch3_gr_015", "πορευθεὶς", "1 Пет. 3:19", "Aor. pass. ptc., nom. masc. sg.", ["Aor. act. ind., 3 sg.", "Pres. mid. ptc.", "Aor. pass. ptc., gen. masc. pl."], "-APPNSM-", "πορεύομαι", "Форма сама по себе не датирует journey и не определяет место назначения."),
 ]
 
 __all__ = ["GREEK_3_18_22"]
