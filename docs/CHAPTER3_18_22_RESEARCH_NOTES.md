@@ -26,7 +26,7 @@ TEXT: proclamation to `τοῖς ἐν φυλακῇ πνεύμασιν`; disobe
 Retained reading families:
 1. **fallen spirits / Watchers** — Genesis 6 + Watchers tradition; victory/judgment proclamation. MacArthur, Pierce, Grindheim, ICC.
 2. **Christ through Noah** — Grudem: Christ preached through Noah in Noah's generation.
-3. **descensus / human dead** — early reception plus modern control such as Lei.
+3. **descensus / human dead reception** — historically important reading, with recent serious re-evaluation by Chi-Kin Lei. Lei is used as reception/exegetical control, not as a morphology-based identification of `πνεύματα`.
 
 `πνεύμασιν` morphology cannot choose a family. `ἐκήρυξεν` alone cannot establish time/content. `ἐν ᾧ` likewise needs exegesis.
 
@@ -40,7 +40,7 @@ Keep the whole sequence: `δι’ ὕδατος`; `ἀντίτυπον ... βά�
 
 ### `ἐπερώτημα`
 
-Parsing: noun nom. neut. sg. Translation: disputed. LSJ preserves question/request and legal-stipulation history; Crawford (JTS 67.1, 2016, 23-37) reviews baptismal/legal reception and relation to confession. Keep `appeal/request`, `pledge/stipulation`, and `confession/response-related` distinct.
+Parsing: noun nom. neut. sg. Translation/history: disputed. LSJ preserves question/request and legal-stipulation history. Crawford, JTS 67.1 (2016), 23-37, argues a contractual/pledge reading and uses early baptismal reception plus the connection with `ὁμολογία`; that is a substantive historical-exegetical argument, not a parsing fact. Keep `appeal/request`, `pledge/stipulation`, and `confession/response-related` analyses distinct.
 
 ### Baptismal efficacy
 
@@ -55,8 +55,11 @@ Christ is at God's right hand, has gone into heaven, and angels, authorities and
 ## Source map
 
 **Primary:** SBLGNT; MorphGNT; LXX Genesis 6; 1 Enoch 10:4-14; 12:4-14:6.
-**Peer-reviewed/specialist:** Crawford JTS; Grindheim Biblica 2024; Marcar NTS 2017; Pierce WUNT II/305; Lei WUNT II/636; Horrell/Williams ICC vol. 2; Elliott AYB; Westfall JSNTSup.
-**Evangelical/project:** MacArthur 3:18-22; Grudem; Davids NICNT; Schreiner NAC.
+
+**Peer-reviewed/specialist:** Matthew R. Crawford, JTS 67.1 (2016), 23-37; Sigurd Grindheim, Biblica 105.1 (2024), 113-126; Katie Marcar, NTS 63.4 (2017), 550-566; Chad T. Pierce, WUNT II/305 (2011); Chi-Kin Lei, WUNT II/636 (2025); Horrell/Williams, ICC vol. 2 (2023); Elliott, AYB (2001); Cynthia Long Westfall, in *Resurrection*, JSNTSup 186 (1999), 106-135.
+
+**Evangelical/project:** MacArthur, *The Triumph of Christ's Suffering*, Parts 1-3; Wayne Grudem, Trinity Journal 7.2 (Fall 1986), 3-31; Davids, NICNT; Schreiner, NAC.
+
 **Lexical:** LSJ `ἐπερώτημα` plus historical/exegetical control.
 
 ## HOLD
