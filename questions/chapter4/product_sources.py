@@ -1,13 +1,13 @@
-"""Identity-only source catalog for Chapter 4 product admission.
+"""Identity-only Chapter 4 source catalog for root product admission.
 
-The audited Research corpus owns claim inspection depth. This catalog carries
-only stable source identity/provenance into the root registry; it intentionally
-never promotes evidence_status / inspection_level / inspection_scope globally.
+Claim-level evidence lives in the immutable Research handoff/review registry.
+This catalog never promotes inspection depth, evidence status or a cross-lane
+"strongest" value into the canonical root registry.
 """
 
 from __future__ import annotations
 
-RESEARCH_AUTHORITY_SHA = "0142430af8ba80f28e0fd9cde669d32611a1d2af"
+RESEARCH_AUTHORITY_SHA = "7e0140129a4aba59a09737701967c3820ff1af57"
 
 _SOURCE_IDS = {
     "w3_lxx_prov10": "LXX Proverbs 10:12 research witness",
@@ -18,9 +18,11 @@ _SOURCE_IDS = {
     "w3l_gty_1p4_2_6": "Grace to You / MacArthur, 1 Peter 4:2-6",
     "w3l_horrell_4_6_2003": "Horrell, 1 Peter 4:6 study (2003)",
     "w3_strawbridge_kiss_2025": "Strawbridge/Kiss historical hospitality control",
+    "w3_breed_elder_2016": "Breed, elder/diakonia study (2016)",
     "w3h_abbott_smith_oikonomos": "Abbott-Smith lexicon: οἰκονόμος",
     "w3h_abbott_smith_logion": "Abbott-Smith lexicon: λόγιον",
     "w3h_abbott_smith_pyrosis": "Abbott-Smith lexicon: πύρωσις",
+    "w3h_abbott_smith_ktistes": "Abbott-Smith lexicon: κτίστης",
     "w3_brown_allotriepiskopos_2006": "Jeannine K. Brown, ἀλλοτριεπίσκοπος (JBL 2006)",
     "w3_ubs_handbook_1peter": "UBS Handbook on 1 Peter",
     "w3_byrley_adversary_2017": "Byrley, adversary/persecution setting study (2017)",
@@ -44,9 +46,9 @@ SOURCE_CATALOG = {
         "source_identity_only": True,
         "research_authority_sha": RESEARCH_AUTHORITY_SHA,
         "claim_limit": (
-            "Identity/provenance only. Claim-level inspection depth and passage "
-            "support remain on the Chapter-4 card/research handoff and must not "
-            "be inferred from this root record."
+            "Identity/provenance only. Claim-level source support and exact "
+            "claim-inspection edge IDs remain in the immutable Chapter-4 v2 "
+            "product review contract / pinned Research authority."
         ),
     }
     for source_id, title in _SOURCE_IDS.items()
