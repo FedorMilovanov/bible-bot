@@ -71,6 +71,7 @@ def test_eperotema_question_requires_morphology_lexical_history_and_peer_review(
         "sblgnt",
         "morphgnt_1peter",
         "lsj_eperotema",
+        "ubs_handbook_1p3_21",
         "jts_crawford_1p3_21",
     } <= set(item["sources"])
 
@@ -82,4 +83,4 @@ def test_baptism_dispute_keeps_multiple_systematic_readings():
         "faith_appeal_or_pledge_instrumentality",
         "sign_confession_resurrection_relation",
     } <= set(item["readings"])
-    assert {"jts_crawford_1p3_21", "elliott_1peter_ayb", "westfall_baptism_1999", "horrell_williams_icc_v2"} <= set(item["sources"])
+    assert {"jts_crawford_1p3_21", "ubs_handbook_1p3_21", "westfall_baptism_1999", "horrell_williams_icc_v2"} <= set(item["sources"])
