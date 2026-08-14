@@ -1,8 +1,29 @@
 """Direct-text layer for 1 Peter 3:18-22. No disputed reconstruction belongs here."""
 
+CORRECT_POSITION = {
+    "ch3_text_001": 0,
+    "ch3_text_002": 2,
+    "ch3_text_003": 1,
+    "ch3_text_004": 3,
+    "ch3_text_005": 0,
+    "ch3_text_006": 1,
+    "ch3_text_007": 0,
+    "ch3_text_008": 3,
+    "ch3_text_009": 2,
+    "ch3_text_010": 0,
+}
+
+
+def _pack(qid, answer, wrong):
+    correct = CORRECT_POSITION[qid]
+    options = list(wrong)
+    options.insert(correct, answer)
+    return options, correct
+
 
 def _t(qid, q, answer, wrong, explanation, verse):
-    return {"id": qid, "question": q, "options": [answer, *wrong], "correct": 0,
+    options, correct = _pack(qid, answer, wrong)
+    return {"id": qid, "question": q, "options": options, "correct": correct,
             "explanation": explanation, "verse": verse, "topic": "прямой текст",
             "claim_type": "text", "confidence": "high", "position": "neutral",
             "competitive": False, "sources": ["sblgnt"], "evidence_layer": "text"}
