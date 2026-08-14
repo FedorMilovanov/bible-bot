@@ -3,187 +3,257 @@
 **Role:** independent cross-lane integration auditor.  
 **Repository:** `FedorMilovanov/bible-bot`.  
 **Agent E branch:** `agent/ch3-e`.  
-**Integration base:** `agent/first-peter-complete-course` at `9eefbae4cf91d178e9f488e695df9264478197c0`.  
-**Authority:** actual files/diffs/tests at the exact frozen A/B/C/D SHAs; PR descriptions are not evidence of correctness.
+**Integration base:** `9eefbae4cf91d178e9f488e695df9264478197c0`.  
+**Rule:** FAIL CLOSED. This document is staging/integration evidence, not publication or merge authority.
 
-## FAIL-CLOSED
+## GOVERNING GUARDRAILS
 
-Stage closure != publication. Source found != claim proven. URL/metadata/abstract != inspected relevant section. One commentator != consensus. Morphology != exegesis. Historical plausibility != biblical-text statement. `PASS_WITH_HOLD` means staging-safe only, not ranking/publication authorization. No verdict transfers to another SHA.
+- Stage closure != publication.
+- Source found != claim proven.
+- URL exists != source inspected.
+- Abstract != full-text evidence.
+- Publisher/catalog page != inspected commentary section.
+- One commentator != consensus.
+- Morphology != exegesis.
+- Historical plausibility != biblical-text statement.
+- `PASS_WITH_HOLD` != ranking/publication authorization.
+- No merge is performed by Agent E.
 
-## FINAL FROZEN SNAPSHOT
+First-pass source/evidence guardrails remain authoritative: 1 Pet 3:10–12 is sustained quotation/adaptation of Ps 33:13–17 LXX; Isa 8:12–13 is clear verbal reuse/adaptation in 3:14–15 while Christological force remains interpretive; SBLGNT 3:18 reads `ἔπαθεν`; 3:19 spirits/timing/message remain disputed; 1 Enoch is background rather than proved direct literary dependence; `ἐπερώτημα` does not lexically settle pledge vs appeal; baptismal systematics cannot be proved by lexical fiat.
 
-Start gate and post-write end-of-work gate both matched:
+# AGENT A BLOCKER RERUN
 
-- BASE `9eefbae4cf91d178e9f488e695df9264478197c0`
-- A / PR #17 `9ce110bf60e63a3332047a629762eb6214cbc569`
-- B / PR #14 `b7cc829e31a0aefc851b12245d7933afcb6561e8`
-- C / PR #13 `d64656dbcfb8c8c894a11d6cc5e764a189de9336`
-- D / PR #16 `d4151176053aec4a6bce7685922cb90dfc5f2a77`
+## Rerun authority
 
-**STALE_AUDIT flag: false.** A final read-only re-fetch is required after this documentation commit; if any target moves, this MATCHED statement is superseded by `STALE_AUDIT_REQUIRES_RERUN`.
+Previous audited A head:
+`9ce110bf60e63a3332047a629762eb6214cbc569`
 
-## EXACT-HEAD WORKFLOWS
+Fresh audited A head:
+`8b194513420ae6dc5adf853b051539ca1f499ed0`
 
-| Lane | CI | Security Audit | CodeQL Stacked PR |
+The GitHub compare from the previous audited A SHA to the rerun SHA is eight commits ahead and zero behind. The rerun inspected actual current question/test declarations, not the PR description.
+
+B/C/D were re-fetched before the rerun and remained on their previously audited frozen heads:
+
+- B / PR #14: `b7cc829e31a0aefc851b12245d7933afcb6561e8`
+- C / PR #13: `d64656dbcfb8c8c894a11d6cc5e764a189de9336`
+- D / PR #16: `d4151176053aec4a6bce7685922cb90dfc5f2a77`
+
+The integration base also remained `9eefbae4cf91d178e9f488e695df9264478197c0`.
+
+Therefore B/C/D prior `PASS_WITH_HOLD` verdicts may be carried forward; A alone required substantive rerun.
+
+## A answer-position rerun
+
+Fresh declarations were independently re-read and the exact sequences were reconstructed:
+
+- text: `[2,0,2,3,3,1,1,0,3,2,1,0]`
+- Greek: `[1,3,1,0,1,3,2,0,0,2]`
+- intertext/OT: `[3,0,2,1,2]`
+- history: `[0,2,1,2,3,3,0]`
+- theology: `[2,3,1,0,3,2,0,1]`
+- disputed: `[3,1,3,2,0,1]`
+- application: `[1,0,2,3,3,2,0,1]`
+
+Fresh aggregate Counter:
+
+- position 0: **14**
+- position 1: **14**
+- position 2: **14**
+- position 3: **14**
+
+Local Counters:
+
+- text: `3/3/3/3`
+- Greek: `3/3/2/2`
+- intertext: `1/1/2/1`
+- history: `2/1/2/2`
+- theology: `2/2/2/2`
+- disputed: `1/2/1/2`
+- application: `2/2/2/2`
+
+This does **not** pass merely because the aggregate is 14/14/14/14. The current lane-local regression also rejects:
+
+- three identical positions consecutively;
+- `0,1,2,3` and shifted four-position windows;
+- whole-sequence short periods 1–4;
+- adjacent repeated blocks of periods 2–4;
+- repeated two-position starting prefixes across local pools.
+
+Agent E independently applied those predicates to the reconstructed current sequences. All seven pools passed. The former editorial blocker is therefore closed at the exact rerun SHA.
+
+## A distractor rerun
+
+Fresh inspection confirms substantive hardening rather than pure permutation for the previously weak areas:
+
+- `ch3_hist_101`: plausible historical-method errors replace universal caricatures.
+- `ch3_gr_105`: distractors remain in the lexical/quantifier problem of `ἀπειθοῦσιν ... τινες`.
+- `ch3_gr_107`: distractors are competing scope readings of `ἄνευ λόγου`.
+- `ch3_theol_101`: competing scoped witness strategies replace the prior easy caricature.
+- `ch3_theol_107`: all options concern plausible implications/misuses of co-heir language.
+- `ch3_disp_103`: all options classify the Gen 18:12 / 1 Pet 3:6 relation.
+- `ch3_app_101`, `102`, `104`, `106`, `108`: distractors now stay within realistic pastoral/methodological alternatives rather than grotesque or category-mismatched wrong answers.
+
+No new distractor leakage blocker was found in the rerun.
+
+## A source-depth preservation
+
+The source catalog was not silently strengthened during the editorial fix.
+
+`questions/chapter3/sources_1_7.py` blob SHA:
+
+- at previous audited A head: `43587274ebcb03bf21218f789229ad0a43789da8`
+- at rerun A head: `43587274ebcb03bf21218f789229ad0a43789da8`
+
+The blobs are identical.
+
+Therefore the prior source-depth finding remains valid without reclassification:
+
+- Davids / Schreiner remain bibliographic/product-page controls;
+- Horrell-Williams remains publisher metadata/TOC where so classified;
+- Balch / Treggiari remain limited bibliographic controls;
+- no URL/catalog presence was promoted to passage inspection;
+- substantive HOLDs were not closed by editorial reordering.
+
+## A exact-head workflows
+
+On `8b194513420ae6dc5adf853b051539ca1f499ed0`:
+
+- CI #1206 / run id `31802336989` — **success**
+- Security Audit #1086 / run id `31802336880` — **success**
+- CodeQL Stacked PR #888 / run id `31802337415` — **success**
+
+# INTEGRATION READINESS
+
+| Lane | Exact audited SHA | Verdict | Required disposition |
 |---|---|---|---|
-| A | #1168 / `31769881331` success | #1048 / `31769881322` success | #850 / `31769881325` success |
-| B | #1183 / `31792896172` success | #1063 / `31792896136` success | #865 / `31792896173` success |
-| C | #1182 / `31792862435` success | #1062 / `31792862449` success | #864 / `31792862345` success |
-| D | #1194 / `31793270022` success | #1074 / `31793270056` success | #876 / `31793270011` success |
+| A / 3:1–7 | `8b194513420ae6dc5adf853b051539ca1f499ed0` | **PASS_WITH_HOLD** | Staging-safe only with HOLD/noncompetitive boundaries preserved |
+| B / 3:8–12 | `b7cc829e31a0aefc851b12245d7933afcb6561e8` | **PASS_WITH_HOLD** | Preserve Psalm / `εἰς τοῦτο` / abstract-depth HOLDs |
+| C / 3:13–17 | `d64656dbcfb8c8c894a11d6cc5e764a189de9336` | **PASS_WITH_HOLD** | Preserve Isaiah/Christology/source-independence HOLDs |
+| D / 3:18–22 | `d4151176053aec4a6bce7685922cb90dfc5f2a77` | **PASS_WITH_HOLD** | Preserve spirits/`ἐπερώτημα`/baptism/flesh-spirit HOLDs |
 
-All runs are attached to the audited SHA itself.
+**Current blocker count: 0.**
 
-## SCOPE / OWNERSHIP
+This does **not** mean Chapter 3 is complete or publication-ready. All four lane verdicts remain `PASS_WITH_HOLD`.
 
-A changes exactly nine 3:1–7 lane files. B changes exactly eight 3:8–12 lane files. C changes exactly eight 3:13–17 lane files. D changes exactly ten 3:18–22/pre-existing foundation files. None changes `questions/__init__.py`, `questions/source_registry.py`, `questions/chapter3/__init__.py`, `reviewed.py`, `CHAPTER3_COVERAGE.md`, runtime/web API/miniapp/bot, `.github/**`, main, or shared integration wiring.
+A HOLDs still include:
 
-## INTEGRATION READINESS
+- referent of `φόβος`;
+- exact normative force of external adornment;
+- exact force of Sarah/Gen 18:12 reuse;
+- content/object of `κατὰ γνῶσιν`;
+- dimension of `ἀσθενεστέρῳ σκεύει`;
+- discourse force of `ὁμοίως`;
+- no universal legal/social profile for every wife.
 
-| Lane | PR | Audited SHA | Workflow status | ID collisions | Metadata | Answer-key leakage | Source-depth | Substantive HOLDs | Verdict |
-|---|---|---|---|---|---|---|---|---|---|
-| A | #17 | `9ce110bf60e63a3332047a629762eb6214cbc569` | all 3 success | none | canonical | **mechanical 0→1→2→3 pool-reset pattern** | PASS | fear/adornment/Sarah/knowledge/weaker-vessel/`ὁμοίως`/social reconstruction | **BLOCK** |
-| B | #14 | `b7cc829e31a0aefc851b12245d7933afcb6561e8` | all 3 success | none | canonical | PASS `10/9/9/9` | PASS | `εἰς τοῦτο`; omission motive unclaimed; broad Psalm role interpretive; Gréaux abstract-bounded | **PASS_WITH_HOLD** |
-| C | #13 | `d64656dbcfb8c8c894a11d6cc5e764a189de9336` | all 3 success | none | canonical | PASS `7/7/7/6` | PASS | Isaiah classification/Christological force; author-independence and metadata-only controls | **PASS_WITH_HOLD** |
-| D | #16 | `d4151176053aec4a6bce7685922cb90dfc5f2a77` | all 3 success | none | canonical | PASS `12/11/11/11` | PASS | spirits/timing/proclamation; `ἐπερώτημα`; baptism; flesh/spirit | **PASS_WITH_HOLD** |
-
-No lane is declared publication-ready. B/C/D are structurally/evidentially safe for Chapter-3 staging while retaining their HOLDs. A is not staging-safe at this SHA because of the deterministic answer-key pattern.
+B/C/D substantive HOLDs from the prior exact-head audit remain unchanged because their heads did not move.
 
 ## CROSS-LANE COLLISIONS
 
-Fresh ID collection covered **165 cards**: A 56, B 37, C 27, D 45. **Exact collisions: 0.**
+The integrated question count remains:
 
-- A remains isolated in 101-series namespaces.
-- B remains isolated in 201-series namespaces.
-- C remains isolated in 301-series namespaces.
-- D remains isolated in 001-series/foundation namespaces.
-- D stable `ch3_gr_001–006` are preserved.
-- D stable `ch3_disp_001–004` are preserved.
-- D intertext IDs are exactly `ch3_ot_001–005`.
-- No `ch3_int_*` remains.
+- A: 56
+- B: 37
+- C: 27
+- D: 45
+- total: **165**
 
-Source catalogs contain logical aliases, not question-ID collisions. Canonicalize work identity later without changing the strength of any evidence receipt.
+A retained its stable ID namespace/ranges. B/C/D did not move. Therefore the prior exact cross-lane collision result remains authoritative:
+
+**0 exact question-ID collisions.**
+
+Expected namespaces remain:
+
+`ch3_text_`, `ch3_gr_`, `ch3_ot_`, `ch3_hist_`, `ch3_theol_`, `ch3_disp_`, `ch3_app_`.
+
+No `ch3_int_*` namespace is present in the audited D head.
 
 ## METADATA VIOLATIONS
 
-**None at the audited frozen heads.** Every A/B/C/D card uses only:
+**No canonical metadata violations found at the current frozen snapshot.**
 
-- `claim_type = text | greek | history | interpretation | application`
-- `position = neutral | project`
-- `confidence = high | medium | contested`
+Allowed values remain:
 
-The previous C `intertext`/`theology`/`pastoral` private enums are gone. D uses canonical `ch3_ot_*` IDs. Every audited lane has valid four-option cards, valid `correct`, unique IDs, source resolution, and explicit noncompetitive boundaries for Greek/history/application/project/contested material. This does not itself authorize Chapter-3 ranking.
+- `claim_type`: `text | greek | history | interpretation | application`
+- `position`: `neutral | project`
+- `confidence`: `high | medium | contested`
+
+A's editorial rerun preserved the canonical contract. B/C/D were already clean at their unchanged audited heads.
 
 ## DISTRACTOR LEAKAGE
 
-Agent E independently recomputed `Counter(correct)` from actual declarations:
+**A previous blocker: RESOLVED at `8b194513...`.**
 
-- A: `Counter({0:16, 1:15, 2:13, 3:12})`
-- B: `Counter({0:10, 1:9, 2:9, 3:9})`
-- C: `Counter({0:7, 1:7, 2:7, 3:6})`
-- D: `Counter({0:12, 1:11, 2:11, 3:11})`
+B/C/D prior answer-position fixes remain valid because their exact audited heads did not move:
 
-All positions occur and no lane has three identical positions consecutively.
+- B: `10/9/9/9`
+- C: `7/7/7/6`
+- D: `12/11/11/11`
 
-### A — BLOCKER
+No cross-lane answer-position blocker remains.
 
-A fails the additional anti-periodicity requirement. Its local pools repeatedly restart a `0,1,2,3` sequence: text is three full cycles; Greek begins `0,1,2,3,0,1,2,3`; intertext/history/theology/disputed/application also restart the same short pattern. An aggregate Counter cannot hide a deterministic declaration-order key.
-
-Required action: reorder options/correct indices without changing semantic answers, add regression against short periodicity/pool-reset patterns, harden the lowest-discrimination cards (notably `ch3_hist_101` and `ch3_app_108`), obtain a new A SHA, and rerun Agent E.
-
-### B/C/D
-
-No mechanical short pattern was found. Spot-reading across every pool found same-category textual, morphological, intertextual, exegetical or application confusions rather than cartoon distractors; no systematic correct-answer verbosity/category cue was found.
+This finding is editorial only. It does not promote any contested theological card into competitive/ranking use.
 
 ## SOURCE INSPECTION GAPS
 
-### A — PASS
+The evidence ladder remains fail-closed:
 
-A implements `evidence_status`; `bibliographic_only` and `bibliographic_toc_only` are card-ineligible. Treggiari/Balch remain bibliographic controls. Horrell/Williams ICC remains product/TOC only. Davids/Schreiner product records are not passage evidence. Horrell 2016 remains abstract-bounded. Project claims use inspected passage witnesses (especially MacArthur + Storms).
+`URL_FOUND < METADATA_VERIFIED < ABSTRACT_INSPECTED < PARTIAL_TEXT_INSPECTED < FULL_RELEVANT_SECTION_INSPECTED`
 
-Text/intertext boundaries remain correct: `τινες` = some, not all husbands; Sarah/Gen 18:12 is named verbal/narrative reuse, not formal quotation; Prov 3:25 is strong verbal background/allusion, not formal quotation. `φόβος`, adornment force, Sarah force, `κατὰ γνῶσιν`, `ἀσθενεστέρῳ σκεύει`, `ὁμοίως`, and social reconstruction remain open.
+Current important gaps/HOLDs remain:
 
-### B — PASS
+- Crawford full JTS article is still required before ranking pledge over appeal.
+- Critical apparatus is still required before manuscript-distribution claims at 3:18.
+- Bibliographic/product/TOC commentary records remain card-ineligible until the relevant passage is actually inspected.
+- Location-specific Roman/Asia-Minor legal evidence is still required before universal wife-status claims.
+- Direct literary dependence on 1 Enoch remains unproved.
+- One evangelical expositor or one scholarly article never becomes consensus by canonicalization.
 
-Green and Christensen are full-PDF controls. Gréaux remains publisher-abstract-only and is used only within its abstract-level thesis. 1 Pet 3:10–12 remains **sustained quotation/adaptation of Ps 33:13–17 LXX (= Ps 34:12–16 MT/common English)**. The question→statement change, 2sg→3sg shift, both `σου` omissions, and stop before `τοῦ ἐξολεθρεῦσαι...` are retained; no authorial motive is invented. `εἰς τοῦτο` remains contested; broad Psalm function remains interpretation.
+## CROSS-LANE THEOLOGICAL CONSISTENCY
 
-### C — PASS
+No new neutral-fact contradiction was introduced by the A editorial fix.
 
-Generic nonclaim status enforcement works. BDAG is bibliographic-control-only and appears in no card source list. Jobes/Achtemeier metadata/preview records are absent from card evidence. Göttingen edition metadata is not used as inspected text. Abbott-Smith is bounded to the inspected `ἀπολογία` headword only. `ch3_gr_304`/`307` use SBLGNT+MorphGNT; `ch3_theol_302`/`ch3_app_302` stay within inspected `ἀπολογία` plus immediate syntax and do not select a modern apologetics school.
+The earlier cross-lane consistency result still stands:
 
-Isaiah layering is correct: observable verbal comparison = `text/high`; reuse classification = `interpretation/medium`; Christological force = `interpretation/project/medium`. Moyise 2005 is not counted as author-independent from the coauthored 2002 study; Blenkin supplies an independent inspected control.
-
-### D — PASS
-
-Every source has `inspection_scope` + `claim_limit`; metadata/bibliographic-only sources are card-ineligible. Schreiner NAC, Horrell/Williams ICC, Westfall, Davids and Elliott are absent from card evidence. Project cards have at least two genuinely inspected passage-level evangelical witnesses: GTY relevant sections + Storms/TGC 3:18–22. Greek cards use only SBLGNT + MorphGNT.
-
-Bounded controls stay bounded: Crawford abstract may report contractual/pledge/confession argument but cannot establish exclusivity; Pierce synopsis only establishes study/background scope; Grindheim is abstract-level; Marcar is abstract-level Urzeit/Endzeit framing; Lei is synopsis-level descensus reception/re-evaluation; Grudem is relevant-section inspected, not silently full-article; Charles 1 Enoch is a bounded primary witness **in translation**, not a critical edition and not proof of direct dependence.
-
-3:18 guard is correct: SBLGNT opening clause has `ἔπαθεν` (“suffered”); `θανατωθεὶς` is a separate later textual unit; no manuscript-distribution claim is made without critical apparatus.
+- suffering for righteousness is possible and is not turned into immunity;
+- retaliation is rejected;
+- God's will language is not used to moralize persecutor evil;
+- Psalm 33/34 is quotation/adaptation, not mechanically verbatim;
+- Isaiah 8 reuse is textually strong while theological force remains interpretive;
+- baptism/`ἐπερώτημα` and spirits-in-prison remain disputed;
+- Christ's suffering/vindication does not promise immediate social success.
 
 ## SAFE CANONICALIZATION PLAN
 
-Later integrator only; Agent E does not mutate the shared registry.
+Canonicalize **work identity**, never evidence depth.
 
-- SBLGNT: unify work identity, keep lane/passsage inspection receipts separate.
-- MorphGNT: unify as `morphgnt_1peter`; prefer pinned revision `aaed91e57c8e4a8dc9a2383e129ca5e75fe6393d`, not mutable `master`.
-- LXX: canonicalize by edition **and passage**; never let a generic LXX record inherit uninspected passages.
-- GTY/MacArthur: keep passage-specific scope.
-- Storms/TGC: A/B generic-work alias and D 3:18–22 alias may share identity but not inspection scope.
-- Grudem D `grudem_noah_1p3_19` ↔ E `grudem1986`; bibliography: *Trinity Journal* NS 7.2 (Fall **1986**): 3–31; retain relevant-section status.
-- Crawford D `jts_crawford_1p3_21` ↔ E `crawford2016`; JTS 67.1 (2016): 23–37; abstract remains abstract.
-- Jobes: metadata-only identity must not inherit another lane's inspection.
-- Davids: A/D/E are same NICNT work identity; current uninspected passage records remain card-ineligible.
-- Schreiner: A/D NAC book records are bibliographic; E public-position cross-check does not make book pages inspected.
-- Horrell/Williams: A/D/E ICC aliases remain product/TOC/metadata-level unless actual pages are read.
-- Westfall: canonicalize identity/page range 106–135, but metadata is not argument inspection.
-- Balch, Achtemeier, Christensen, Gréaux, UBS, Plutarch and van Rensburg aliases may be unified only with edition/year verification and preserved receipt depth.
-- Do not silently normalize differing Elliott edition/year or differently hosted LXX witnesses without edition-level verification.
+Safe work-level normalization remains appropriate for duplicate logical sources such as SBLGNT, MorphGNT, Grudem, Crawford, Davids, Schreiner, Horrell/Williams and repeated LXX work identities, while preserving:
 
-**Alias identity may be shared; inspection depth may never be inherited.**
+- exact edition/format where relevant;
+- passage scope;
+- URL/access path;
+- actual inspection depth;
+- claim limits.
 
-## CROSS-LANE SEMANTIC CONTRADICTION AUDIT
+For MorphGNT prefer the pinned Agent E revision:
 
-No blocking contradiction exists between neutral factual cards.
+`aaed91e57c8e4a8dc9a2383e129ca5e75fe6393d`
 
-- B/C/D agree that righteousness/good conduct does not guarantee immunity from suffering.
-- B non-retaliation is not contradicted elsewhere.
-- A leaves 3:2 fear referent disputed; C's Isaiah/fear context is separate and controlled.
-- C keeps God's-will language conditional and does not moralize persecutor evil.
-- A does not universalize household status or unbelieving husbands.
-- C separates Isaiah observable reuse from quotation classification and Christological inference.
-- B uses sustained Psalm quotation/adaptation vocabulary consistently.
-- D keeps baptism and spirits/proclamation families disputed rather than neutral facts.
-- D preserves Christ's suffering→resurrection/exaltation trajectory without using 3:22 to force a 3:19 identification.
+rather than treating mutable `master` as immutable evidence.
 
-A clearly labeled disputed alternative is not treated as contradiction.
+Canonical metadata corrections remain:
 
-## INTEGRATION ORDER
+- Wayne Grudem, *Trinity Journal* NS 7.2 (Fall **1986**), 3–31.
+- Matthew R. Crawford, JTS 67.1 (2016), 23–37; abstract-level evidence remains abstract-level unless full text is inspected.
 
-1. **B** — stage with HOLDs intact.
-2. **C** — stage with Isaiah/Christology and source-depth boundaries intact.
-3. **D** — stage last among passing lanes because 3:18–22 is highest substantive-risk; preserve disputed/noncompetitive quarantine.
-4. **A only after repair and fresh audit** — current SHA is BLOCKED by answer-key periodicity.
+## FINAL HANDOFF RULE
 
-Do not wire Chapter 3 into production from these verdicts.
+After Agent E writes this rerun result to `agent/ch3-e`, base and all A/B/C/D heads must be fetched once more.
 
-## DO NOT CLAIM
+If any target head moves, only that moved target becomes:
 
-1. Not every 3:1–6 husband is unbelieving; `τινες` says some.
-2. Do not settle `ἀσθενεστέρῳ σκεύει` from morphology.
-3. Do not universalize one Greco-Roman household model.
-4. Do not call 3:10–12 mechanically verbatim Psalm 34.
-5. Do not invent a motive for the Psalm truncation.
-6. Do not make morphology prove Isaiah's full Christological force.
-7. Do not make one modern apologetics school the meaning of `ἀπολογία`.
-8. Do not say SBLGNT's opening 3:18 clause reads “died”; it reads `ἔπαθεν`.
-9. Do not settle `σαρκί ... πνεύματι`, spirits identity, or proclamation chronology from morphology.
-10. Do not claim direct 1 Enoch literary dependence from parallels alone.
-11. Do not use Crawford abstract for exclusive `ἐπερώτημα = pledge`.
-12. Do not prove/disprove baptismal regeneration by lexical fiat.
-13. Do not manufacture conservative consensus on 3:19–21.
-14. Do not claim manuscript-distribution history without critical apparatus.
-15. Do not infer empire-wide official persecution from Chapter 3 alone.
-16. `PASS_WITH_HOLD` is not publication/ranking authorization.
-17. Do not integrate A at `9ce110...` while the deterministic answer-key pattern remains.
+`STALE_AUDIT_REQUIRES_RERUN`
 
-**No Chapter-3 completion claim is made here. No merge/publication/production authorization is granted.**
+No verdict is transferred to a new SHA.
+
+Agent E remains Draft/unmerged. No publication, production wiring, ranking authorization, Chapter-3 completeness claim, or merge authorization is created by this audit.
