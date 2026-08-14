@@ -20,6 +20,17 @@ HISTORY_CARDS = history_bank.HISTORY_3_1_7
 THEOLOGY_CARDS = theology_bank.THEOLOGY_3_1_7
 DISPUTED_CARDS = theology_bank.DISPUTED_3_1_7
 APPLICATION_CARDS = application_bank.APPLICATION_3_1_7
+
+LOCAL_POOLS = {
+    "text": TEXT_CARDS,
+    "greek": GREEK_CARDS,
+    "intertext": INTERTEXT_CARDS,
+    "history": HISTORY_CARDS,
+    "theology": THEOLOGY_CARDS,
+    "disputed": DISPUTED_CARDS,
+    "application": APPLICATION_CARDS,
+}
+
 ALL_CARDS = (
     TEXT_CARDS
     + GREEK_CARDS
@@ -33,6 +44,12 @@ ALL_CARDS = (
 CLAIM_TYPES = {"text", "greek", "history", "interpretation", "application"}
 CONFIDENCE_VALUES = {"high", "medium", "contested"}
 POSITION_VALUES = {"neutral", "project"}
+CYCLIC_FOUR_WINDOWS = {
+    (0, 1, 2, 3),
+    (1, 2, 3, 0),
+    (2, 3, 0, 1),
+    (3, 0, 1, 2),
+}
 
 
 def _normalize(value):
@@ -46,6 +63,27 @@ def _token_jaccard(left, right):
     if not left_tokens or not right_tokens:
         return 0.0
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _correct_sequence(cards):
+    return [card["correct"] for card in cards]
+
+
+def _has_short_period(sequence, period):
+    """Return True only when the whole sequence repeats a short period twice or more."""
+    if len(sequence) < period * 2:
+        return False
+    return all(value == sequence[index % period] for index, value in enumerate(sequence))
+
+
+def _has_adjacent_repeated_block(sequence, period):
+    """Catch local ABAB / ABCABC / ABCDABCD fingerprints without fixing one target order."""
+    for start in range(len(sequence) - (2 * period) + 1):
+        left = sequence[start : start + period]
+        right = sequence[start + period : start + (2 * period)]
+        if left == right:
+            return True
+    return False
 
 
 def test_canonical_metadata_contract_and_source_resolution():
@@ -122,7 +160,6 @@ def test_source_inspection_status_is_explicit_and_bibliographic_only_sources_do_
 
 def test_editorial_option_and_question_uniqueness():
     normalized_questions = []
-    correct_positions = Counter()
     correct_is_longest = 0
 
     for card in ALL_CARDS:
@@ -139,14 +176,47 @@ def test_editorial_option_and_question_uniqueness():
         option_lengths = [len(option) for option in normalized_options]
         assert max(option_lengths) / min(option_lengths) <= 2.5
 
-        correct_positions[correct] += 1
         correct_is_longest += option_lengths[correct] == max(option_lengths)
         normalized_questions.append(_normalize(card["question"]))
 
     assert len(normalized_questions) == len(set(normalized_questions))
-    assert set(correct_positions) == {0, 1, 2, 3}
-    assert max(correct_positions.values()) / len(ALL_CARDS) < 0.35
     assert correct_is_longest / len(ALL_CARDS) < 0.55
+
+
+def test_answer_positions_are_balanced_without_local_mechanical_patterns():
+    aggregate = Counter(_correct_sequence(ALL_CARDS))
+    assert set(aggregate) == {0, 1, 2, 3}
+    assert max(aggregate.values()) - min(aggregate.values()) <= 4
+
+    starting_pairs = []
+    for pool_name, cards in LOCAL_POOLS.items():
+        sequence = _correct_sequence(cards)
+        local_counts = Counter(sequence)
+
+        assert set(local_counts) == {0, 1, 2, 3}, f"missing answer position in {pool_name}: {sequence}"
+        assert max(local_counts.values()) - min(local_counts.values()) <= 2, (
+            f"strong local left/right bias in {pool_name}: {sequence}"
+        )
+        assert not any(
+            sequence[index] == sequence[index + 1] == sequence[index + 2]
+            for index in range(len(sequence) - 2)
+        ), f"three identical answer positions in {pool_name}: {sequence}"
+        assert not any(
+            tuple(sequence[index : index + 4]) in CYCLIC_FOUR_WINDOWS
+            for index in range(len(sequence) - 3)
+        ), f"0/1/2/3 cycle window in {pool_name}: {sequence}"
+        assert not any(_has_short_period(sequence, period) for period in range(1, 5)), (
+            f"short-period answer sequence in {pool_name}: {sequence}"
+        )
+        assert not any(_has_adjacent_repeated_block(sequence, period) for period in range(2, 5)), (
+            f"adjacent repeated answer block in {pool_name}: {sequence}"
+        )
+
+        starting_pairs.append(tuple(sequence[:2]))
+
+    assert len(starting_pairs) == len(set(starting_pairs)), (
+        f"local pools restart with repeated answer-position prefixes: {starting_pairs}"
+    )
 
 
 def test_no_extreme_near_duplicate_questions():
