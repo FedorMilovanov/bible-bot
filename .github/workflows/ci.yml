@@ -30,7 +30,7 @@ jobs:
           \) -print)"
           if [[ -n "$forbidden" ]]; then
             echo "Temporary one-shot patch files are forbidden:" >&2
-            printf '  %s\n' "$forbidden" >&2
+            printf '  %s\n' "$forbidden"
             exit 1
           fi
       - name: Validate GitHub Actions workflows
@@ -99,41 +99,38 @@ jobs:
           -e DISABLE_WEB_SERVER=true
           bible-bot-ci
           python -c "import telegram_production; print('production-import-ok')"
-      - name: Smoke test built web container
+      - name: Container E2E smoke with Mongo
         shell: bash
         run: |
           set -euo pipefail
-          docker run --detach --rm --name bible-bot-ci-web -p 18080:8080 bible-bot-ci python keep_alive.py
-          trap 'docker stop bible-bot-ci-web >/dev/null 2>&1 || true' EXIT
-          for _ in {1..20}; do
-            if curl --fail --silent --show-error http://127.0.0.1:18080/live >/tmp/live.json \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/api/catalog >/tmp/catalog.json \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/flow_guard.js >/tmp/flow_guard.js \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/course_catalog.js >/tmp/course_catalog.js; then
-              grep -q '"status":"ok"' /tmp/live.json
-              python - <<'PY'
-          import json
+          network=bible-bot-ci-net
+          mongo=bible-bot-ci-mongo
+          web=bible-bot-ci-web
+          cleanup() {
+            docker stop "$web" >/dev/null 2>&1 || true
+            docker stop "$mongo" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
 
-          with open('/tmp/catalog.json', encoding='utf-8') as handle:
-              payload = json.load(handle)
-          assert payload['version'] == 1
-          courses = [course for group in payload['groups'] for course in group['courses']]
-          keys = [course['key'] for course in courses]
-          assert len(keys) == len(set(keys))
-          assert {'chapter2', 'chapter3'} <= set(keys)
-          for course in courses:
-              assert 'pool_key' not in course
-              assert 'ranked' not in course
-          PY
-              grep -q '<title>Библейский тест — 1 Петра</title>' /tmp/miniapp.html
-              grep -q '<script src="flow_guard.js"></script>' /tmp/miniapp.html
-              grep -q '<script src="course_catalog.js"></script>' /tmp/miniapp.html
-              grep -q 'class QuizFlowGuard' /tmp/flow_guard.js
-              grep -q 'buildCourseStartPayload' /tmp/course_catalog.js
+          docker network create "$network" >/dev/null
+          docker run --detach --rm --name "$mongo" --network "$network" mongo:7.0 >/dev/null
+          docker run --detach --rm --name "$web" --network "$network" -p 18080:8080 \
+            -e MONGO_URL=mongodb://bible-bot-ci-mongo:27017 \
+            -e APP_ENV=development \
+            -e ALLOW_DEBUG_AUTH=true \
+            -e BOT_TOKEN=123456:TEST_TOKEN \
+            -e TELEGRAM_TRANSPORT=webhook \
+            -e TELEGRAM_WEBHOOK_SECRET=ci_webhook_secret_123456 \
+            bible-bot-ci python keep_alive.py >/dev/null
+
+          for _ in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/ready >/tmp/ready.json; then
+              python scripts/container_e2e_smoke.py http://127.0.0.1:18080
               exit 0
             fi
             sleep 1
           done
-          docker logs bible-bot-ci-web
+          docker logs "$web"
+          docker logs "$mongo"
           exit 1
