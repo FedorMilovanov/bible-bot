@@ -54,14 +54,11 @@ def test_unknown_course_is_rejected_before_session_creation():
     assert "unknown course" in message
 
 
-def test_missing_future_pool_fails_closed_before_session_creation():
-    body, message, status = start_quiz(
-        USER,
-        {"course_key": "chapter4", "mode": "relaxed"},
-    )
-    assert body is None
-    assert status == 409
-    assert message == "course unavailable"
+def test_registered_chapter4_and_chapter5_resolve_to_canonical_pools():
+    for course_key in ("chapter4", "chapter5"):
+        entry = _resolve_normal_course({"course_key": course_key}, "relaxed")
+        assert entry == resolve_course(course_key, surface=SURFACE_MINIAPP, mode="relaxed")
+        assert entry.pool_key == course_key
 
 
 def test_normal_course_rejects_client_question_count_override():
