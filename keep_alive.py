@@ -19,6 +19,12 @@ app = create_app()
 _SERVER_LOCK = Lock()
 _SERVER_STARTED = False
 
+# Waitress owns the coarse HTTP envelope. Flask applies the narrower Mini App
+# JSON limit per route, so the server fallback must not accidentally collapse
+# to the application payload limit when Render env vars are absent.
+_DEFAULT_SERVER_BODY_BYTES = 1024 * 1024
+_DEFAULT_SERVER_HEADER_BYTES = 64 * 1024
+
 
 def run() -> None:
     """Run a production WSGI server in the current thread."""
@@ -26,8 +32,12 @@ def run() -> None:
 
     port = int(os.getenv("PORT", "8080"))
     threads = max(2, int(os.getenv("WEB_THREADS", "4")))
-    max_body = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(64 * 1024)))
-    max_headers = int(os.getenv("MAX_REQUEST_HEADER_BYTES", str(64 * 1024)))
+    max_body = int(
+        os.getenv("MAX_REQUEST_BODY_BYTES", str(_DEFAULT_SERVER_BODY_BYTES))
+    )
+    max_headers = int(
+        os.getenv("MAX_REQUEST_HEADER_BYTES", str(_DEFAULT_SERVER_HEADER_BYTES))
+    )
     logger.info(
         "HTTP server listening on 0.0.0.0:%s with %s threads (body<=%sB headers<=%sB)",
         port,
