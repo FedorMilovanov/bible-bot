@@ -59,7 +59,7 @@ def test_canonical_metadata_and_editorial_shape_survive_integration():
         assert item["claim_type"] in CLAIM_TYPES, item["id"]
         assert item["confidence"] in CONFIDENCES, item["id"]
         assert item["position"] in POSITIONS, item["id"]
-        assert item["competitive"] is False, item["id"]
+        assert isinstance(item["competitive"], bool), item["id"]
         assert item["sources"], item["id"]
         assert isinstance(item["explanation"], str) and item["explanation"].strip(), item["id"]
 
@@ -116,6 +116,25 @@ def test_root_production_registry_and_all_competitive_surfaces_exclude_chapter3(
         assert staging_ids.isdisjoint(_ids(pool)), key
 
 
+def test_competitive_metadata_is_candidate_only_until_explicit_root_admission():
+    candidates = [item for item in CHAPTER3_STAGING_QUESTIONS if item["competitive"] is True]
+    assert candidates
+    for item in candidates:
+        assert item["claim_type"] != "application", item["id"]
+        assert item["confidence"] != "contested", item["id"]
+        assert item["position"] == "neutral", item["id"]
+
+    candidate_ids = _ids(candidates)
+    assert candidate_ids.isdisjoint(_ids(questions.COMPETITIVE_POOL))
+    assert candidate_ids.isdisjoint(_ids(questions.BATTLE_POOL))
+    for key, pool in questions.CHALLENGE_POOLS.items():
+        assert candidate_ids.isdisjoint(_ids(pool)), key
+
+    assert MANIFEST["competitive_metadata_policy"] == "PRESERVE_AUDITED_CANDIDATE_FLAGS_WITHOUT_ROOT_ADMISSION"
+    assert MANIFEST["competitive_candidates_may_exist_in_staging"] is True
+    assert MANIFEST["ranking_authorized"] is False
+
+
 def test_integrated_answer_positions_remain_balanced_across_lane_boundaries():
     positions = Counter(item["correct"] for item in CHAPTER3_STAGING_QUESTIONS)
     assert positions == Counter({0: 43, 1: 41, 2: 41, 3: 40})
@@ -145,5 +164,5 @@ def test_owner_project_decisions_preserve_dispute_and_noncompetitive_boundary():
 def test_staging_does_not_claim_chapter_completion_or_publication():
     assert MANIFEST["status"] == "STAGING_INTEGRATED_NOT_PRODUCTION"
     assert MANIFEST["chapter_complete_claimed"] is False
-    assert MANIFEST["competitive_cards"] == 0
+    assert MANIFEST["competitive_metadata_policy"] == "PRESERVE_AUDITED_CANDIDATE_FLAGS_WITHOUT_ROOT_ADMISSION"
     assert MANIFEST["substantive_nonblocking_holds"]
