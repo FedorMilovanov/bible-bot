@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "status": "CHAPTER3_RELEASE_AUDITED_STACK_NOT_MERGED",
+  "lineage": {
+    "base": "9eefbae4cf91d178e9f488e695df9264478197c0",
+    "integration": "571f1f3d0fcab83c0b087735adcaf61316090525",
+    "reviewed": "fe0b9ea7ed0098c2a625bb6956df0a1368e182ef",
+    "normal_learning": "b84ea8559fddc3bade5044b9124ddab8784a0cc5",
+    "ranking_audit": "b695f9170673caaaff517803d82331386750ccb2",
+    "ranking_authority": "05fbcc7f2052cdd106d406dc364bc466dac843fa",
+    "battle_admission": "6f7fbc5de2e7fbfc7d54b6c844234636dbc03a49",
+    "challenge_taxonomy": "62fb982da58a4a97739dd9b504e43cb5d34d7ec2",
+    "challenge_admission": "d9d944d88401cccd90408d00d3ef7bf0977c5bba"
+  },
+  "exact_green_gates": {
+    "integration": ["CI#1217", "Security#1097", "CodeQL#899"],
+    "reviewed": ["CI#1219", "Security#1099", "CodeQL#901"],
+    "normal_learning": ["CI#1227", "Security#1107", "CodeQL#909"],
+    "ranking_audit": ["CI#1228", "Security#1108", "CodeQL#910"],
+    "ranking_authority": ["CI#1229", "Security#1109", "CodeQL#911"],
+    "battle_admission": ["CI#1231", "Security#1111", "CodeQL#913"],
+    "challenge_taxonomy": ["CI#1232", "Security#1112", "CodeQL#914"],
+    "challenge_admission": ["CI#1233", "Security#1113", "CodeQL#915"]
+  },
+  "normal_learning": {
+    "reviewed_cards": 165,
+    "pool_key": "chapter3",
+    "non_scoring": true,
+    "random_all": false,
+    "points": 0,
+    "daily_bonus": 0,
+    "achievements": false
+  },
+  "ranking": {
+    "authorized": 12,
+    "audit_holds": 0,
+    "unauthorized_reviewed": 153,
+    "battle_authorized": 12,
+    "challenge_easy": 6,
+    "challenge_medium": 6,
+    "challenge_hard": 0,
+    "challenge_fallback_chapter3": 0
+  },
+  "source_boundary": {
+    "product_registry": "identity_only_for_missing_chapter3_sources",
+    "shared_root_authority_overwritten": false,
+    "claim_depth_resolution": "reviewed_card_own_lane",
+    "cross_lane_depth_upgrade": false,
+    "authorized_source_minimum": ["sblgnt", "net_1p3_1_7"],
+    "authorized_source_depth": ["inspected_primary", "inspected_passage"]
+  },
+  "epistemic_boundary": {
+    "project_visible_prefix": "[Позиция курса]",
+    "project_ranked": false,
+    "contested_ranked": false,
+    "greek_ranked": false,
+    "history_ranked": false,
+    "application_ranked": false
+  },
+  "challenge_boundary": {
+    "taxonomy_reviewed": true,
+    "hard_empty_by_design": true,
+    "fallback_source": "CHAPTER1_COMPETITIVE_POOL",
+    "fallback_chapter3_allowed": false
+  },
+  "surface_notes": {
+    "miniapp_chapter3": "ADMITTED",
+    "api_pool_chapter3": "ADMITTED",
+    "legacy_telegram_menu": "NOT_REWRITTEN_MONOLITHICALLY",
+    "legacy_telegram_menu_reason": "A whole-file bot.py rewrite is intentionally rejected; future exposure should use a modular menu registry/refactor."
+  },
+  "merge_authorized": false,
+  "main_mutated": false,
+  "release_audit_changes_gameplay": false,
+  "next_gate": "exact-head release-audit CI/Security/CodeQL; merge remains a separate user-controlled decision"
+}
