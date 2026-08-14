@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "status": "RANKING_IDS_AUTHORIZED_NOT_GAMEPLAY_ADMITTED",
+  "parent_audit_head": "b695f9170673caaaff517803d82331386750ccb2",
+  "authorized_ids": [
+    "ch3_text_101",
+    "ch3_text_102",
+    "ch3_text_103",
+    "ch3_text_104",
+    "ch3_text_105",
+    "ch3_text_106",
+    "ch3_text_107",
+    "ch3_text_108",
+    "ch3_text_109",
+    "ch3_text_110",
+    "ch3_text_111",
+    "ch3_text_112"
+  ],
+  "authorized_count": 12,
+  "lane": "3:1-7",
+  "claim_type": "text",
+  "confidence": "high",
+  "position": "neutral",
+  "source_minimum": ["sblgnt", "net_1p3_1_7"],
+  "source_depth": {
+    "sblgnt": "inspected_primary",
+    "net_1p3_1_7": "inspected_passage"
+  },
+  "must_equal_dynamic_audit_ready_set": true,
+  "audit_holds_expected": 0,
+  "gameplay_admission": false,
+  "competitive_pool_mutated": false,
+  "battle_pool_mutated": false,
+  "challenge_pool_mutated": false,
+  "next_gate": "exact-head authority CI/Security/CodeQL, then separate gameplay admission design"
+}

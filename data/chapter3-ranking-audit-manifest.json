@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "RANKING_AUDITED_NOT_ADMITTED",
+  "parent_product_head": "b84ea8559fddc3bade5044b9124ddab8784a0cc5",
+  "candidate_source": "CHAPTER3_RANKING_CANDIDATE_IDS",
+  "structural_policy": "existing questions.ranking_policy.ranking_eligible",
+  "additional_source_depth_policy": "ALL_CARD_SOURCES_MUST_BE_CLAIM_READY_IN_OWN_LANE_OR_EXPLICIT_ROOT_PRIMARY",
+  "root_primary_allowlist": ["sblgnt"],
+  "fail_closed": true,
+  "limited_sources_are_holds": true,
+  "unknown_source_status_is_hold": true,
+  "root_only_nonprimary_source_is_hold": true,
+  "cross_lane_metadata_upgrade": false,
+  "ranking_pool_mutated": false,
+  "battle_pool_mutated": false,
+  "challenge_pool_mutated": false,
+  "normal_learning_mutated": false,
+  "automatic_admission": false,
+  "ready_ids_are_audit_output_only": true,
+  "next_gate": "exact-head CI/Security/CodeQL plus human review of READY/HOLD partition before any ranking admission"
+}

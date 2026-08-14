@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "status": "BATTLE_ADMITTED_CHALLENGE_CLOSED",
+  "parent_authority_head": "05fbcc7f2052cdd106d406dc364bc466dac843fa",
+  "authorized_ids": [
+    "ch3_text_101",
+    "ch3_text_102",
+    "ch3_text_103",
+    "ch3_text_104",
+    "ch3_text_105",
+    "ch3_text_106",
+    "ch3_text_107",
+    "ch3_text_108",
+    "ch3_text_109",
+    "ch3_text_110",
+    "ch3_text_111",
+    "ch3_text_112"
+  ],
+  "authorized_count": 12,
+  "general_competitive_admission": true,
+  "battle_admission": true,
+  "challenge_admission": false,
+  "challenge_taxonomy_defined": false,
+  "challenge_fallback_source": "CHAPTER1_COMPETITIVE_POOL",
+  "random_all_admission": false,
+  "normal_learning_non_scoring": true,
+  "unauthorized_chapter3_count": 153,
+  "unauthorized_chapter3_ranked": 0,
+  "challenge_leakage_allowed": false,
+  "next_gate": "exact-head CI/Security/CodeQL and Battle/Challenge regression checks"
+}

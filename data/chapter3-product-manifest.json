@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "status": "NORMAL_LEARNING_WIRED_RANKING_CLOSED",
+  "parent_reviewed_head": "fe0b9ea7ed0098c2a625bb6956df0a1368e182ef",
+  "reviewed_count": 165,
+  "root_pool_key": "chapter3",
+  "normal_learning": true,
+  "non_scoring_learning": true,
+  "miniapp_entry": true,
+  "question_count_per_quiz": 10,
+  "ranking_authorized": false,
+  "competitive_pool_expanded": false,
+  "battle_pool_expanded": false,
+  "challenge_pools_expanded": false,
+  "random_all_expanded": false,
+  "daily_bonus": false,
+  "points": false,
+  "achievements": false,
+  "ranking_totals": false,
+  "learning_progress_fields": [
+    "chapter3_attempts",
+    "chapter3_correct",
+    "chapter3_total",
+    "chapter3_best_score"
+  ],
+  "product_boundary": "CHAPTER3_REVIEWED_QUESTIONS_ONLY",
+  "telegram_legacy_menu_mutated": false,
+  "telegram_legacy_menu_note": "No whole-file legacy bot.py rewrite is used for menu exposure; Mini App/API is the supported Chapter 3 learning surface in this admission step.",
+  "next_gate": "exact-head CI/Security/CodeQL; ranking remains separate card-by-card source-reviewed admission"
+}

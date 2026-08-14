@@ -38,6 +38,16 @@
           <span class="card-title">Глава 1</span>
           <span class="card-desc">Уровни от фактов до лингвистики</span>
         </button>
+        <button class="card" data-action="chapter2" type="button">
+          <span class="card-emoji" aria-hidden="true">📘</span>
+          <span class="card-title">Глава 2</span>
+          <span class="card-desc">Исследовательский курс · без рейтинга</span>
+        </button>
+        <button class="card" data-action="chapter3" type="button">
+          <span class="card-emoji" aria-hidden="true">📙</span>
+          <span class="card-title">Глава 3</span>
+          <span class="card-desc">Reviewed-курс · спорные места · без рейтинга</span>
+        </button>
         <button class="card" data-action="historical" type="button">
           <span class="card-emoji" aria-hidden="true">🏛</span>
           <span class="card-title">Контекст</span>
@@ -61,7 +71,7 @@
         <button class="list-btn" data-action="about" type="button">ℹ️ О проекте</button>
       </div>
 
-      <div class="hint">🔐 Ответы и баллы проверяются на сервере. Прогресс синхронизируется с ботом через общую MongoDB.</div>
+      <div class="hint">🔐 Ответы проверяются на сервере. Рейтинговые баллы и учебный прогресс разделены и синхронизируются через общую MongoDB.</div>
       <button id="openBotBtn" class="btn btn-outline" type="button">🤖 Открыть в боте</button>
     </section>
 
@@ -128,10 +138,12 @@
           <li>🔴 Сложный — богословие</li>
           <li>🙏 Применение — практика жизни</li>
           <li>🔬 Лингвистика — греческие слова</li>
+          <li>📘 Глава 2 — текст, греческий, ВЗ/LXX, история и богословие</li>
+          <li>📙 Глава 3 — reviewed-банк: текст, греческий, ВЗ/LXX, история, богословие и спорные места</li>
           <li>🏛 Контекст — Нерон, география, авторство</li>
         </ul>
         <p>Режимы: 🧘 спокойно · ⏱ 30 сек ×1.5 · ⚡ 15 сек ×2</p>
-        <p class="muted">Mini App v2.3 · server-authoritative scoring · Soli Deo Gloria</p>
+        <p class="muted">Mini App v2.4 · server-authoritative scoring · Soli Deo Gloria</p>
         <button class="btn btn-primary" data-action="chapter1" type="button">🎯 Начать тест</button>
       </div>
     </section>
@@ -141,6 +153,8 @@
 </div>
 <script src="flow_guard.js"></script>
 <script src="app.js"></script>
+<script src="chapter2.js"></script>
+<script src="chapter3.js"></script>
 <script src="lifecycle.js"></script>
 </body>
 </html>
