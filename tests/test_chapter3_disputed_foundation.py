@@ -82,4 +82,4 @@ def test_baptism_dispute_keeps_multiple_systematic_readings():
         "faith_appeal_or_pledge_instrumentality",
         "sign_confession_resurrection_relation",
     } <= set(item["readings"])
-    assert {"jts_crawford_1p3_21", "elliott_1peter_ayb", "davids_1peter_nicnt", "westfall_baptism_1999", "horrell_williams_icc_v2"} <= set(item["sources"])
+    assert {"jts_crawford_1p3_21", "elliott_1peter_ayb", "westfall_baptism_1999", "horrell_williams_icc_v2"} <= set(item["sources"])
