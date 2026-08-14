@@ -132,6 +132,12 @@ SOURCE_CATALOG = {
         "url": "https://bible.org/seriespage/lesson-14-living-difficult-husband-1-peter-31-6",
         "evidence_status": "inspected_passage",
     },
+    "cambridge_1peter_3": {
+        "title": "Cambridge Bible for Schools and Colleges, 1 Peter 3",
+        "kind": "public_domain_exegetical_commentary",
+        "url": "https://biblehub.com/commentaries/cambridge/1_peter/3.htm",
+        "evidence_status": "inspected_passage",
+    },
 }
 
 EVIDENCE_STATUS_VALUES = frozenset({
