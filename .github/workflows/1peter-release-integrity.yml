@@ -59,7 +59,7 @@ jobs:
           import json
           from pathlib import Path
           report = json.loads(Path('/tmp/1peter-product-claim-audit.json').read_text())
-          print(f"::notice title=Product/Research semantic audit::findings={report['finding_count']} ch4={report['chapter4_reviewed']} ch5={report['chapter5_reviewed']}")
+          print(f"::notice title=Product/Research semantic audit::findings={report['finding_count']} ch4={report['chapter4_staging']} ch5={report['chapter5_staging']}")
           PY
 
       - name: Upload verified Research and diagnostic artifacts
