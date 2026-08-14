@@ -25,6 +25,13 @@ SOURCE_CATALOG = {
         "kind": "lexicon",
         "inspection_status": "bibliographic_control_only",
     },
+    "abbott_smith_apologia_1922": {
+        "title": "G. Abbott-Smith, A Manual Greek Lexicon of the New Testament (1922), s.v. ἀπολογία",
+        "url": "https://www.studylight.org/lexicons/eng/greek/627.html",
+        "kind": "public_domain_nt_lexicon",
+        "inspection_status": "entry_inspected",
+        "inspection_scope": "Headword ἀπολογία only; the inspected entry describes a speech in defence and cites 1 Peter 3:15. No uninspected Abbott-Smith entry is used as evidence.",
+    },
     "blenkin_cambridge_1peter_1914": {
         "title": "G. W. Blenkin, The First Epistle General of Peter, Cambridge Greek Testament for Schools and Colleges (Cambridge University Press, 1914), comment on 1 Peter 3:15",
         "url": "https://www.bibliaplus.org/en/commentaries/236/cambridge-greek-testament-for-schools-and-colleges-commentary/1-peter/3/15",
