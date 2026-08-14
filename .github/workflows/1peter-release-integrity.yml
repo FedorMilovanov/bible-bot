@@ -16,6 +16,7 @@ on:
       - 'tests/**'
       - 'data/**'
       - 'docs/**'
+      - 'miniapp/**'
       - '.github/workflows/1peter-release-integrity.yml'
   workflow_dispatch:
 
@@ -80,6 +81,15 @@ jobs:
           python scripts/validate_1peter_release.py --report /tmp/1peter-release-audit.json
           python -m pytest -q tests/test_1peter_release_cross_layer.py
 
+      - name: Run second adversarial whole-tree audit
+        env:
+          ADMIN_USER_ID: '1'
+          DISABLE_WEB_SERVER: '1'
+        run: |
+          python scripts/audit_1peter_release_adversarial.py \
+            --report /tmp/1peter-second-adversarial-audit.json \
+            --fail-on-findings
+
       - name: Verify production imports with full course stack
         env:
           ADMIN_USER_ID: '1'
@@ -107,5 +117,6 @@ jobs:
             /tmp/1peter-research-handoff
             /tmp/1peter-product-claim-audit.json
             /tmp/1peter-release-audit.json
+            /tmp/1peter-second-adversarial-audit.json
           if-no-files-found: error
           retention-days: 7
