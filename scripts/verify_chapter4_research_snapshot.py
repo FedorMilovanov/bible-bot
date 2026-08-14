@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the vendored Chapter 4 Research handoff against an exact recomputation."""
+"""Verify product-side Chapter 4 v2 projection against exact Research recomputation."""
 
 from __future__ import annotations
 
@@ -7,10 +7,13 @@ import argparse
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-VENDORED = ROOT / "data" / "chapter4-research-handoff-v2.json"
-RESEARCH_SHA = "7e0140129a4aba59a09737701967c3820ff1af57"
-AUTHORITY_DIGEST = "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d"
+from questions.chapter4.research_handoff import (
+    RESEARCH_AUTHORITY_DIGEST_SHA256,
+    RESEARCH_AUTHORITY_SHA,
+    RESEARCH_HANDOFF_SCHEMA_VERSION,
+    RESEARCH_HANDOFF_V2,
+    RESEARCH_REPOSITORY,
+)
 
 
 def load(path: Path) -> dict:
@@ -21,38 +24,44 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--generated-dir", type=Path, required=True)
     args = parser.parse_args()
-
     generated = args.generated_dir
+
     summary = load(generated / "integrity-summary.json")
-    assert summary["schema_version"] == 2
-    assert summary["authority_digest_sha256"] == AUTHORITY_DIGEST
+    assert summary["schema_version"] == RESEARCH_HANDOFF_SCHEMA_VERSION == 2
+    assert summary["authority_digest_sha256"] == RESEARCH_AUTHORITY_DIGEST_SHA256
     assert summary["chapter4"] == 72
     assert summary["current_holds"] == 0
     assert summary["competitive_candidates"] == 0
+    assert RESEARCH_REPOSITORY == "FedorMilovanov/Research"
+    assert RESEARCH_AUTHORITY_SHA == "7e0140129a4aba59a09737701967c3820ff1af57"
 
-    if not VENDORED.exists():
-        print("vendored Chapter 4 v2 snapshot not present yet; bootstrap recomputation passed")
-        return
+    ranking_rows = load(generated / "ranking-audit.json")["records"]
+    discrepancy = {
+        row["candidate_id"]: bool(row["discrepancy_candidate"])
+        for row in ranking_rows
+    }
 
-    snapshot = load(VENDORED)
-    assert snapshot["schema_version"] == 2
-    assert snapshot["research_repository"] == "FedorMilovanov/Research"
-    assert snapshot["research_authority_sha"] == RESEARCH_SHA
-    assert snapshot["research_authority_digest_sha256"] == AUTHORITY_DIGEST
+    generated_rows = load(generated / "chapter4-product-handoff.json")["records"]
+    assert len(generated_rows) == 72
+    generated_projection = {}
+    for row in generated_rows:
+        claim_id = row["candidate_id"]
+        generated_projection[claim_id] = {
+            "research_claim_id": claim_id,
+            "research_effective_claim_digest": row["effective_claim_digest"],
+            "position": row["position"],
+            "confidence": row["confidence"],
+            "claim_type": row["claim_type"],
+            "source_ids": tuple(row["source_ids"]),
+            "claim_inspection_edge_ids": tuple(
+                edge["claim_inspection_edge_id"] for edge in row["source_evidence"]
+            ),
+            "effective_status": row["effective_status"],
+            "ranking_discrepancy_candidate": discrepancy[claim_id],
+        }
 
-    generated_ch4 = load(generated / "chapter4-product-handoff.json")["records"]
-    assert snapshot["research_records"] == generated_ch4
-
-    generated_proto = load(generated / "prototype-audit.json")["records"]
-    ch4_ids = {row["candidate_id"] for row in generated_ch4}
-    generated_ch4_proto = [row for row in generated_proto if row.get("candidate_id") in ch4_ids]
-    assert snapshot["prototype_records"] == generated_ch4_proto
-
-    generated_rank = load(generated / "ranking-audit.json")["records"]
-    generated_ch4_rank = [row for row in generated_rank if row["candidate_id"] in ch4_ids]
-    assert snapshot["ranking_records"] == generated_ch4_rank
-
-    print("chapter4 vendored Research handoff v2 matches exact recomputation")
+    assert generated_projection == dict(RESEARCH_HANDOFF_V2)
+    print("chapter4 Research handoff v2 projection matches exact immutable recomputation")
 
 
 if __name__ == "__main__":
