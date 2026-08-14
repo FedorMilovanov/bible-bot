@@ -1,4 +1,4 @@
-"""Production Mini App quiz-start path with explicit competitive selection."""
+"""Production Mini App quiz-start path with server-authoritative course policy."""
 from __future__ import annotations
 
 import logging
@@ -9,37 +9,91 @@ import uuid
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 import questions
+from course_catalog import (
+    SURFACE_MINIAPP,
+    CourseCatalogError,
+    CourseUnavailableError,
+    course_for_pool,
+    resolve_course,
+    resolve_course_pool,
+)
 from . import quiz as core
 from .db_hardening import OPEN_STATUSES
 
 logger = logging.getLogger(__name__)
+_CLIENT_POLICY_FIELDS = frozenset(
+    {"ranked", "scoring_mode", "points_per_question", "score_multiplier"}
+)
+
+
+def _resolve_normal_course(payload: dict, mode: str):
+    """Resolve new course_key or a safe legacy pool_key through the catalog."""
+    forbidden = sorted(_CLIENT_POLICY_FIELDS.intersection(payload))
+    if forbidden:
+        raise CourseCatalogError(
+            f"client cannot override server course policy: {', '.join(forbidden)}"
+        )
+
+    course_key = str(payload.get("course_key", "")).strip()
+    legacy_pool_key = str(payload.get("pool_key", "")).strip()
+    if course_key:
+        entry = resolve_course(course_key, surface=SURFACE_MINIAPP, mode=mode)
+        if legacy_pool_key and legacy_pool_key != entry.pool_key:
+            raise CourseCatalogError("course_key and pool_key do not match")
+        return entry
+
+    # Backwards compatibility for a previously deployed Mini App bundle.  A
+    # raw pool is accepted only when it maps unambiguously to one currently
+    # exposed Mini App course; it never bypasses catalog availability/policy.
+    if legacy_pool_key:
+        entry = course_for_pool(legacy_pool_key, surface=SURFACE_MINIAPP)
+        if entry is None:
+            raise CourseCatalogError("pool is not an exposed Mini App course")
+        return resolve_course(entry.key, surface=SURFACE_MINIAPP, mode=mode)
+
+    raise CourseCatalogError("course_key is required")
 
 
 def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
     """Create/resume one durable Mini App quiz without mixing ranking pools."""
-    pool_key = str(payload.get("pool_key", "")).strip()
     mode = str(payload.get("mode", "relaxed")).strip()
     if mode not in core.MODE_CONFIG:
         return None, "invalid quiz mode", 400
 
     is_challenge = bool(payload.get("challenge"))
+    course_key: str | None = None
     if is_challenge:
+        # Challenge remains an independent competitive authority.  It is not a
+        # course-catalog entry and cannot be pointed at Chapter 2/3/etc.
+        pool_key = str(payload.get("pool_key", "")).strip()
         if pool_key != "random_all":
             return None, "challenge requires random_all pool", 400
+        if str(payload.get("course_key", "")).strip():
+            return None, "challenge does not accept course_key", 400
+        if _CLIENT_POLICY_FIELDS.intersection(payload):
+            return None, "client cannot override server course policy", 400
         if mode not in {"relaxed", "speed"}:
             return None, "invalid challenge mode", 400
         expected_count = 20
         pool = None
     else:
-        if pool_key == "random_all":
-            return None, "random_all is reserved for Challenge 20", 400
-        expected_count = 10
         try:
-            pool = questions.get_pool_by_key(pool_key)
+            entry = _resolve_normal_course(payload, mode)
+        except CourseUnavailableError:
+            return None, "course unavailable", 409
+        except CourseCatalogError as exc:
+            return None, str(exc), 400
+        course_key = entry.key
+        pool_key = entry.pool_key
+        expected_count = entry.default_question_count
+        try:
+            pool = resolve_course_pool(entry)
+        except CourseUnavailableError:
+            return None, "course unavailable", 409
         except KeyError:
-            return None, "unknown question pool", 404
+            return None, "question pool unavailable", 409
         except Exception:
-            logger.exception("failed to load question pool")
+            logger.exception("failed to load course question pool")
             return None, "question pool unavailable", 503
         if len(pool) < expected_count:
             return None, f"question pool contains fewer than {expected_count} questions", 409
@@ -79,6 +133,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
                 count=count,
             )
             if resumed is not None:
+                if course_key:
+                    resumed["course_key"] = course_key
                 return resumed, None, 200
 
         open_total = int(
@@ -145,6 +201,7 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         "username": user.get("username", ""),
         "first_name": user.get("first_name", ""),
         "status": "in_progress",
+        "course_key": course_key,
         "pool_key": pool_key,
         "stats_level_key": core.stats_level_key(
             pool_key,
@@ -184,4 +241,6 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     current = core._active_session_payload(document, resumed=False)
     if current is None:
         return None, "created quiz session is inconsistent", 500
+    if course_key:
+        current["course_key"] = course_key
     return current, None, 200
