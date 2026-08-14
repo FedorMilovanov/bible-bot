@@ -52,6 +52,37 @@ def _receipt_from(entry: dict | None, result_id: str) -> dict | None:
     return dict(receipt) if isinstance(receipt, dict) else None
 
 
+def _validated_learning_receipt(
+    receipt: object,
+    *,
+    level_key: str,
+    score: int,
+    total: int,
+) -> dict | None:
+    """Validate one idempotent learning receipt against the durable result.
+
+    Receipts created before score/total were added remain replay-compatible as
+    long as every stored learning-policy field is safe. New receipts persist the
+    exact score/total and therefore fail closed on a mismatched retry.
+    """
+    if not isinstance(receipt, dict):
+        return None
+    if receipt.get("kind") != "learning" or receipt.get("level_key") != level_key:
+        return None
+    if receipt.get("points") != 0 or receipt.get("daily_bonus") != 0:
+        return None
+    if receipt.get("new_achievements") != []:
+        return None
+
+    has_score = "score" in receipt
+    has_total = "total" in receipt
+    if has_score != has_total:
+        return None
+    if has_score and (receipt.get("score") != score or receipt.get("total") != total):
+        return None
+    return dict(receipt)
+
+
 def _user_collection():
     import database
 
@@ -199,22 +230,32 @@ def _apply_learning_result_once(
     if collection is None:
         return None
 
+    total = max(1, int(total))
+    score = max(0, min(int(score), total))
     uid = str(user_id)
     existing = collection.find_one({"_id": uid})
     if not existing:
         return None
     prior_receipt = _receipt_from(existing, result_id)
-    if prior_receipt:
-        return prior_receipt
+    if prior_receipt is not None:
+        validated = _validated_learning_receipt(
+            prior_receipt,
+            level_key=level_key,
+            score=score,
+            total=total,
+        )
+        if validated is None:
+            logger.warning("Mini App learning receipt %s does not match durable result", result_id)
+        return validated
 
-    total = max(1, int(total))
-    score = max(0, min(int(score), total))
     receipt = {
         "points": 0,
         "daily_bonus": 0,
         "new_achievements": [],
         "kind": "learning",
         "level_key": level_key,
+        "score": score,
+        "total": total,
     }
     update = {
         "$inc": {
@@ -229,7 +270,18 @@ def _apply_learning_result_once(
         },
         "$max": {f"{level_key}_best_score": score},
     }
-    return _persist_once(user_id, result_id, update, receipt)
+    stored = _persist_once(user_id, result_id, update, receipt)
+    if stored is None:
+        return None
+    validated = _validated_learning_receipt(
+        stored,
+        level_key=level_key,
+        score=score,
+        total=total,
+    )
+    if validated is None:
+        logger.warning("Mini App learning receipt %s changed during persistence", result_id)
+    return validated
 
 
 def apply_regular_result_once(
