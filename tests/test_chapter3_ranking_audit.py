@@ -9,6 +9,7 @@ from questions.chapter3.ranking_audit import (
     CLAIM_READY_SOURCE_STATUSES,
     LIMITED_SOURCE_STATUSES,
 )
+from questions.chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from questions.chapter3.reviewed import (
     CHAPTER3_RANKING_CANDIDATE_IDS,
     CHAPTER3_REVIEWED_QUESTIONS,
@@ -55,22 +56,31 @@ def test_source_status_vocabularies_do_not_overlap():
     assert CLAIM_READY_SOURCE_STATUSES.isdisjoint(LIMITED_SOURCE_STATUSES)
 
 
-def test_ranking_audit_does_not_admit_ready_ids_to_root_ranking_surfaces():
-    ready = set(CHAPTER3_RANKING_READY_IDS)
-    all_candidates = set(CHAPTER3_RANKING_CANDIDATE_IDS)
+def test_historical_audit_ready_set_is_exactly_the_later_explicit_authority():
+    assert CHAPTER3_RANKING_READY_IDS == CHAPTER3_RANKING_AUTHORIZED_IDS
+    assert not CHAPTER3_RANKING_HOLD_REASONS
 
-    assert all_candidates.isdisjoint(_ids(questions.COMPETITIVE_POOL))
-    assert all_candidates.isdisjoint(_ids(questions.BATTLE_POOL))
-    for key, pool in questions.CHALLENGE_POOLS.items():
-        assert all_candidates.isdisjoint(_ids(pool)), key
-
-    assert ready.isdisjoint(_ids(questions.COMPETITIVE_POOL))
-    assert ready.isdisjoint(_ids(questions.BATTLE_POOL))
+    # The audit manifest is an immutable earlier checkpoint; it did not itself
+    # mutate gameplay. The later Battle-admission layer consumes only its explicit
+    # authority successor, never the dynamic audit set directly.
     assert MANIFEST["ranking_pool_mutated"] is False
     assert MANIFEST["automatic_admission"] is False
 
 
-def test_normal_learning_bank_is_unchanged_by_ranking_audit():
+def test_current_gameplay_consumes_authority_but_not_unreviewed_candidates():
+    authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
+    all_candidates = set(CHAPTER3_RANKING_CANDIDATE_IDS)
+    unauthorized = all_candidates - authorized
+
+    assert authorized <= _ids(questions.COMPETITIVE_POOL)
+    assert authorized <= _ids(questions.BATTLE_POOL)
+    assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
+    assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
+    for key, pool in questions.CHALLENGE_POOLS.items():
+        assert all_candidates.isdisjoint(_ids(pool)), key
+
+
+def test_normal_learning_bank_is_unchanged_by_ranking_lifecycle():
     chapter3_ids = _ids(questions.get_pool_by_key("chapter3"))
     reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
     assert chapter3_ids == reviewed_ids
