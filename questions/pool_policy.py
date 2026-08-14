@@ -5,7 +5,7 @@ may be visible for learning while still being excluded from points, achievements
 leaderboards, Challenge and PvP until a dedicated ranking review is complete.
 """
 
-NON_SCORING_LEARNING_POOLS = frozenset({"chapter2"})
+NON_SCORING_LEARNING_POOLS = frozenset({"chapter2", "chapter3"})
 
 
 def is_non_scoring_learning_pool(pool_key: str | None) -> bool:
