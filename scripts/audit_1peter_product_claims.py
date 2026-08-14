@@ -16,7 +16,7 @@ import runpy
 from pathlib import Path
 
 _CONF = {"contested": 0, "medium": 1, "high": 2}
-_WORD = re.compile(r"[A-Za-zА-Яа-яЁё0-9ἀ-῾]+", re.UNICODE)
+_WORD = re.compile(r"\w+", re.UNICODE)
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -46,6 +46,35 @@ def _similarity(a: str, b: str) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / len(left | right)
+
+
+def _card_snapshot(card: dict) -> dict:
+    correct = int(card["correct"])
+    return {
+        "verse": card.get("verse"),
+        "topic": card.get("topic"),
+        "question": card.get("question"),
+        "keyed_answer": card["options"][correct],
+        "explanation": card.get("explanation"),
+        "claim_type": card.get("claim_type"),
+        "confidence": card.get("confidence"),
+        "position": card.get("position"),
+        "sources": list(card.get("sources", ())),
+    }
+
+
+def _candidate_snapshot(candidate_id: str, row: dict) -> dict:
+    return {
+        "candidate_id": candidate_id,
+        "reference": row.get("reference"),
+        "short_claim": row.get("short_claim"),
+        "product_safe_phrasing": row.get("product_safe_phrasing"),
+        "claim_type": row.get("claim_type"),
+        "confidence": row.get("confidence"),
+        "position": row.get("position"),
+        "source_ids": list(row.get("source_ids", ())),
+        "status": row.get("status"),
+    }
 
 
 def _canonical_rows(expanded_dir: Path, chapter: int) -> dict[str, dict]:
@@ -92,10 +121,12 @@ def _rank(card: dict, rows: dict[str, dict]) -> list[dict]:
         ),
         reverse=True,
     )[:8]
-    return [
-        {"candidate_id": candidate_id, "score": round(score, 4)}
-        for score, candidate_id in ranked
-    ]
+    result: list[dict] = []
+    for score, candidate_id in ranked:
+        item = _candidate_snapshot(candidate_id, rows[candidate_id])
+        item["score"] = round(score, 4)
+        result.append(item)
+    return result
 
 
 def _metadata_reasons(card: dict, research: dict) -> list[str]:
@@ -151,11 +182,16 @@ def _audit_ch4(
                 reasons.append("PROTOTYPE_DISPOSITION_DRIFT")
     if not reasons:
         return None
+    current_row = rows.get(claim_id)
     return {
         "chapter": 4,
         "product_card_id": str(card["id"]),
         "mapped_claim_id": claim_id,
         "reasons": sorted(set(reasons)),
+        "product_card": _card_snapshot(card),
+        "mapped_research_claim": (
+            _candidate_snapshot(claim_id, current_row) if current_row else None
+        ),
         "top_semantic_candidates": _rank(card, rows),
     }
 
@@ -178,13 +214,16 @@ def _audit_ch5(
             reasons.append("SOURCE_NOT_IN_FINAL_RESEARCH_CLAIM")
     if not reasons:
         return None
+    current_row = rows.get(claim_id)
     return {
         "chapter": 5,
         "product_card_id": str(card["id"]),
         "mapped_claim_id": claim_id,
         "reasons": sorted(set(reasons)),
-        "product_sources": list(card.get("sources", ())),
-        "research_sources": list(research["source_ids"]) if research else [],
+        "product_card": _card_snapshot(card),
+        "mapped_research_claim": (
+            _candidate_snapshot(claim_id, current_row) if current_row else None
+        ),
         "top_semantic_candidates": _rank(card, rows),
     }
 
@@ -217,13 +256,17 @@ def main() -> None:
     for card in ch4_cards:
         mapping = ch4_mapping.get(str(card["id"]))
         if mapping is None:
-            findings.append({
-                "chapter": 4,
-                "product_card_id": str(card["id"]),
-                "mapped_claim_id": "",
-                "reasons": ["MISSING_PRODUCT_REVIEW_MAPPING"],
-                "top_semantic_candidates": _rank(card, ch4_rows),
-            })
+            findings.append(
+                {
+                    "chapter": 4,
+                    "product_card_id": str(card["id"]),
+                    "mapped_claim_id": "",
+                    "reasons": ["MISSING_PRODUCT_REVIEW_MAPPING"],
+                    "product_card": _card_snapshot(card),
+                    "mapped_research_claim": None,
+                    "top_semantic_candidates": _rank(card, ch4_rows),
+                }
+            )
             continue
         finding = _audit_ch4(card, mapping, vendored, ch4_rows)
         if finding:
