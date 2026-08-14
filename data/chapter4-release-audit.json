@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "status": "CHAPTER4_RELEASE_AUDIT_READY_FOR_EXACT_HEAD_GATES",
+  "lineage": {
+    "base": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
+    "research": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
+    "authoring_review_ranking": "ea809112653146874a47ea5b185ac3f646f76b97",
+    "normal_learning_admission": "c21f26131b17b88ff16274687cf70deb8227be6c"
+  },
+  "counts": {
+    "effective_research_claims": 72,
+    "research_mcq_prototypes": 32,
+    "effective_research_holds": 0,
+    "research_competitive_candidates": 0,
+    "authored_cards": 52,
+    "reviewed_cards": 52,
+    "review_quarantine": 0,
+    "ranking_ready": 0,
+    "battle_admitted": 0,
+    "challenge_admitted": 0
+  },
+  "normal_learning": {
+    "pool_key": "chapter4",
+    "reviewed_only": true,
+    "non_scoring": true,
+    "random_all": false,
+    "points": 0,
+    "daily_bonus": 0,
+    "achievements": false,
+    "progress_keys": [
+      "chapter4_attempts",
+      "chapter4_correct",
+      "chapter4_total",
+      "chapter4_best_score"
+    ]
+  },
+  "epistemic_boundary": {
+    "project_visible_prefix": "[Позиция курса]",
+    "chapter4_4_6_dispute_preserved": true,
+    "malachi_3_formal_or_exclusive_quotation": false,
+    "chapter4_4_14_ecm_decision_not_manuscript_unanimity": true,
+    "chapter4_4_16_edition_difference_named": true,
+    "morphology_substitutes_for_exegesis": false
+  },
+  "source_boundary": {
+    "root_registry_role": "identity_only_for_missing_chapter4_sources",
+    "existing_root_authority_overwritten": false,
+    "claim_depth_resolution": "chapter4_card_or_research_handoff_lane",
+    "cross_lane_depth_upgrade": false
+  },
+  "ranking_boundary": {
+    "status": "LEARNING_ONLY_FAIL_CLOSED",
+    "ranking_admission": 0,
+    "battle_admission": 0,
+    "challenge_admission": 0,
+    "future_admission_requires_explicit_authority": true
+  },
+  "validation_contract": {
+    "exact_head_required": true,
+    "required_workflows": [
+      "CI",
+      "Security Audit",
+      "CodeQL"
+    ],
+    "ci_includes": [
+      "actionlint",
+      "pip-check",
+      "secret-guard",
+      "ruff",
+      "compileall",
+      "pytest",
+      "miniapp-js-syntax",
+      "miniapp-js-unit-tests",
+      "docker-build",
+      "container-production-import",
+      "container-web-smoke"
+    ],
+    "security_includes": [
+      "pip-audit"
+    ],
+    "codeql_languages": [
+      "python",
+      "javascript-typescript"
+    ]
+  },
+  "merge_authorized": false,
+  "main_mutated": false,
+  "release_audit_changes_gameplay": false,
+  "remaining_product_holds": 0,
+  "remaining_review_quarantine": 0,
+  "remaining_ranking_admission": 0
+}
