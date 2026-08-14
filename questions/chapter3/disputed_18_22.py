@@ -1,15 +1,45 @@
 """Contested interpretation map for 1 Peter 3:18-22; never competitive."""
 
+CORRECT_POSITION = {
+    "ch3_disp_001": 3,
+    "ch3_disp_002": 1,
+    "ch3_disp_003": 0,
+    "ch3_disp_004": 2,
+    "ch3_disp_005": 3,
+    "ch3_disp_006": 1,
+}
+
+
+def _pack(qid, answer, wrong):
+    correct = CORRECT_POSITION[qid]
+    options = list(wrong)
+    options.insert(correct, answer)
+    return options, correct
+
 
 def _d(qid, question, answer, wrong, explanation, verse, sources, readings):
-    return {"id": qid, "question": question, "options": [answer, *wrong], "correct": 0,
+    options, correct = _pack(qid, answer, wrong)
+    return {"id": qid, "question": question, "options": options, "correct": correct,
             "explanation": explanation, "verse": verse, "topic": "спорное место",
             "claim_type": "interpretation", "confidence": "contested", "position": "neutral",
             "competitive": False, "sources": sources, "readings": readings}
 
 
-SPIRITS = ["sblgnt", "morphgnt_1peter", "gty_1p3_18_20", "grudem_noah_1p3_19", "pierce_spirits_2011", "grindheim_spirits_2024", "lei_descensus_2025", "horrell_williams_icc_v2"]
-BAPTISM = ["sblgnt", "jts_crawford_1p3_21", "ubs_handbook_1p3_21", "westfall_baptism_1999", "schreiner_1peter_nac", "gty_1p3_20_22", "horrell_williams_icc_v2"]
+SPIRITS = [
+    "sblgnt",
+    "morphgnt_1peter",
+    "gty_1p3_18_20",
+    "tgc_storms_1p3_18_22",
+    "grudem_noah_1p3_19",
+    "lei_descensus_2025",
+]
+BAPTISM = [
+    "sblgnt",
+    "jts_crawford_1p3_21",
+    "ubs_handbook_1p3_21",
+    "gty_1p3_20_22",
+    "tgc_storms_1p3_18_22",
+]
 
 DISPUTED_3_18_22 = [
     _d(
@@ -21,7 +51,7 @@ DISPUTED_3_18_22 = [
             "Связка ἀπειθήσασίν с днями Ноя сама грамматически идентифицирует духов как человеческих современников Ноя и тем самым доказывает Christ-through-Noah reading",
             "Ранняя descensus reception позволяет считать human-dead reading самим лексическим значением πνεύμασιν в этом стихе",
         ],
-        "MacArthur/Pierce/Grindheim развивают fallen-spirit reading; Grudem — Christ-through-Noah; Lei документирует и заново оценивает descensus reception. Морфология не выбирает между этими семьями.",
+        "Inspected passage sections у MacArthur и Storms представляют fallen-spirit/victory readings; inspected sections авторского PDF Grudem — Christ-through-Noah. Publisher synopsis Lei подтверждает историческую значимость descensus reception и её переоценку, но не превращает human-dead reading в morphology fact.",
         "1 Пет. 3:19-20",
         SPIRITS,
         ["fallen_spirits_watchers", "christ_through_noah", "human_dead_descensus_reception"],
@@ -35,7 +65,7 @@ DISPUTED_3_18_22 = [
             "Обычное употребление κηρύσσω как публичного провозглашения требует понимать содержание как предложение спасения человеческим умершим",
             "Временная клауза о днях Ноя делает проповедь Христа через Ноя во время строительства ковчега единственной допустимой хронологией",
         ],
-        "Адресаты, время и содержание выводятся из контекста и интертекста, а не из tense-form ἐκήρυξεν.",
+        "MacArthur/Storms и Grudem дают реально inspected passage-level конкурирующие хронологии; Lei используется только в пределах publisher synopsis для descensus-reception family. Tense-form ἐκήρυξεν сам спор не закрывает.",
         "1 Пет. 3:19-20",
         SPIRITS,
         ["post_resurrection_victory", "pre_flood_christ_through_noah", "descensus_human_dead_reception"],
@@ -49,9 +79,9 @@ DISPUTED_3_18_22 = [
             "Фраза εἰς θεόν и «добрая совесть» синтаксически требуют appeal/request и тем самым исключают pledge reading",
             "Ранняя связь крещения с ὁμολογία означает, что ἐπερώτημα само по себе лексически значит «исповедание»",
         ],
-        "LSJ и passage-level UBS handbook фиксируют question/request и contractual/pledge possibilities. Publisher abstract Crawford сообщает аргумент в пользу contractual pledge и связи с ранней ὁμολογία; это историко-экзегетический аргумент, не морфологическая дефиниция.",
+        "Inspected LSJ entry и passage-level UBS handbook сохраняют несколько lexical/translation possibilities. Publisher abstract Crawford сообщает его contractual/pledge и confession-related argument; full article не считается inspected, поэтому это не lexical certainty.",
         "1 Пет. 3:21",
-        ["sblgnt", "morphgnt_1peter", "lsj_eperotema", "ubs_handbook_1p3_21", "jts_crawford_1p3_21", "horrell_williams_icc_v2"],
+        ["sblgnt", "morphgnt_1peter", "lsj_eperotema", "ubs_handbook_1p3_21", "jts_crawford_1p3_21"],
         ["appeal_request", "pledge_stipulation", "confession_response_related"],
     ),
     _d(
@@ -63,7 +93,7 @@ DISPUTED_3_18_22 = [
             "Оборот οὐ σαρκὸς ἀπόθεσις ῥύπου сам по себе доказывает чисто символическое крещение и исключает любую инструментальную роль",
             "Фраза δι᾽ ἀναστάσεως Ἰησοῦ Χριστοῦ переносит спасительную функцию полностью с βάπτισμα на воскресение, поэтому σῴζει нужно понимать нереференциально",
         ],
-        "σῴζει читается вместе с квалификациями; Crawford/Westfall, passage-level translation control и серьёзные evangelical/critical witnesses подтверждают реальный спор, который нельзя закрывать одной глоссой ἐπερώτημα.",
+        "SBLGNT задаёт сильную формулировку и её квалификации. Inspected UBS section сохраняет competing translation lines; Crawford abstract подтверждает реальную спорность и сообщает contractual proposal; inspected GTY/Storms sections дают evangelical readings. Карточка сохраняет systematic families, а не объявляет одну из них грамматически доказанной.",
         "1 Пет. 3:21",
         BAPTISM,
         ["sacramental_efficacy", "faith_appeal_or_pledge_instrumentality", "sign_confession_resurrection_relation"],
@@ -77,9 +107,9 @@ DISPUTED_3_18_22 = [
             "Пассивное ζῳοποιηθεὶς требует выраженного агента, поэтому πνεύματι грамматически обязательно означает Святого Духа как agent",
             "Связка μέν ... δέ задаёт прежде всего временную последовательность двух событий и тем самым снимает спор о функции σαρκί / πνεύματι",
         ],
-        "MorphGNT фиксирует оба причастия как APPNSM и оба существительных как дативы; синтаксико-богословский вывод требует комментариев.",
+        "MorphGNT фиксирует оба причастия как APPNSM и оба существительных как дативы. Inspected MacArthur и Storms sections демонстрируют, что переход от parsing к смыслу πνεύματι действительно является интерпретационным шагом.",
         "1 Пет. 3:18",
-        ["sblgnt", "morphgnt_1peter", "schreiner_1peter_nac", "horrell_williams_icc_v2"],
+        ["sblgnt", "morphgnt_1peter", "gty_1p3_18_20", "tgc_storms_1p3_18_22"],
         ["sphere_or_mode_contrast", "holy_spirit_agency"],
     ),
     _d(
@@ -91,9 +121,9 @@ DISPUTED_3_18_22 = [
             "ἐν ᾧ следует читать как чисто временное «когда», поэтому вопрос antecedent и связи с предыдущей клаузой грамматически исчезает",
             "Следующая клауза о днях Ноя ретроспективно задаёт значение ἐν ᾧ как «во дни Ноя», так что связь с πνεύματι учитывать не нужно",
         ],
-        "Форма RR ----DSN- надёжна; связь с πνεύματι/предыдущей клаузой остаётся синтаксико-экзегетическим вопросом.",
+        "Форма RR ----DSN- надёжна. Разные связи с предыдущей клаузой представлены в inspected Grudem/MacArthur/Storms material; morphology сама antecedent/chronology не выбирает.",
         "1 Пет. 3:19",
-        ["sblgnt", "morphgnt_1peter", "grudem_noah_1p3_19", "pierce_spirits_2011", "horrell_williams_icc_v2"],
+        ["sblgnt", "morphgnt_1peter", "grudem_noah_1p3_19", "gty_1p3_18_20", "tgc_storms_1p3_18_22"],
         ["post_resurrection_connection", "spirit_mediated_noah_connection"],
     ),
 ]
