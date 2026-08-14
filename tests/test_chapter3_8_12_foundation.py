@@ -114,15 +114,15 @@ def test_psalm_quote_is_sustained_adaptation_and_exact_differences_are_pinned():
     classification = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_201")
     correct = classification["options"][classification["correct"]]
     assert "sustained quotation/adaptation" in correct.casefold()
-    assert "Пс. 33:13–17 LXX" in correct
-    assert "Пс. 34:12–16 MT/common English numbering" in correct
+    assert "Пс. 33:13\u201317 LXX" in correct
+    assert "Пс. 34:12\u201316 MT/common English numbering" in correct
     assert "verbatim" not in correct.casefold()
     assert "дослов" not in correct.casefold()
 
     assert LXX_PS33_13_17[13].startswith("τίς ἐστιν ἄνθρωπος")
     assert FIRST_PETER_3_10_12[10].startswith("ὁ γὰρ θέλων")
-    assert "γλῶσσάν σου" in LXX_PS33_13_17[14]
-    assert "χείλη σου" in LXX_PS33_13_17[14]
+    assert "γλῶσσάν \u03c3\u03bf\u03c5" in LXX_PS33_13_17[14]
+    assert "χείλη \u03c3\u03bf\u03c5" in LXX_PS33_13_17[14]
     assert "γλῶσσαν ἀπὸ" in FIRST_PETER_3_10_12[10]
     assert "χείλη τοῦ" in FIRST_PETER_3_10_12[10]
     assert "παῦσον" in LXX_PS33_13_17[14]
