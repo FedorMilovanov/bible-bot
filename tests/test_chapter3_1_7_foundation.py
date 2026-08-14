@@ -39,7 +39,9 @@ def test_contract_sources_ids():
             assert sources & s.PRIMARY_SOCIAL_HISTORY_IDS
             assert sources & s.MODERN_SOCIAL_HISTORY_IDS
         if x["claim_type"] == "interpretation" and x["position"] == "project":
-            assert len(sources & s.CONSERVATIVE_SOURCE_IDS) >= 2
+            # URL/bibliographic existence is not evidence quorum: require two
+            # passage-level conservative witnesses actually inspected in this lane.
+            assert len(sources & s.INSPECTED_CONSERVATIVE_SOURCE_IDS) >= 2
         if x["confidence"] == "contested":
             assert not x["competitive"]
             assert len(sources) >= 2
