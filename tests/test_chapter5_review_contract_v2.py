@@ -1,6 +1,5 @@
 # ruff: noqa: RUF001
 import hashlib
-import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -16,7 +15,15 @@ from questions import (
 from questions.chapter5 import research_metadata_v2 as research_meta
 from questions.chapter5 import review_contract_v2 as contract
 from questions.chapter5.bank import CHAPTER5_STAGING_QUESTIONS
+from questions.chapter5.bank_identity_v2 import (
+    AGENT3_RAW_BANK_GIT_BLOB_SHA,
+    CANONICAL_RELEASE_BANK_GIT_BLOB_SHA,
+)
 from questions.chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
+from questions.research_release_authority import (
+    RESEARCH_HANDOFF_SCHEMA_VERSION,
+    RESEARCH_RELEASE_REPOSITORY_SHA,
+)
 from web_api.quiz import prepare_question, public_question
 
 
@@ -41,30 +48,24 @@ def _git_blob_sha(raw: bytes) -> str:
     return hashlib.sha1(header + raw).hexdigest()
 
 
-def test_exact_product_bank_blob_and_no_padding_machinery():
-    bank_path = Path(__file__).resolve().parents[1] / "questions" / "chapter5" / "bank.py"
-    raw = bank_path.read_bytes()
-    assert _git_blob_sha(raw) == "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9"
-    source = raw.decode("utf-8")
-    assert ".ljust(" not in source
-    assert ".rjust(" not in source
-    assert ".center(" not in source
+def test_exact_raw_and_canonical_product_bank_blobs_and_no_padding_machinery():
+    root = Path(__file__).resolve().parents[1] / "questions" / "chapter5"
+    raw_authoring = (root / "bank_raw.py").read_bytes()
+    canonical = (root / "bank.py").read_bytes()
+    assert _git_blob_sha(raw_authoring) == AGENT3_RAW_BANK_GIT_BLOB_SHA
+    assert _git_blob_sha(canonical) == CANONICAL_RELEASE_BANK_GIT_BLOB_SHA
+    for source in (raw_authoring.decode("utf-8"), canonical.decode("utf-8")):
+        assert ".ljust(" not in source
+        assert ".rjust(" not in source
+        assert ".center(" not in source
 
 
-def test_authority_digest_recomputes_from_exact_research_pins():
-    payload = {
-        "repository": contract.RESEARCH_REPOSITORY,
-        "research_sha": contract.RESEARCH_AUTHORITY_SHA,
-        "final_snapshot_blob": contract.RESEARCH_FINAL_SNAPSHOT_BLOB,
-        "candidate_blobs": [
-            [f"{start:03d}-{end:03d}", blob]
-            for start, end, _path, blob in contract.RESEARCH_CANDIDATE_SHARDS
-        ],
-        "wave3n_override_blob": contract.WAVE3N_OVERRIDE_BLOB,
-        "wave3n_quorum_blob": contract.WAVE3N_QUORUM_BLOB,
-    }
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    assert hashlib.sha256(raw.encode()).hexdigest() == contract.RESEARCH_AUTHORITY_DIGEST
+def test_authority_identity_is_centralized_on_final_immutable_research_release():
+    assert contract.RESEARCH_REPOSITORY == "FedorMilovanov/Research"
+    assert RESEARCH_RELEASE_REPOSITORY_SHA == "8d6e5bc3f303d0a6a2d1a15969e042907f3387db"
+    assert contract.RESEARCH_AUTHORITY_SHA == "0142430af8ba80f28e0fd9cde669d32611a1d2af"
+    assert contract.RESEARCH_AUTHORITY_DIGEST == "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d"
+    assert RESEARCH_HANDOFF_SCHEMA_VERSION == 2
 
 
 def test_all_72_cards_have_v2_trace_and_independent_research_metadata():
@@ -141,8 +142,7 @@ def test_all_32_research_prototypes_reconciled_and_rejected_templates_are_not_au
         assert record["ranking_authority"] is False
         if prototype_id in contract.REJECTED_PROTOTYPES:
             assert record["prototype_disposition"] == "REJECTED_TEMPLATE_NOT_PUBLICATION_AUTHORITY"
-            assert record["rewrite_family_disposition"] == "NEEDS_REWRITE_RESOLVED_BY_INDEPENDENT_PRODUCT_REWRITE"
-            assert record["product_disposition"] == "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
+            assert record["product_rewrite_requirement"] == "INDEPENDENT_PRODUCT_REWRITE_REQUIRED"
 
     for candidate_id in ("w3q_052", "w3q_066"):
         review = _review(candidate_id)
@@ -150,12 +150,16 @@ def test_all_32_research_prototypes_reconciled_and_rejected_templates_are_not_au
         assert review["product_rewrite_disposition"] == "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
 
 
-def test_historical_holds_remain_visible_but_wave3n_closures_pin_effective_claims():
+def test_historical_holds_remain_visible_but_effective_claims_are_canonical_and_nonhold():
     assert contract.HISTORICAL_HOLD_IDS == {"w3q_050", "w3q_051", "w3q_075"}
     for candidate_id in contract.HISTORICAL_HOLD_IDS:
         locator = contract.claim_locator(candidate_id)
-        assert locator["effective_override"]["blob_sha"] == contract.WAVE3N_OVERRIDE_BLOB
-        assert locator["effective_override"]["json_pointer"].startswith("/overrides/")
+        research = contract.CHAPTER5_RESEARCH_HANDOFF_V2[candidate_id]
+        assert locator["repository"] == contract.RESEARCH_REPOSITORY
+        assert locator["research_sha"] == contract.RESEARCH_AUTHORITY_SHA
+        assert locator["candidate_id"] == candidate_id
+        assert locator["effective_claim_digest"] == research["effective_claim_digest"]
+        assert research["status"] != "HOLD"
 
 
 def test_textual_unit_5_2_edges_are_independent():
@@ -220,7 +224,7 @@ def test_mutation_rejects_source_from_wrong_5_2_textual_unit():
     review = deepcopy(_review("w3q_050"))
     card["sources"].append("w3n_stanojevic_ecm_2021")
     review["source_subset"] = tuple(card["sources"])
-    with pytest.raises(ValueError, match="different textual unit"):
+    with pytest.raises(ValueError, match="canonical Research claim|different textual unit"):
         contract.validate_product_review(card, review)
 
 
@@ -252,12 +256,12 @@ def test_mutation_rejects_project_to_neutral_even_if_review_is_changed_too():
 def test_mutation_rejects_claim_type_or_confidence_strengthening():
     card = deepcopy(_card("w3q_128"))
     card["claim_type"] = "text"
-    with pytest.raises(ValueError, match="Research metadata drift"):
+    with pytest.raises(ValueError, match="claim-type drift"):
         research_meta.validate_research_metadata(card)
 
     card = deepcopy(_card("w3q_118"))
     card["confidence"] = "medium"
-    with pytest.raises(ValueError, match="Research metadata drift"):
+    with pytest.raises(ValueError, match="confidence strengthened"):
         research_meta.validate_research_metadata(card)
 
 
