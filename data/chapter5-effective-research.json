@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "authority": "1PETER-CH5-EFFECTIVE-RESEARCH-2026-08-14",
+  "researchSha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
+  "effectiveCount": 72,
+  "resolutionOrder": [
+    "base_candidate",
+    "later_candidate_overrides",
+    "source_upgrades_or_quorum",
+    "wave3n_override",
+    "mcq_prototype",
+    "editorial_override"
+  ],
+  "recordContract": [
+    "candidate_id", "verse", "domain", "claim_type", "position", "confidence",
+    "sources", "owner_lane", "inspection_depth", "textual_critical_risk",
+    "disputed", "historical_status", "effective_status", "authoring_disposition",
+    "ranking_disposition"
+  ],
+  "materializedRecordSource": "questions/chapter5/authority.py::EFFECTIVE_RESEARCH",
+  "candidateIds": [
+    "w3q_046","w3q_047","w3q_048","w3q_049","w3q_050","w3q_051","w3q_052","w3q_053","w3q_054","w3q_055",
+    "w3q_056","w3q_057","w3q_058","w3q_059","w3q_060","w3q_061","w3q_062","w3q_063","w3q_064","w3q_065",
+    "w3q_066","w3q_067","w3q_068","w3q_069","w3q_070","w3q_071","w3q_072","w3q_073","w3q_074","w3q_075",
+    "w3q_076","w3q_077","w3q_078","w3q_079","w3q_080","w3q_081","w3q_082","w3q_083","w3q_084","w3q_085",
+    "w3q_086","w3q_087","w3q_088","w3q_089","w3q_090","w3q_094","w3q_095","w3q_096",
+    "w3q_105","w3q_106","w3q_107","w3q_108","w3q_109","w3q_110","w3q_111","w3q_112",
+    "w3q_117","w3q_118","w3q_119","w3q_120","w3q_125","w3q_126","w3q_127","w3q_128",
+    "w3q_133","w3q_134","w3q_135","w3q_136","w3q_141","w3q_142","w3q_143","w3q_144"
+  ],
+  "historicalHoldsOverriddenByLaterAuthority": ["w3q_050", "w3q_051", "w3q_075"],
+  "textualControls": {
+    "5:2A": {"candidateId": "w3q_050", "unit": "ἐπισκοποῦντες", "route": "ECM-based published commentary; not direct dECM readback"},
+    "5:2B": {"candidateId": "w3q_051", "unit": "κατὰ θεόν", "route": "separate unit; published ECM comparison; not direct dECM readback"},
+    "5:10": {"candidateId": "w3q_068", "unit": "four restoration verbs", "route": "SBLGNT/MorphGNT edition boundary; no manuscript-unanimity claim"},
+    "5:12": {"candidateId": "w3q_075", "unit": "στῆτε / ἑστήκατε", "route": "explicit ECM-based published treatment; not direct dECM readback"}
+  },
+  "defaults": {
+    "owner_lane": "chapter5-production",
+    "inspection_depth": "claim_sources_checked",
+    "authoring_disposition": "ADMIT_NORMAL_LEARNING",
+    "ranking_disposition": "HOLD_NO_COMPETITIVE_AUTHORITY"
+  },
+  "integrity": {
+    "candidateIdsUnique": true,
+    "everyCandidateMaterialized": true,
+    "historicalHoldArtifactsRemainAuditable": true,
+    "laterEffectiveAuthorityControlsDisposition": true
+  }
+}
