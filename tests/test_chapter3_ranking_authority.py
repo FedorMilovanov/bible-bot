@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import questions
+from questions.chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from questions.chapter3.ranking_audit import (
     CHAPTER3_RANKING_HOLD_REASONS,
     CHAPTER3_RANKING_READY_IDS,
@@ -30,7 +31,6 @@ def test_explicit_authority_matches_dynamic_audit_ready_set_exactly():
 def test_authorized_cards_have_exact_objective_metadata_and_sources():
     reviewed = {item["id"]: item for item in CHAPTER3_REVIEWED_QUESTIONS}
     assert set(CHAPTER3_RANKING_AUTHORITY) == set(CHAPTER3_RANKING_AUTHORIZED_IDS)
-
     for qid in CHAPTER3_RANKING_AUTHORIZED_IDS:
         item = reviewed[qid]
         authority = CHAPTER3_RANKING_AUTHORITY[qid]
@@ -60,7 +60,7 @@ def test_manifest_pins_same_twelve_ids_and_zero_holds():
     }
 
 
-def test_later_layer_consumes_exact_authority_and_keeps_challenge_closed():
+def test_later_layers_consume_exact_authority_for_battle_and_reviewed_challenge_taxonomy():
     authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
     chapter3_ids = _ids(questions.get_pool_by_key("chapter3"))
     unauthorized = chapter3_ids - authorized
@@ -69,12 +69,17 @@ def test_later_layer_consumes_exact_authority_and_keeps_challenge_closed():
     assert chapter3_ids & _ids(questions.BATTLE_POOL) == authorized
     assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
     assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
-    for key, pool in questions.CHALLENGE_POOLS.items():
-        assert authorized.isdisjoint(_ids(pool)), key
 
-    # The authority artifact is an immutable earlier checkpoint; it records that
-    # authority alone did not mutate pools. The stacked Battle-admission layer is
-    # the separate consumer of this exact list.
+    challenge_authorized = set()
+    for level, pool in questions.CHALLENGE_POOLS.items():
+        current = authorized & _ids(pool)
+        expected = set(CHAPTER3_CHALLENGE_TAXONOMY[level])
+        assert current == expected, level
+        challenge_authorized |= current
+    assert challenge_authorized == authorized
+    assert chapter3_ids.isdisjoint(_ids(questions.CHALLENGE_FALLBACK_POOL))
+
+    # Authority manifest remains the immutable pre-gameplay checkpoint.
     assert MANIFEST["gameplay_admission"] is False
     assert MANIFEST["competitive_pool_mutated"] is False
     assert MANIFEST["battle_pool_mutated"] is False
