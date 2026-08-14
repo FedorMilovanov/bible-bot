@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "status": "CHALLENGE_TAXONOMY_REVIEWED_NOT_ADMITTED",
+  "parent_battle_head": "6f7fbc5de2e7fbfc7d54b6c844234636dbc03a49",
+  "authorized_count": 12,
+  "taxonomy": {
+    "easy": [
+      "ch3_text_101",
+      "ch3_text_102",
+      "ch3_text_106",
+      "ch3_text_108",
+      "ch3_text_109",
+      "ch3_text_111"
+    ],
+    "medium": [
+      "ch3_text_103",
+      "ch3_text_104",
+      "ch3_text_105",
+      "ch3_text_107",
+      "ch3_text_110",
+      "ch3_text_112"
+    ],
+    "hard": []
+  },
+  "counts": {
+    "easy": 6,
+    "medium": 6,
+    "hard": 0
+  },
+  "hard_empty_by_design": true,
+  "hard_empty_reason": "The current authorized Chapter 3 set is direct-text only; no card requires the multi-source or disputed reasoning expected of the hard Challenge tier.",
+  "answer_position_policy": "EACH_NONEMPTY_BUCKET_MAX_MINUS_MIN_COUNT_LE_1",
+  "taxonomy_covers_authority_exactly": true,
+  "challenge_pools_mutated": false,
+  "challenge_fallback_mutated": false,
+  "automatic_admission": false,
+  "next_gate": "exact-head CI/Security/CodeQL, then separate explicit Challenge admission"
+}
