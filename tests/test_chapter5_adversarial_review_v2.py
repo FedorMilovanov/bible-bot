@@ -37,5 +37,10 @@ def test_materialized_prototype_audit_matches_runtime_contract():
     for prototype_id, runtime in PROTOTYPE_AUDIT_RECORDS.items():
         materialized = records[prototype_id]
         assert materialized["candidateId"] == runtime["candidate_id"]
-        assert materialized["productDisposition"] == runtime["product_disposition"]
+        expected_product = (
+            "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
+            if runtime["product_rewrite_requirement"] == "INDEPENDENT_PRODUCT_REWRITE_REQUIRED"
+            else "PRODUCT_CARD_REVIEWED_INDEPENDENTLY"
+        )
+        assert materialized["productDisposition"] == expected_product
         assert materialized["disposition"] == runtime["prototype_disposition"]
