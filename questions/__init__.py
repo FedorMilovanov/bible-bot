@@ -20,6 +20,7 @@ from .chapter1 import (
     practical_v17_25_questions as _raw_practical_p2,
 )
 from .chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
+from .chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from .chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
 from .content_truth_review import apply_review_overrides
@@ -56,7 +57,7 @@ intro_part2_questions = _canonical(_raw_intro2, "intro2")
 intro_part3_questions = _canonical(_raw_intro3, "intro3")
 
 # Chapters 2 and 3 cross the product boundary only through reviewed aggregates.
-# Both are intentionally normal-learning pools, not ranking/Challenge/PvP pools.
+# Their normal-learning pools remain non-scoring through questions.pool_policy.
 chapter2_questions = list(CHAPTER2_REVIEWED_QUESTIONS)
 chapter3_questions = list(CHAPTER3_REVIEWED_QUESTIONS)
 
@@ -120,7 +121,7 @@ all_chapter1_questions = _dedupe_pool(_CHAPTER1_LEAF_KEYS)
 
 # random_all remains the legacy Chapter-1/context learning pool. Chapters 2 and
 # 3 are admitted separately so normal-learning exposure cannot silently enlarge
-# Challenge 20 or other legacy random/ranking behavior.
+# Challenge 20 or other legacy random behavior.
 _RANDOM_ALL_LEAF_KEYS = _CHAPTER1_LEAF_KEYS + ["intro1", "intro2", "intro3"]
 _POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
 
@@ -135,7 +136,7 @@ _COMPETITIVE_LEAF_KEYS = [
 ]
 
 
-def _build_competitive_pool() -> list[dict]:
+def _build_chapter1_competitive_pool() -> list[dict]:
     return [
         question
         for question in _dedupe_pool(_COMPETITIVE_LEAF_KEYS)
@@ -143,7 +144,33 @@ def _build_competitive_pool() -> list[dict]:
     ]
 
 
-COMPETITIVE_POOL = _build_competitive_pool()
+def _build_chapter3_authorized_competitive_pool() -> list[dict]:
+    """Resolve the explicit Chapter-3 authority against reviewed product cards."""
+    result = [
+        question
+        for question in chapter3_questions
+        if str(question.get("id") or "").strip() in CHAPTER3_RANKING_AUTHORIZED_IDS
+    ]
+    resolved_ids = {str(question.get("id") or "").strip() for question in result}
+    if resolved_ids != set(CHAPTER3_RANKING_AUTHORIZED_IDS):
+        missing = sorted(set(CHAPTER3_RANKING_AUTHORIZED_IDS) - resolved_ids)
+        extra = sorted(resolved_ids - set(CHAPTER3_RANKING_AUTHORIZED_IDS))
+        raise ValueError(
+            "Chapter 3 ranking authority does not resolve exactly against reviewed bank: "
+            f"missing={missing}, extra={extra}"
+        )
+    if any(not ranking_eligible(question) for question in result):
+        invalid = [question["id"] for question in result if not ranking_eligible(question)]
+        raise ValueError(f"Authorized Chapter 3 cards fail structural ranking policy: {invalid}")
+    return result
+
+
+# Challenge has an independent Chapter-1 taxonomy (easy/medium/hard). Preserve
+# that authority as a dedicated fallback source before extending the general
+# competitive/Battle surface with Chapter 3.
+CHAPTER1_COMPETITIVE_POOL = _build_chapter1_competitive_pool()
+CHAPTER3_AUTHORIZED_COMPETITIVE_POOL = _build_chapter3_authorized_competitive_pool()
+COMPETITIVE_POOL = CHAPTER1_COMPETITIVE_POOL + CHAPTER3_AUTHORIZED_COMPETITIVE_POOL
 _POOLS["competitive_all"] = COMPETITIVE_POOL
 POOL_REGISTRY = _POOLS
 
@@ -154,6 +181,8 @@ NON_COMPETITIVE_IDS = frozenset(
     if not ranking_eligible(question)
 )
 
+# Legacy PvP imports BATTLE_POOL directly. Only the explicitly authorized twelve
+# Chapter-3 cards join this surface; the other 153 Chapter-3 cards remain out.
 BATTLE_POOL = COMPETITIVE_POOL
 
 CHALLENGE_POOLS: dict[str, list[dict]] = {
@@ -162,6 +191,10 @@ CHALLENGE_POOLS: dict[str, list[dict]] = {
     "hard": [question for question in _POOLS["hard"] if ranking_eligible(question)],
 }
 
+# Challenge fallback must remain Chapter-1-only until Chapter 3 has an explicit
+# easy/medium/hard taxonomy. Never fall back to the enlarged COMPETITIVE_POOL.
+CHALLENGE_FALLBACK_POOL = CHAPTER1_COMPETITIVE_POOL
+
 _CHALLENGE_DISTRIBUTION = {
     "random20": (("easy", 6), ("medium", 6), ("hard", 8)),
     "hardcore20": (("easy", 4), ("medium", 4), ("hard", 12)),
@@ -169,7 +202,7 @@ _CHALLENGE_DISTRIBUTION = {
 
 
 def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list[dict]:
-    """Return exactly 20 unique ranking-eligible canonical questions."""
+    """Return exactly 20 unique Chapter-1-taxonomized ranking questions."""
     distribution = _CHALLENGE_DISTRIBUTION.get(mode)
     if distribution is None:
         raise ValueError(f"Неизвестный competitive Challenge mode: {mode!r}")
@@ -195,13 +228,13 @@ def pick_competitive_challenge_questions(mode: str, *, rng=None) -> list[dict]:
     if len(selected) < 20:
         remainder = [
             question
-            for question in COMPETITIVE_POOL
+            for question in CHALLENGE_FALLBACK_POOL
             if str(question.get("id") or "").strip() not in seen
         ]
         needed = 20 - len(selected)
         if len(remainder) < needed:
             raise ValueError(
-                "Competitive question bank contains fewer than 20 unique questions"
+                "Challenge-authorized question bank contains fewer than 20 unique questions"
             )
         for question in source.sample(remainder, needed):
             qid = str(question.get("id") or "").strip()
@@ -252,9 +285,12 @@ __all__ = [
     "RANKING_QUARANTINE_IDS",
     "SOURCE_REVIEWED_RANKING_IDS",
     "NON_COMPETITIVE_IDS",
+    "CHAPTER1_COMPETITIVE_POOL",
+    "CHAPTER3_AUTHORIZED_COMPETITIVE_POOL",
     "COMPETITIVE_POOL",
     "BATTLE_POOL",
     "CHALLENGE_POOLS",
+    "CHALLENGE_FALLBACK_POOL",
     "pick_competitive_challenge_questions",
     "get_pool_by_key",
 ]
