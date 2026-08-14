@@ -6,6 +6,7 @@ from questions.chapter3 import (
     CHAPTER3_DOMAIN_POOLS,
     CHAPTER3_STAGING_QUESTIONS,
 )
+from questions.chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from questions.chapter3.reviewed import (
     CHAPTER3_RANKING_CANDIDATE_IDS,
     CHAPTER3_REVIEWED_LANE_BY_ID,
@@ -26,7 +27,6 @@ def _ids(items):
 def test_reviewed_bank_is_complete_unique_and_object_isolated():
     staging_ids = [item["id"] for item in CHAPTER3_STAGING_QUESTIONS]
     reviewed_ids = [item["id"] for item in CHAPTER3_REVIEWED_QUESTIONS]
-
     assert len(staging_ids) == len(set(staging_ids)) == 165
     assert len(reviewed_ids) == len(set(reviewed_ids)) == 165
     assert reviewed_ids == staging_ids
@@ -34,7 +34,6 @@ def test_reviewed_bank_is_complete_unique_and_object_isolated():
     assert MANIFEST["staging_count"] == 165
     assert MANIFEST["reviewed_count"] == 165
     assert MANIFEST["review_quarantine_ids"] == []
-
     staging_by_id = {item["id"]: item for item in CHAPTER3_STAGING_QUESTIONS}
     for item in CHAPTER3_REVIEWED_QUESTIONS:
         assert item is not staging_by_id[item["id"]]
@@ -53,7 +52,6 @@ def test_reviewed_schema_and_epistemic_boundaries_hold():
         assert item["confidence"] in {"high", "medium", "contested"}
         assert item["position"] in {"neutral", "project"}
         assert isinstance(item["competitive"], bool)
-
         if item["position"] == "project":
             assert item["question"].startswith("[Позиция курса]")
             assert item["competitive"] is False
@@ -66,7 +64,6 @@ def test_reviewed_schema_and_epistemic_boundaries_hold():
 def test_reviewed_sources_resolve_without_cross_lane_depth_promotion():
     root_ids = set(SOURCE_CATALOG)
     assert len(CHAPTER3_REVIEWED_LANE_BY_ID) == 165
-
     for item in CHAPTER3_REVIEWED_QUESTIONS:
         assert item["sources"], item["id"]
         lane_local = reviewed_source_ids(item)
@@ -77,7 +74,6 @@ def test_reviewed_sources_resolve_without_cross_lane_depth_promotion():
 def test_domain_coverage_matrix_is_explicit_and_nonempty():
     required = MANIFEST["coverage_required"]
     assert set(required) == set(CHAPTER3_DOMAIN_POOLS)
-
     for lane, required_domains in required.items():
         domains = CHAPTER3_DOMAIN_POOLS[lane]
         assert list(domains) == required_domains
@@ -85,42 +81,43 @@ def test_domain_coverage_matrix_is_explicit_and_nonempty():
             assert domains[domain], (lane, domain)
 
 
-def test_objective_ranking_candidates_are_internal_only():
+def test_objective_ranking_candidates_match_later_explicit_authority():
     reviewed_by_id = {item["id"]: item for item in CHAPTER3_REVIEWED_QUESTIONS}
-    assert CHAPTER3_RANKING_CANDIDATE_IDS
-
+    assert CHAPTER3_RANKING_CANDIDATE_IDS == CHAPTER3_RANKING_AUTHORIZED_IDS
     for qid in CHAPTER3_RANKING_CANDIDATE_IDS:
         item = reviewed_by_id[qid]
         assert item["competitive"] is True
         assert item["position"] == "neutral"
-        assert item["confidence"] != "contested"
-        assert item["claim_type"] not in {"greek", "history", "application"}
-
+        assert item["confidence"] == "high"
+        assert item["claim_type"] == "text"
     root_ranked_ids = _ids(questions.COMPETITIVE_POOL)
-    assert CHAPTER3_RANKING_CANDIDATE_IDS.isdisjoint(root_ranked_ids)
-    assert CHAPTER3_RANKING_CANDIDATE_IDS.isdisjoint(_ids(questions.BATTLE_POOL))
+    assert CHAPTER3_RANKING_CANDIDATE_IDS <= root_ranked_ids
+    assert CHAPTER3_RANKING_CANDIDATE_IDS <= _ids(questions.BATTLE_POOL)
     for pool in questions.CHALLENGE_POOLS.values():
         assert CHAPTER3_RANKING_CANDIDATE_IDS.isdisjoint(_ids(pool))
 
 
-def test_root_product_registry_is_exactly_the_reviewed_bank():
+def test_root_product_registry_is_exactly_the_reviewed_bank_and_only_authority_is_ranked():
     root_pool = questions.get_pool_by_key("chapter3")
     reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
+    authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
+    unauthorized = reviewed_ids - authorized
     assert _ids(root_pool) == reviewed_ids
     assert len(root_pool) == len(CHAPTER3_REVIEWED_QUESTIONS) == 165
-
     reviewed_by_id = {item["id"]: item for item in CHAPTER3_REVIEWED_QUESTIONS}
     for item in root_pool:
         assert item is reviewed_by_id[item["id"]]
 
-    # The reviewed manifest remains an immutable historical checkpoint: it did
-    # not authorize product/ranking by itself; the stacked product PR does.
+    # Reviewed manifest remains the immutable earlier checkpoint. Later stacked
+    # layers separately authorized normal learning, source audit and Battle.
     assert MANIFEST["product_wiring"] is False
     assert MANIFEST["normal_learning_authorized"] is False
     assert MANIFEST["ranking_authorized"] is False
 
-    assert reviewed_ids.isdisjoint(_ids(questions.COMPETITIVE_POOL))
-    assert reviewed_ids.isdisjoint(_ids(questions.BATTLE_POOL))
+    assert reviewed_ids & _ids(questions.COMPETITIVE_POOL) == authorized
+    assert reviewed_ids & _ids(questions.BATTLE_POOL) == authorized
+    assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
+    assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
     assert reviewed_ids.isdisjoint(_ids(questions.get_pool_by_key("random_all")))
     for pool in questions.CHALLENGE_POOLS.values():
         assert reviewed_ids.isdisjoint(_ids(pool))
