@@ -1,0 +1,59 @@
+name: 1 Peter Chapter 1-5 release integrity
+
+on:
+  push:
+    branches:
+      - release/1peter-ch1-5
+      - main
+  pull_request:
+    paths:
+      - 'questions/**'
+      - 'web_api/**'
+      - 'handlers/**'
+      - 'course_catalog.py'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'data/**'
+      - 'docs/**'
+      - '.github/workflows/1peter-release-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-integrity:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout product release
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout pinned immutable Research release
+        uses: actions/checkout@v4
+        with:
+          repository: FedorMilovanov/Research
+          ref: 8d6e5bc3f303d0a6a2d1a15969e042907f3387db
+          path: .release-research
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reconstruct and verify immutable Research handoff
+        run: |
+          rm -rf /tmp/1peter-research-handoff
+          python scripts/reconstruct_research_handoff_release.py \
+            --research-root .release-research \
+            --output-dir /tmp/1peter-research-handoff
+
+      - name: Upload verified handoff for release audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-research-handoff
+          path: /tmp/1peter-research-handoff
+          if-no-files-found: error
+          retention-days: 1
