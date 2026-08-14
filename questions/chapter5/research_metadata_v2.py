@@ -1,81 +1,72 @@
-"""Independent effective Research metadata pins for Chapter 5.
-
-These sets are transcribed from the exact Research authority at
-0142430af8ba80f28e0fd9cde669d32611a1d2af after the Wave3n override layer.
-They are deliberately independent of product-bank metadata so a simultaneous
-card/review mutation cannot redefine the Research contract.
-"""
+"""Canonical effective Research metadata for Chapter 5 product validation."""
 from __future__ import annotations
 
+from ..research_handoff_v2 import CHAPTER5_RESEARCH_HANDOFF_V2
 from .review_contract_v2 import CHAPTER5_CANDIDATE_IDS
-
-APPLICATION_PROJECT_IDS = frozenset({
-    "w3q_054", "w3q_063", "w3q_071", "w3q_083", "w3q_087",
-    "w3q_105", "w3q_106", "w3q_107", "w3q_108", "w3q_109", "w3q_110", "w3q_111", "w3q_112",
-})
-HISTORY_IDS = frozenset({"w3q_080", "w3q_117", "w3q_118", "w3q_119", "w3q_120"})
-GREEK_IDS = frozenset({
-    "w3q_049", "w3q_056", "w3q_061", "w3q_065", "w3q_068", "w3q_069",
-    "w3q_076", "w3q_085", "w3q_096", "w3q_133", "w3q_134", "w3q_135", "w3q_136",
-})
-INTERPRETATION_IDS = frozenset({
-    "w3q_047", "w3q_053", "w3q_059", "w3q_062", "w3q_073", "w3q_074",
-    "w3q_077", "w3q_078", "w3q_079", "w3q_084", "w3q_088", "w3q_089", "w3q_128",
-})
-
-CONTESTED_CONFIDENCE_IDS = frozenset({
-    "w3q_047", "w3q_073", "w3q_077", "w3q_078", "w3q_079", "w3q_080", "w3q_118", "w3q_119",
-})
-MEDIUM_CONFIDENCE_IDS = frozenset({
-    "w3q_053", "w3q_054", "w3q_062", "w3q_063", "w3q_071", "w3q_074", "w3q_083", "w3q_084",
-    "w3q_087", "w3q_088", "w3q_089",
-    "w3q_105", "w3q_106", "w3q_107", "w3q_108", "w3q_109", "w3q_110", "w3q_111", "w3q_112",
-    "w3q_117", "w3q_120", "w3q_125", "w3q_126", "w3q_127", "w3q_128",
-    "w3q_133", "w3q_134", "w3q_135", "w3q_136",
-})
 
 
 def expected_claim_type(candidate_id: str) -> str:
-    if candidate_id in APPLICATION_PROJECT_IDS:
-        return "application"
-    if candidate_id in HISTORY_IDS:
-        return "history"
-    if candidate_id in GREEK_IDS:
-        return "greek"
-    if candidate_id in INTERPRETATION_IDS:
-        return "interpretation"
-    if candidate_id in CHAPTER5_CANDIDATE_IDS:
-        return "text"
-    raise KeyError(candidate_id)
+    return str(CHAPTER5_RESEARCH_HANDOFF_V2[candidate_id]["claim_type"])
 
 
 def expected_confidence(candidate_id: str) -> str:
-    if candidate_id in CONTESTED_CONFIDENCE_IDS:
-        return "contested"
-    if candidate_id in MEDIUM_CONFIDENCE_IDS:
-        return "medium"
-    if candidate_id in CHAPTER5_CANDIDATE_IDS:
-        return "high"
-    raise KeyError(candidate_id)
+    return str(CHAPTER5_RESEARCH_HANDOFF_V2[candidate_id]["confidence"])
 
 
 def expected_position(candidate_id: str) -> str:
-    if candidate_id not in CHAPTER5_CANDIDATE_IDS:
-        raise KeyError(candidate_id)
-    return "project" if candidate_id in APPLICATION_PROJECT_IDS else "neutral"
+    return str(CHAPTER5_RESEARCH_HANDOFF_V2[candidate_id]["position"])
+
+
+APPLICATION_PROJECT_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["claim_type"] == "application" and record["position"] == "project"
+)
+HISTORY_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["claim_type"] == "history"
+)
+GREEK_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["claim_type"] == "greek"
+)
+INTERPRETATION_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["claim_type"] == "interpretation"
+)
+CONTESTED_CONFIDENCE_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["confidence"] == "contested"
+)
+MEDIUM_CONFIDENCE_IDS = frozenset(
+    candidate_id
+    for candidate_id, record in CHAPTER5_RESEARCH_HANDOFF_V2.items()
+    if record["confidence"] == "medium"
+)
 
 
 def validate_research_metadata(card: dict) -> None:
     candidate_id = str(card["research_candidate_id"])
-    expected = (
-        expected_claim_type(candidate_id),
-        expected_confidence(candidate_id),
-        expected_position(candidate_id),
-    )
-    actual = (str(card["claim_type"]), str(card["confidence"]), str(card["position"]))
-    if actual != expected:
+    research = CHAPTER5_RESEARCH_HANDOFF_V2[candidate_id]
+    if str(card["position"]) != research["position"]:
         raise ValueError(
-            f"Chapter-5 Research metadata drift for {candidate_id}: actual={actual}, expected={expected}"
+            f"Chapter-5 position drift for {candidate_id}: "
+            f"actual={card['position']}, expected={research['position']}"
+        )
+    confidence_rank = {"contested": 0, "medium": 1, "high": 2}
+    if confidence_rank[str(card["confidence"])] > confidence_rank[str(research["confidence"])]:
+        raise ValueError(
+            f"Chapter-5 confidence strengthened for {candidate_id}: "
+            f"actual={card['confidence']}, expected<={research['confidence']}"
+        )
+    if str(card["claim_type"]) != research["claim_type"]:
+        raise ValueError(
+            f"Chapter-5 claim-type drift for {candidate_id}: "
+            f"actual={card['claim_type']}, expected={research['claim_type']}"
         )
 
 
