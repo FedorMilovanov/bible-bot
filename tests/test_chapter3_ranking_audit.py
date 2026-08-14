@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import questions
+from questions.chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from questions.chapter3.ranking_audit import (
     CHAPTER3_RANKING_AUDIT,
     CHAPTER3_RANKING_HOLD_REASONS,
@@ -59,15 +60,11 @@ def test_source_status_vocabularies_do_not_overlap():
 def test_historical_audit_ready_set_is_exactly_the_later_explicit_authority():
     assert CHAPTER3_RANKING_READY_IDS == CHAPTER3_RANKING_AUTHORIZED_IDS
     assert not CHAPTER3_RANKING_HOLD_REASONS
-
-    # The audit manifest is an immutable earlier checkpoint; it did not itself
-    # mutate gameplay. The later Battle-admission layer consumes only its explicit
-    # authority successor, never the dynamic audit set directly.
     assert MANIFEST["ranking_pool_mutated"] is False
     assert MANIFEST["automatic_admission"] is False
 
 
-def test_current_gameplay_consumes_authority_but_not_unreviewed_candidates():
+def test_current_gameplay_consumes_authority_and_reviewed_challenge_taxonomy_only():
     authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
     all_candidates = set(CHAPTER3_RANKING_CANDIDATE_IDS)
     unauthorized = all_candidates - authorized
@@ -76,8 +73,14 @@ def test_current_gameplay_consumes_authority_but_not_unreviewed_candidates():
     assert authorized <= _ids(questions.BATTLE_POOL)
     assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
     assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
-    for key, pool in questions.CHALLENGE_POOLS.items():
-        assert all_candidates.isdisjoint(_ids(pool)), key
+
+    challenge_authorized = set()
+    for level, pool in questions.CHALLENGE_POOLS.items():
+        current = all_candidates & _ids(pool)
+        expected = set(CHAPTER3_CHALLENGE_TAXONOMY[level])
+        assert current == expected, level
+        challenge_authorized |= current
+    assert challenge_authorized == authorized
 
 
 def test_normal_learning_bank_is_unchanged_by_ranking_lifecycle():
