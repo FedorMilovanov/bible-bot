@@ -22,7 +22,14 @@ from .db_hardening import OPEN_STATUSES
 
 logger = logging.getLogger(__name__)
 _CLIENT_POLICY_FIELDS = frozenset(
-    {"ranked", "scoring_mode", "points_per_question", "score_multiplier"}
+    {
+        "pool",
+        "ranked",
+        "scoring_mode",
+        "points_per_question",
+        "multiplier",
+        "score_multiplier",
+    }
 )
 
 
