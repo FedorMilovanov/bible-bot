@@ -10,6 +10,7 @@ from questions.chapter3 import (
     CHAPTER3_SOURCE_CATALOGS,
     CHAPTER3_STAGING_QUESTIONS,
 )
+from questions.chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "data" / "chapter3-integration-manifest.json"
 MANIFEST = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -95,9 +96,6 @@ def test_lane_source_resolution_is_namespaced_and_never_cross_upgrades_metadata(
     catalogs = list(CHAPTER3_SOURCE_CATALOGS.values())
     assert len({id(catalog) for catalog in catalogs}) == len(catalogs)
 
-    # Some lanes intentionally reuse work IDs while encoding inspection depth
-    # with different lane-local schemas. Their records must stay distinct;
-    # a shallower record may never inherit a stronger neighbor's metadata.
     for source_id in ("sblgnt", "morphgnt_1peter"):
         holders = [catalog[source_id] for catalog in catalogs if source_id in catalog]
         assert len(holders) >= 2
@@ -106,22 +104,27 @@ def test_lane_source_resolution_is_namespaced_and_never_cross_upgrades_metadata(
     assert MANIFEST["source_resolution_policy"] == "LANE_NAMESPACED_NO_CROSS_LANE_METADATA_UPGRADE"
 
 
-def test_root_production_registry_and_all_competitive_surfaces_exclude_chapter3():
+def test_product_registry_uses_reviewed_copy_while_ranking_surfaces_exclude_chapter3():
     staging_ids = _ids(CHAPTER3_STAGING_QUESTIONS)
+    reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
+    root_pool = questions.get_pool_by_key("chapter3")
+    root_ids = _ids(root_pool)
 
-    assert "chapter3" not in questions.POOL_REGISTRY
+    assert root_ids == reviewed_ids == staging_ids
     assert not any(key.startswith("ch3_") for key in questions.POOL_REGISTRY)
 
-    for key, pool in questions.POOL_REGISTRY.items():
-        assert staging_ids.isdisjoint(_ids(pool)), key
+    staging_by_id = {item["id"]: item for item in CHAPTER3_STAGING_QUESTIONS}
+    for item in root_pool:
+        assert item is not staging_by_id[item["id"]]
 
     assert staging_ids.isdisjoint(_ids(questions.COMPETITIVE_POOL))
     assert staging_ids.isdisjoint(_ids(questions.BATTLE_POOL))
+    assert staging_ids.isdisjoint(_ids(questions.get_pool_by_key("random_all")))
     for key, pool in questions.CHALLENGE_POOLS.items():
         assert staging_ids.isdisjoint(_ids(pool)), key
 
 
-def test_competitive_metadata_is_candidate_only_until_explicit_root_admission():
+def test_competitive_metadata_is_candidate_only_until_explicit_ranking_admission():
     candidates = [item for item in CHAPTER3_STAGING_QUESTIONS if item["competitive"] is True]
     assert candidates
     for item in candidates:
@@ -166,7 +169,7 @@ def test_owner_project_decisions_preserve_dispute_and_noncompetitive_boundary():
     assert baptism["denominational_mechanism_forced"] is False
 
 
-def test_staging_does_not_claim_chapter_completion_or_publication():
+def test_staging_manifest_remains_historical_integration_checkpoint():
     assert MANIFEST["status"] == "STAGING_INTEGRATED_NOT_PRODUCTION"
     assert MANIFEST["chapter_complete_claimed"] is False
     assert MANIFEST["competitive_metadata_policy"] == "PRESERVE_AUDITED_CANDIDATE_FLAGS_WITHOUT_ROOT_ADMISSION"
