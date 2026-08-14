@@ -1,57 +1,71 @@
-# 1 Peter 3:8-12 research notes — Agent B lane
+# 1 Peter 3:8–12 research notes — Agent B lane
 
-## Scope and evidence status
+## Scope and second-pass status
 
-This note is bounded to 1 Peter 3:8-12 and the allowed lane files. It applies the repository's fail-closed evidence method: a verified source supports only the claim actually checked; it does not imply broad closure of Greek semantics, intertext, theology, or application. All new questions remain `competitive=False`, and no shared registry/integration file is changed.
+This note is bounded to the isolated Agent B lane for 1 Peter 3:8–12. The second pass hardens editorial quality, intertext terminology, source-inspection boundaries, and regression tests. It does **not** integrate a shared registry, chapter aggregate, runtime, UI, or publication path. All 37 lane questions remain `competitive=False`.
+
+The evidence rule remains fail-closed: a URL or bibliographic match does not prove a claim, an abstract does not equal full-text inspection, and a broader scholarly proposal does not become a neutral textual fact merely because it is useful.
 
 ## Greek surface and morphology
 
-Surface text is controlled by SBLGNT; morphology by MorphGNT's SBLGNT 1 Peter file.
+Surface text is controlled by SBLGNT; morphology by MorphGNT's SBLGNT 1 Peter data.
 
-- 3:8: `ὁμόφρονες`, `συμπαθεῖς`, `φιλάδελφοι`, `εὔσπλαγχνοι`, `ταπεινόφρονες` are all tagged `A- ----NPM-`.
+- 3:8: `ὁμόφρονες`, `συμπαθεῖς`, `φιλάδελφοι`, `εὔσπλαγχνοι`, `ταπεινόφρονες` are tagged `A- ----NPM-`.
 - 3:9: `ἀποδιδόντες` and `εὐλογοῦντες` are `V- -PAPNPM-`; `ἐκλήθητε` is `V- 2API-P--`; `κληρονομήσητε` is `V- 2AAS-P--`.
-- 3:10-11: `παυσάτω`, `ἐκκλινάτω`, `ποιησάτω`, `ζητησάτω`, `διωξάτω` are `V- 3AAD-S--`.
+- 3:10–11: `παυσάτω`, `ἐκκλινάτω`, `ποιησάτω`, `ζητησάτω`, `διωξάτω` are `V- 3AAD-S--`.
 
-Lexical controls:
+Lexical controls are kept separate from morphology. `ὁμόφρων` supports concord/like-mindedness rather than identity on every opinion; `συμπαθής` shared feeling/sympathy; `φιλάδελφος` sibling love; `εὔσπλαγχνος` compassion/tender-heartedness; and `ταπεινόφρων` requires contextual control because older negative and biblical humble senses are both attested. Morphological identity never settles lexical identity.
 
-- `ὁμόφρων`: LSJ gives “like-minded, harmonious” and “agreeing, united”; this supports communal concord, not total identity of opinion.
-- `συμπαθής`: lexical evidence centers on shared feeling/sympathy/compassion.
-- `φιλάδελφος`: love of brother/sister, naturally extended in 1 Peter to the Christian sibling community.
-- `εὔσπλαγχνος`: NT lexical control gives compassionate/tender-hearted. Avoid an etymological fallacy from the literal history of `σπλάγχνα`.
-- `ταπεινόφρων`: LSJ records both an older negative use and a biblical “lowly in mind, humble” use, explicitly including 1 Pet 3:8. Context therefore controls the relevant sense.
+## `εἰς τοῦτο ἐκλήθητε` — HOLD as contested syntax
 
-## `εἰς τοῦτο ἐκλήθητε` — fail-closed syntax status
+Morphology is secure, but the attachment of `εἰς τοῦτο` is not reducible to the tag on `ἐκλήθητε`. The full Christensen article explicitly treats both a backward connection to the preceding conduct/blessing and a forward connection to the following `ἵνα` clause as readings with exegetical merit. Cambridge Greek Testament and Meyer likewise preserve the dispute. The lane therefore keeps `ch3_disp_201` at `confidence="contested"` rather than manufacturing certainty.
 
-Morphology is certain; the direction of `εἰς τοῦτο` is not reducible to morphology. Historical exegetical controls preserve a real disagreement: one reading takes `εἰς τοῦτο` backward with the preceding blessing of others; another takes it forward with the `ἵνα` clause and the inheritance of blessing. Cambridge Greek Testament and Meyer both discuss the issue (while preferring the forward connection). The lane therefore teaches the dispute as `contested` rather than converting one reading into a neutral lexical fact.
+## Psalm 33 LXX / Psalm 34 MT-common-English terminology
 
-## Psalm 33 LXX / Psalm 34 MT-English
+The second pass adopts this formula consistently:
 
-Primary LXX control is Rahlfs-Hanhart as served by Deutsche Bibelgesellschaft. The sustained source is LXX Psalm 33:13-17, corresponding to Psalm 34:12-16 in common MT/English numbering.
+**1 Peter 3:10–12 = sustained quotation/adaptation of Psalm 33:13–17 LXX (Psalm 34:12–16 MT/common English numbering).**
 
-Observable differences checked directly against SBLGNT:
+It is deliberately **not** described as mechanically verbatim. Direct comparison preserves four observable adaptations/boundaries:
 
-1. LXX 33:13 opens as a question (`τίς ἐστιν ἄνθρωπος...`) with `ἀγαπῶν`; 1 Pet 3:10 has `ὁ γὰρ θέλων... ἀγαπᾶν...`.
-2. LXX 33:14-15 uses second-person singular imperatives (`παῦσον`, `ἔκκλινον`, `ποίησον`, `ζήτησον`, `δίωξον`); 1 Peter adapts them to third-person singular imperatives (`παυσάτω`, `ἐκκλινάτω`, `ποιησάτω`, `ζητησάτω`, `διωξάτω`).
-3. LXX has the possessives `γλῶσσάν σου` / `χείλη σου`; 1 Pet 3:10 omits the possessive pronouns.
-4. 1 Pet 3:12 reproduces the beginning of LXX 33:17 (`πρόσωπον ... κυρίου ἐπὶ ποιοῦντας κακά`) but stops before `τοῦ ἐξολεθρεῦσαι ἐκ γῆς τὸ μνημόσυνον αὐτῶν`.
+1. LXX 33:13 opens as a question (`τίς ἐστιν ἄνθρωπος...`) with `ἀγαπῶν`; 1 Pet 3:10 reshapes it as `ὁ γὰρ θέλων... ἀγαπᾶν...`.
+2. LXX 33:14–15 uses second-person singular imperatives (`παῦσον`, `ἔκκλινον`, `ποίησον`, `ζήτησον`, `δίωξον`); 1 Peter uses third-person singular imperatives (`παυσάτω`, `ἐκκλινάτω`, `ποιησάτω`, `ζητησάτω`, `διωξάτω`).
+3. LXX has `γλῶσσάν σου` and `χείλη σου`; 1 Pet 3:10 omits the possessive `σου` in both places.
+4. 1 Pet 3:12 stops after the clause about the Lord's face against evildoers and does not reproduce the final LXX purpose clause `τοῦ ἐξολεθρεῦσαι ἐκ γῆς τὸ μνημόσυνον αὐτῶν`.
 
-The omission in (4) is an exact textual observation. This lane does **not** claim a motive for the omission; proposed motives remain interpretation and were not promoted to a question.
+The omission in (4) is a textual observation. **No authorial motive for the omission is asserted by this lane.** Green and Christensen discuss possible motives; that discussion is not promoted to a closed question.
 
-## Function of Psalm 34 in the argument
+## Function of Psalm 34: textual fact vs scholarly interpretation
 
-The quotation is not treated as isolated proof-text trivia. Green studies 1 Peter's OT use as Christian ethical instruction; Gréaux argues that Psalm 34 shares the epistle's suffering/deliverance horizon; Christensen develops Psalm 34's unifying role in the letter. Within 3:8-12 itself, `γάρ` in 3:10 introduces support for the preceding exhortation: the psalm specifies speech restraint, turning from evil, doing good, seeking peace, and trust in the Lord who attends to the righteous and opposes evildoing.
+Two levels are kept distinct.
 
-This does **not** mean 3:12 promises immunity from suffering. 1 Pet 3:14 immediately allows suffering for righteousness, and the Psalm-34 scholarship explicitly reads suffering and divine deliverance/attention together.
+**Local text/discourse fact:** `γάρ` in `ὁ γὰρ θέλων` connects the quotation to the preceding exhortation as support/ground. `ch3_ot_208` is therefore a local `text` item with high confidence.
 
-## Theological and pastoral boundary
+**Broader scholarly interpretation:** Green, Gréaux, and Christensen discuss the Psalm's ethical/paraenetic role and its relation to suffering and deliverance/vindication. Claims that extend beyond the immediate connective work of `γάρ` remain `interpretation`; the broader-function item `ch3_ot_207` is `confidence="medium"`. The lane does not turn a proposed all-letter structural role for Psalm 34 into a neutral fact.
 
-Conservative synthesis uses at least two evangelical witnesses where practical (Sam Storms/TGC and John MacArthur/GTY). The project teaches non-retaliation as consonant with Christ's example in 2:23 and sees divine attention/judgment as a reason believers need not seize personal vengeance. These are interpretation/theology claims, not lexical definitions.
+## Source inspection level — second pass
 
-Pastoral scenarios are in `application_8_12.py`, marked `claim_type="application"`, `position="project"`, `competitive=False`. They do not redefine ancient wording or claim that every modern conflict has a single mechanically prescribed procedure.
+- **Green, Tyndale Bulletin 41.2 (1990), 276–289:** the official 14-page PDF was inspected, including his direct treatment of 1 Pet 3:10–12 and the three moral themes of speech restraint, doing good/turning from evil, and seeking peace. Green can therefore support these local ethical-function claims. His stronger proposals about wider Psalm-33 influence remain scholarly interpretation rather than textual fact.
+- **Gréaux, Review & Expositor 106.4 (2009), 603–613:** the publisher page confirms metadata but exposes only the abstract without subscription. Lane claims are limited to what that abstract explicitly states: the citation furthers exhortation, and the Psalm/letter share a suffering-and-deliverance horizon.
+- **Christensen, JETS 58.2 (2015), 335–352:** the official ETS full PDF was inspected. It directly compares 1 Pet 3:10–12 with LXX Ps 33:13–17, discusses the opening adaptation, person changes and loss of possessive pronouns, treats both `εἰς τοῦτο` attachments, and develops a broader paraenetic/solidarity proposal while also warning against overextending a strict structural blueprint for the entire letter.
 
-## Open questions intentionally not closed in this lane
+This inspection level is now encoded in `sources_8_12.py` so citation existence cannot silently masquerade as full-text closure.
 
-- The precise best syntactic attachment of `εἰς τοῦτο` in 3:9 remains contested; the lane records, rather than erases, the dispute.
-- The authorial motive for omitting the final purpose clause of LXX Ps 33:17 is not claimed.
-- Broader proposals that Psalm 34 structures all of 1 Peter remain scholarly interpretation; the lane uses them only as controlled support for the local function of 3:10-12.
-- No proposed thematic echo outside the verified Psalm 33/34 quotation is labelled an explicit quotation.
+## Editorial hardening
+
+All text, Greek, intertext, theology/disputed, and application questions were re-read. Distractors based on unrelated themes or obvious nonsense were replaced with nearby textual, grammatical, lexical, intertextual, or application confusions. Examples include:
+
+- virtue-list questions now substitute neighboring Christian virtues rather than unrelated social traits;
+- Greek lexical questions now confuse adjacent 3:8 terms or plausible overextensions instead of physical/ritual categories;
+- Psalm questions now contrast LXX/MT source confusions, person changes, omitted pronouns, and quotation boundaries rather than unrelated subject matter;
+- theology/application options now test overreading, narrowing, retaliation, silence, or prosperity/immunity conclusions rather than absurd claims.
+
+Regression tests enforce four unique non-empty normalized options, a valid answer index, metadata enums, source resolution, exact-question uniqueness, and a near-duplicate question threshold.
+
+## HOLDs intentionally preserved
+
+- `εἰς τοῦτο ἐκλήθητε`: exact best attachment remains contested.
+- Ps 33:17 LXX final purpose-clause omission: the omission is certain; its authorial motive is not claimed.
+- Gréaux: publisher abstract only; no claim beyond the abstract's stated scope is treated as full-text verified.
+- Broader Psalm-34 influence across all of 1 Peter: scholarly interpretation, not neutral textual fact; the lane keeps the broader-function item at medium confidence.
+- No additional thematic echo is promoted to explicit quotation without separate evidence.
