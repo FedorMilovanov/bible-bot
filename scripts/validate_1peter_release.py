@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import questions
 from course_catalog import SURFACE_MINIAPP, SURFACE_TELEGRAM, list_courses
@@ -72,12 +77,11 @@ def _assert_ch5_reviews() -> None:
         claim_id = str(card["research_candidate_id"])
         research = CHAPTER5_RESEARCH_HANDOFF_V2[claim_id]
         assert review["claim_digest"] == research["effective_claim_digest"]
-        assert tuple(review["claim_inspection_edge_ids"]) == tuple(
-            research["claim_inspection_edge_ids"][
-                tuple(research["source_ids"]).index(source_id)
-            ]
+        expected_edges = tuple(
+            research["claim_inspection_edge_ids"][tuple(research["source_ids"]).index(source_id)]
             for source_id in card["sources"]
         )
+        assert tuple(review["claim_inspection_edge_ids"]) == expected_edges
         assert set(card["sources"]).issubset(set(research["source_ids"]))
         assert card["position"] == research["position"]
         assert card["claim_type"] == research["claim_type"]
