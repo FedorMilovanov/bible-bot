@@ -90,3 +90,7 @@ These project conclusions remain explicitly `position="project"` and noncompetit
 8. Historical status: no universal legal/social profile is reconstructed for every wife in the audience.
 
 These are substantive HOLDs for later ranking/publication decisions. Second-pass hardening improves editorial quality and evidence control; it does not make these questions disappear.
+
+## Exact-head verification
+
+The second-pass content and editorial tests passed on `b6f36f2bee64fc56f7decd3c1b06d13225ac5dc4`, together with repository CI, Security Audit, and CodeQL Stacked PR. This records a verified stage closure for that SHA only; it is not a merge-readiness or publication-completeness claim.
