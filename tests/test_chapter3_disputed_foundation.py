@@ -1,6 +1,7 @@
 import questions
 from questions.chapter3.disputed_18_22 import DISPUTED_3_18_22
 from questions.chapter3.greek_18_22 import GREEK_3_18_22
+from questions.chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from questions.chapter3.sources import SOURCE_CATALOG as CHAPTER3_SOURCES
 
 
@@ -8,9 +9,17 @@ def _all_source_ids():
     return set(questions.SOURCE_CATALOG) | set(CHAPTER3_SOURCES)
 
 
-def test_chapter3_foundation_is_not_in_production_registry():
-    assert "chapter3" not in questions.POOL_REGISTRY
+def test_chapter3_foundation_crosses_product_only_through_reviewed_copy():
+    assert "chapter3" in questions.POOL_REGISTRY
     assert not any(key.startswith("ch3_") for key in questions.POOL_REGISTRY)
+
+    raw_items = GREEK_3_18_22 + DISPUTED_3_18_22
+    root_by_id = {item["id"]: item for item in questions.get_pool_by_key("chapter3")}
+    reviewed_ids = {item["id"] for item in CHAPTER3_REVIEWED_QUESTIONS}
+    assert set(root_by_id) == reviewed_ids
+    for raw in raw_items:
+        assert raw["id"] in root_by_id
+        assert root_by_id[raw["id"]] is not raw
 
 
 def test_chapter3_foundation_ids_are_unique_and_sources_resolve():
@@ -40,11 +49,13 @@ def test_chapter3_greek_is_morphgnt_backed_and_noncompetitive():
 
 
 def test_chapter3_disputed_map_cannot_enter_ranking():
+    ranked_ids = {item["id"] for item in questions.COMPETITIVE_POOL}
     for item in DISPUTED_3_18_22:
         assert item["claim_type"] == "interpretation"
         assert item["confidence"] == "contested"
         assert item["position"] == "neutral"
         assert item["competitive"] is False
+        assert item["id"] not in ranked_ids
         assert len(item.get("readings", [])) >= 2
 
 
