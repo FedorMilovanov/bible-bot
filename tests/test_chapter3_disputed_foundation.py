@@ -35,7 +35,7 @@ def test_chapter3_greek_is_morphgnt_backed_and_noncompetitive():
         assert item["confidence"] == "high"
         assert item["position"] == "neutral"
         assert item["competitive"] is False
-        assert {"sblgnt", "morphgnt_1peter"} <= set(item["sources"])
+        assert set(item["sources"]) == {"sblgnt", "morphgnt_1peter"}
         assert "morphgnt" in item
 
 
@@ -48,7 +48,7 @@ def test_chapter3_disputed_map_cannot_enter_ranking():
         assert len(item.get("readings", [])) >= 2
 
 
-def test_spirits_question_preserves_materially_different_readings_and_quorum():
+def test_spirits_question_preserves_materially_different_readings_and_inspected_quorum():
     item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_001")
     assert {
         "fallen_spirits_watchers",
@@ -57,14 +57,17 @@ def test_spirits_question_preserves_materially_different_readings_and_quorum():
     } <= set(item["readings"])
     assert {
         "gty_1p3_18_20",
+        "tgc_storms_1p3_18_22",
         "grudem_noah_1p3_19",
-        "pierce_spirits_2011",
-        "grindheim_spirits_2024",
         "lei_descensus_2025",
     } <= set(item["sources"])
+    assert CHAPTER3_SOURCES["gty_1p3_18_20"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["tgc_storms_1p3_18_22"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["grudem_noah_1p3_19"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["lei_descensus_2025"]["inspection_scope"] == "publisher_abstract_inspected"
 
 
-def test_eperotema_question_requires_morphology_lexical_history_and_peer_review():
+def test_eperotema_question_requires_morphology_lexical_history_and_bounded_peer_review():
     item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_003")
     assert {"appeal_request", "pledge_stipulation", "confession_response_related"} <= set(item["readings"])
     assert {
@@ -74,13 +77,22 @@ def test_eperotema_question_requires_morphology_lexical_history_and_peer_review(
         "ubs_handbook_1p3_21",
         "jts_crawford_1p3_21",
     } <= set(item["sources"])
+    assert CHAPTER3_SOURCES["lsj_eperotema"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["ubs_handbook_1p3_21"]["inspection_scope"] == "relevant_section_inspected"
+    assert CHAPTER3_SOURCES["jts_crawford_1p3_21"]["inspection_scope"] == "publisher_abstract_inspected"
 
 
-def test_baptism_dispute_keeps_multiple_systematic_readings():
+def test_baptism_dispute_keeps_multiple_systematic_readings_without_catalog_only_sources():
     item = next(item for item in DISPUTED_3_18_22 if item["id"] == "ch3_disp_004")
     assert {
         "sacramental_efficacy",
         "faith_appeal_or_pledge_instrumentality",
         "sign_confession_resurrection_relation",
     } <= set(item["readings"])
-    assert {"jts_crawford_1p3_21", "ubs_handbook_1p3_21", "westfall_baptism_1999", "horrell_williams_icc_v2"} <= set(item["sources"])
+    assert {
+        "jts_crawford_1p3_21",
+        "ubs_handbook_1p3_21",
+        "gty_1p3_20_22",
+        "tgc_storms_1p3_18_22",
+    } <= set(item["sources"])
+    assert not {"westfall_baptism_1999", "schreiner_1peter_nac", "horrell_williams_icc_v2"} & set(item["sources"])
