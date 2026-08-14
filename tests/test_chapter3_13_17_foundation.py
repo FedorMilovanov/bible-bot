@@ -5,6 +5,7 @@ import questions
 from questions.chapter3.application_13_17 import APPLICATION_3_13_17
 from questions.chapter3.greek_13_17 import GREEK_3_13_17
 from questions.chapter3.intertext_13_17 import INTERTEXT_3_13_17
+from questions.chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from questions.chapter3.sources_13_17 import SOURCE_CATALOG as LANE_SOURCES
 from questions.chapter3.text_13_17 import TEXT_3_13_17
 from questions.chapter3.theology_13_17 import DISPUTED_3_13_17, THEOLOGY_3_13_17
@@ -40,9 +41,16 @@ def _all_source_ids():
     return set(questions.SOURCE_CATALOG) | set(LANE_SOURCES)
 
 
-def test_chapter3_13_17_lane_stays_out_of_production_registry():
-    assert "chapter3" not in questions.POOL_REGISTRY
+def test_chapter3_13_17_lane_crosses_product_only_through_reviewed_copy():
+    assert "chapter3" in questions.POOL_REGISTRY
     assert not any(key.startswith("ch3_") for key in questions.POOL_REGISTRY)
+
+    root_by_id = {item["id"]: item for item in questions.get_pool_by_key("chapter3")}
+    reviewed_ids = {item["id"] for item in CHAPTER3_REVIEWED_QUESTIONS}
+    assert set(root_by_id) == reviewed_ids
+    for raw in LANE_ITEMS:
+        assert raw["id"] in root_by_id
+        assert root_by_id[raw["id"]] is not raw
 
 
 def test_chapter3_13_17_ids_are_unique_and_reserved():
