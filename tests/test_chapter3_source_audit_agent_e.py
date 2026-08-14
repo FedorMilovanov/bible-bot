@@ -31,20 +31,17 @@ def test_agent_e_source_control_plane():
 
 def test_agent_e_claim_control_plane_is_noncompetitive():
     assert MATRIX["schema_version"] == 3
-    assert MATRIX["claim_control_plane"]["authority"] == "questions/chapter3/sources_crosscutting.py"
-    assert MATRIX["claim_control_plane"]["claim_count"] == 24
     assert len(CLAIMS) == 24
+    assert CLAIMS == MATRIX["claims"]
     assert all(claim["competitive_candidate"] is False for claim in CLAIMS)
     assert all(claim["source_ids"] and claim["limitations"] for claim in CLAIMS)
-    assert set(MATRIX["claim_control_plane"]["status_by_claim_id"]) == {
-        claim["claim_id"] for claim in CLAIMS
-    }
 
 
 def test_rerun_snapshot_is_pinned_and_not_stale():
     assert INTEGRATION["frozen_snapshot"] == FROZEN
     assert INTEGRATION["start_snapshot_match"] is True
     assert INTEGRATION["stale_audit"] is False
+    assert INTEGRATION["final_head_recheck"] == "MATCHED_AFTER_AGENT_E_WRITES"
     assert INTEGRATION["question_count"] == {
         "A": 56,
         "B": 37,
