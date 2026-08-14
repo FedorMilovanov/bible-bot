@@ -6,6 +6,7 @@ from questions.chapter3 import (
     CHAPTER3_DOMAIN_POOLS,
     CHAPTER3_STAGING_QUESTIONS,
 )
+from questions.chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from questions.chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from questions.chapter3.reviewed import (
     CHAPTER3_RANKING_CANDIDATE_IDS,
@@ -81,7 +82,7 @@ def test_domain_coverage_matrix_is_explicit_and_nonempty():
             assert domains[domain], (lane, domain)
 
 
-def test_objective_ranking_candidates_match_later_explicit_authority():
+def test_objective_ranking_candidates_match_later_explicit_authority_and_taxonomy():
     reviewed_by_id = {item["id"]: item for item in CHAPTER3_REVIEWED_QUESTIONS}
     assert CHAPTER3_RANKING_CANDIDATE_IDS == CHAPTER3_RANKING_AUTHORIZED_IDS
     for qid in CHAPTER3_RANKING_CANDIDATE_IDS:
@@ -93,11 +94,13 @@ def test_objective_ranking_candidates_match_later_explicit_authority():
     root_ranked_ids = _ids(questions.COMPETITIVE_POOL)
     assert CHAPTER3_RANKING_CANDIDATE_IDS <= root_ranked_ids
     assert CHAPTER3_RANKING_CANDIDATE_IDS <= _ids(questions.BATTLE_POOL)
-    for pool in questions.CHALLENGE_POOLS.values():
-        assert CHAPTER3_RANKING_CANDIDATE_IDS.isdisjoint(_ids(pool))
+    challenge_ch3 = set().union(*(_ids(pool) for pool in questions.CHAPTER3_CHALLENGE_POOLS.values()))
+    assert challenge_ch3 == CHAPTER3_RANKING_CANDIDATE_IDS
+    for level in ("easy", "medium", "hard"):
+        assert _ids(questions.CHAPTER3_CHALLENGE_POOLS[level]) == set(CHAPTER3_CHALLENGE_TAXONOMY[level])
 
 
-def test_root_product_registry_is_exactly_the_reviewed_bank_and_only_authority_is_ranked():
+def test_root_product_registry_is_exactly_reviewed_bank_and_only_authority_is_ranked():
     root_pool = questions.get_pool_by_key("chapter3")
     reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
     authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
@@ -109,7 +112,7 @@ def test_root_product_registry_is_exactly_the_reviewed_bank_and_only_authority_i
         assert item is reviewed_by_id[item["id"]]
 
     # Reviewed manifest remains the immutable earlier checkpoint. Later stacked
-    # layers separately authorized normal learning, source audit and Battle.
+    # layers separately authorized normal learning, source audit and ranked modes.
     assert MANIFEST["product_wiring"] is False
     assert MANIFEST["normal_learning_authorized"] is False
     assert MANIFEST["ranking_authorized"] is False
@@ -119,5 +122,7 @@ def test_root_product_registry_is_exactly_the_reviewed_bank_and_only_authority_i
     assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
     assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
     assert reviewed_ids.isdisjoint(_ids(questions.get_pool_by_key("random_all")))
-    for pool in questions.CHALLENGE_POOLS.values():
-        assert reviewed_ids.isdisjoint(_ids(pool))
+    challenge_ids = set().union(*(_ids(pool) for pool in questions.CHALLENGE_POOLS.values()))
+    assert reviewed_ids & challenge_ids == authorized
+    assert unauthorized.isdisjoint(challenge_ids)
+    assert reviewed_ids.isdisjoint(_ids(questions.CHALLENGE_FALLBACK_POOL))
