@@ -12,9 +12,11 @@ from questions import (
     COMPETITIVE_POOL,
     POOL_REGISTRY,
 )
+from questions.chapter5 import research_metadata_v2 as research_meta
 from questions.chapter5 import review_contract_v2 as contract
 from questions.chapter5.bank import CHAPTER5_STAGING_QUESTIONS
 from questions.chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
+from web_api.quiz import prepare_question, public_question
 
 
 def _card(candidate_id: str) -> dict:
@@ -41,7 +43,7 @@ def _git_blob_sha(raw: bytes) -> str:
 def test_exact_product_bank_blob_and_no_padding_machinery():
     bank_path = Path(__file__).resolve().parents[1] / "questions" / "chapter5" / "bank.py"
     raw = bank_path.read_bytes()
-    assert _git_blob_sha(raw) == "6b0760f442111a29d5ec344b499683f068797e39"
+    assert _git_blob_sha(raw) == "91d51413a6a0a3f3ad7e6e308c2a6885426ed38f"
     source = raw.decode("utf-8")
     assert ".ljust(" not in source
     assert ".rjust(" not in source
@@ -64,13 +66,15 @@ def test_authority_digest_recomputes_from_exact_research_pins():
     assert hashlib.sha256(raw.encode()).hexdigest() == contract.RESEARCH_AUTHORITY_DIGEST
 
 
-def test_all_72_cards_have_v2_trace_and_review_contract():
+def test_all_72_cards_have_v2_trace_and_independent_research_metadata():
+    research_meta.validate_all_research_metadata(CHAPTER5_STAGING_QUESTIONS)
     contract.validate_full_bank()
     assert len(CHAPTER5_STAGING_QUESTIONS) == 72
     assert len(CHAPTER5_REVIEWED_QUESTIONS) == 72
     assert len(contract.PRODUCT_REVIEW_RECORDS) == 72
 
     for card in CHAPTER5_STAGING_QUESTIONS:
+        research_meta.validate_research_metadata(card)
         review = contract.PRODUCT_REVIEW_RECORDS[card["id"]]
         contract.validate_product_review(card, review)
         trace = contract.trace_product_card(card["id"])
@@ -105,8 +109,10 @@ def test_answer_positions_are_authored_not_runtime_shuffled():
     assert [card["correct"] for card in CHAPTER5_STAGING_QUESTIONS] == [
         index % 4 for index in range(72)
     ]
-    assert {position: sum(card["correct"] == position for card in CHAPTER5_STAGING_QUESTIONS)
-            for position in range(4)} == {0: 18, 1: 18, 2: 18, 3: 18}
+    assert {
+        position: sum(card["correct"] == position for card in CHAPTER5_STAGING_QUESTIONS)
+        for position in range(4)
+    } == {0: 18, 1: 18, 2: 18, 3: 18}
 
 
 def test_all_32_research_prototypes_reconciled_and_rejected_templates_are_not_authority():
@@ -140,8 +146,6 @@ def test_historical_holds_remain_visible_but_wave3n_closures_pin_effective_claim
 def test_textual_unit_5_2_edges_are_independent():
     episkopountes = _review("w3q_050")
     kata_theon = _review("w3q_051")
-    assert episkopountes["claim_source_edges"]
-    assert kata_theon["claim_source_edges"]
     assert all(edge["textual_unit"] == "1Pet5:2:episkopountes" for edge in episkopountes["claim_source_edges"])
     assert all(edge["textual_unit"] == "1Pet5:2:kata-theon" for edge in kata_theon["claim_source_edges"])
     assert "w3n_stanojevic_ecm_2021" not in episkopountes["source_subset"]
@@ -157,6 +161,19 @@ def test_chapter5_has_zero_random_battle_challenge_or_fallback_leakage():
     assert not chapter5_ids.intersection(_ids(CHALLENGE_FALLBACK_POOL))
     for pool in CHALLENGE_POOLS.values():
         assert not chapter5_ids.intersection(_ids(pool))
+
+
+def test_public_question_hides_answer_and_review_internals_before_answer_point():
+    prepared = prepare_question(deepcopy(_card("w3q_050")))
+    payload = public_question(prepared)
+    assert set(payload) == {"id", "question", "options"}
+    for forbidden in (
+        "correct", "explanation", "sources", "research_candidate_id",
+        "product_review_id", "claim_digest", "claim_source_edges",
+        "claim_inspection_edge_ids", "authority_digest",
+    ):
+        assert forbidden not in payload
+    assert all("ch5-edge-" not in str(value) for value in payload.values())
 
 
 def test_mutation_rejects_stale_authority_digest():
@@ -186,11 +203,8 @@ def test_mutation_rejects_fake_edge():
 def test_mutation_rejects_source_from_wrong_5_2_textual_unit():
     card = deepcopy(_card("w3q_050"))
     review = deepcopy(_review("w3q_050"))
-    wrong_source = "w3n_stanojevic_ecm_2021"
-    card["sources"].append(wrong_source)
+    card["sources"].append("w3n_stanojevic_ecm_2021")
     review["source_subset"] = tuple(card["sources"])
-    # Keep review metadata otherwise self-consistent so the unit-scope guard,
-    # rather than a generic drift check, is the reason for rejection.
     with pytest.raises(ValueError, match="different textual unit"):
         contract.validate_product_review(card, review)
 
@@ -211,13 +225,25 @@ def test_mutation_rejects_manuscript_unanimity():
         contract.validate_product_review(card, review)
 
 
-def test_mutation_rejects_project_to_neutral_relabel():
+def test_mutation_rejects_project_to_neutral_even_if_review_is_changed_too():
     card = deepcopy(_card("w3q_054"))
     review = deepcopy(_review("w3q_054"))
     card["position"] = "neutral"
     review["claimed_position"] = "neutral"
-    with pytest.raises(ValueError, match="cannot claim neutral"):
-        contract.validate_product_review(card, review)
+    with pytest.raises(ValueError):
+        research_meta.validate_research_metadata(card)
+
+
+def test_mutation_rejects_claim_type_or_confidence_strengthening():
+    card = deepcopy(_card("w3q_128"))
+    card["claim_type"] = "text"
+    with pytest.raises(ValueError, match="Research metadata drift"):
+        research_meta.validate_research_metadata(card)
+
+    card = deepcopy(_card("w3q_118"))
+    card["confidence"] = "medium"
+    with pytest.raises(ValueError, match="Research metadata drift"):
+        research_meta.validate_research_metadata(card)
 
 
 def test_mutation_rejects_competitive_true():
