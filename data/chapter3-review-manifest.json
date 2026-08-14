@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "status": "REVIEWED_BANK_COMPLETE_NOT_PRODUCT_WIRED",
+  "parent_integration_head": "571f1f3d0fcab83c0b087735adcaf61316090525",
+  "staging_count": 165,
+  "review_quarantine_ids": [],
+  "reviewed_count": 165,
+  "review_basis": [
+    "A/B/C/D exact frozen lane heads",
+    "Agent E blocker_count=0 cross-lane audit",
+    "integration exact-head CI/Security/CodeQL green",
+    "global ID uniqueness",
+    "canonical metadata validation",
+    "lane-namespaced source resolution",
+    "explicit domain coverage matrix",
+    "visible project-position labeling at reviewed boundary"
+  ],
+  "coverage_required": {
+    "3:1-7": ["text", "greek", "intertext", "history", "theology", "disputed", "application"],
+    "3:8-12": ["text", "greek", "intertext", "theology", "disputed", "application"],
+    "3:13-17": ["text", "greek", "intertext", "theology", "disputed", "application"],
+    "3:18-22": ["text", "greek", "intertext", "theology", "disputed", "application"]
+  },
+  "editorial_policy": {
+    "project_questions_visible_label": "[Позиция курса]",
+    "project_competitive": false,
+    "contested_competitive": false,
+    "greek_competitive": false,
+    "history_competitive": false,
+    "application_competitive": false,
+    "objective_competitive_true_means_candidate_only": true
+  },
+  "source_policy": "ROOT_CANONICAL_PLUS_REVIEWED_CARD_OWN_LANE_CATALOG_ONLY",
+  "product_wiring": false,
+  "root_pool_registry_mutated": false,
+  "ranking_authorized": false,
+  "normal_learning_authorized": false,
+  "chapter_reviewed_bank_complete": true,
+  "chapter_publication_complete": false,
+  "next_gate": "exact-head reviewed-bank CI/Security/CodeQL, then separate normal-learning product wiring"
+}
