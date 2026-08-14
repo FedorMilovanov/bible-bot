@@ -4,7 +4,7 @@ Status: isolated foundation lane; **not production-reviewed and not ranking-elig
 
 ## Canonical metadata contract
 
-This lane now uses only the repository enums from `AGENTS.md`:
+This lane uses only the repository enums from `AGENTS.md`:
 
 - `claim_type`: `text`, `greek`, `history`, `interpretation`, `application`;
 - `confidence`: `high`, `medium`, `contested`;
@@ -30,7 +30,7 @@ MorphGNT (`81-1Pe-morphgnt.txt`) gives:
 - `συνείδησιν` — `N- ----ASF-`; `ἔχοντες` — `V- -PAPNPM-`; `ἀγαθήν` — `A- ----ASF-`.
 - `θέλοι` — `V- 3PAO-S--`: present active optative, 3rd singular.
 
-Morphology establishes forms. It does not by itself settle predicative vs appositional labeling of `κύριον`, the classification of Isaiah reuse, or the Christological force of that reuse.
+Morphology establishes forms. It does not by itself settle predicative vs appositional labeling of `κύριον`, the classification of Isaiah reuse, lexical scope, or the Christological force of that reuse.
 
 ## Isaiah 8:12-13 and 1 Peter 3:14-15
 
@@ -56,20 +56,28 @@ For the relevant 1 Pet 3:15 passage, G. W. Blenkin, *The First Epistle General o
 
 Accordingly, `ch3_theol_301` remains a **medium-confidence project interpretation**: the textual replacement/adaptation is observable, while the exact Christological significance is an exegetical/theological inference. It is not promoted to `high` merely because the morphology is secure.
 
-### Source-status correction / HOLD
+## Source-depth discipline
 
-Jobes (2022) and Achtemeier (1996) were previously catalogued from metadata/preview access only. They are now explicitly marked `metadata_preview_only_not_claim_evidence` and are not used by any lane item as inspected evidence.
+Source presence is not the same thing as inspected claim evidence.
+
+- `bdag_3` remains `bibliographic_control_only`. No lane card cites it as substantive evidence because the relevant BDAG entries were not directly inspected in this pass.
+- Jobes (2022) and Achtemeier (1996) remain `metadata_preview_only_not_claim_evidence` and are not used by lane cards as inspected claim evidence.
+- The Goettingen Rahlfs-Hanhart record remains `edition_metadata_inspected`; it documents edition metadata but is not used as a card-level textual witness. The actual LXX wording is sourced through `septuagint_bible`.
+- G. Abbott-Smith, *A Manual Greek Lexicon of the New Testament* (1922), entry `ἀπολογία`, was directly inspected in a public-domain digital transcription. The bounded scope is **only the headword `ἀπολογία`**: the entry characterizes a speech in defence and explicitly cites 1 Pet 3:15.
+- No Abbott-Smith claim is made for uninspected `πραΰτης` or `φόβος` entries. Greek cards for those forms remain MorphGNT-backed morphology only.
+
+Fail-closed rule for this lane: any local source marked bibliographic/catalog/metadata/preview-only or abstract-only is non-claim evidence unless a future explicit scoped mechanism is added and tested. Current cards use none of those statuses.
 
 **HOLD:** do not promote the non-trivial Christological interpretation above `medium` on the basis of Jobes/Achtemeier metadata. A future promotion would require inspection of relevant independent modern exegetical pages or another equivalently strong independent control.
 
 ## ἀπολογία and apologetics
 
-- `πρὸς ἀπολογίαν` calls for readiness for a defense/answer.
+- Abbott-Smith's inspected `ἀπολογία` entry supports the bounded lexical sense of a defensive speech and cites 1 Pet 3:15.
 - `παντὶ τῷ αἰτοῦντι` grammatically refers to every asker in the sentence; it does not itself specify a courtroom-only setting.
 - `λόγον περὶ τῆς ἐν ὑμῖν ἐλπίδος` keeps the requested account focused on the believers' hope.
 - `μετὰ πραΰτητος καὶ φόβου` plus `συνείδησιν ἔχοντες ἀγαθήν` place answer, manner, and integrity together in the paragraph.
 
-Modern apologetic methods may appeal to the passage as a mandate for prepared witness. The noun itself does not choose one complete later methodology; cards now use plausible alternatives such as courtroom-only, philosophical-proof-only, or testimony-only readings rather than absurd distractors.
+Modern apologetic methods may appeal to the passage as a mandate for prepared witness. The inspected lexical entry plus immediate syntax do not choose one complete later methodology; cards use plausible alternatives such as courtroom-only, philosophical-proof-only, or testimony-only readings rather than absurd distractors.
 
 ## 3:17 — suffering and God's will
 
@@ -79,15 +87,19 @@ Fail-closed boundary: do not infer that every evil act by a persecutor is theref
 
 ## Application confidence decisions
 
-Application confidence was re-reviewed item by item rather than mechanically lowered:
+Application confidence was reviewed item by item rather than mechanically lowered:
 
 - `ch3_app_301` — `medium`: modern practice is inferred from readiness / every asker.
-- `ch3_app_302` — `medium`: course methodology is downstream from lexical and syntactic facts.
+- `ch3_app_302` — `medium`: course methodology is downstream from the inspected lexical entry plus syntax.
 - `ch3_app_303` — `high`: the application nearly restates the explicit textual sequence of answer + gentleness/reverence + good conscience; it remains noncompetitive because it is still an application item.
 - `ch3_app_304` — `medium`: the text supplies the good/evil contrast, while «do not seek suffering» is pastoral judgment downstream from it.
 
+## Answer-position integrity
+
+The 27-card lane now deliberately avoids answer-position leakage. Correct-option counts are **7 / 7 / 7 / 6** across positions 0-3 (order-independent); all four positions are used, the sequence is not a simple repeating cycle, and no position occurs more than twice consecutively. Only option order changed for this control; the intended correct proposition of each card did not change.
+
 ## Distractor and test controls
 
-All lane cards were reworked toward plausible confusions of the same domain: text vs nearby context, morphology alternatives, thematic echo vs quotation/reuse, Isaiah wording vs Petrine adaptation, morphology vs interpretation, courtroom-only vs broader answer/defense, and human fear vs reverent manner.
+All lane cards use plausible confusions of the same domain: text vs nearby context, morphology alternatives, thematic echo vs quotation/reuse, Isaiah wording vs Petrine adaptation, morphology vs interpretation, courtroom-only vs broader defense, and human fear vs reverent manner.
 
-Regression tests now enforce canonical metadata enums, unique IDs, four unique options, valid `correct`, source resolution, exclusion of metadata-only controls from claim evidence, noncompetitive status, MorphGNT markers, observable-vs-interpretive Isaiah layering, item-specific application confidence, and a small banned set covering the previously identified absurd distractors.
+Regression tests enforce canonical metadata enums, unique IDs, four unique options, valid `correct`, balanced answer-position counts, no runs longer than two identical correct positions, source resolution, generic exclusion of non-claim-evidence statuses, noncompetitive status, MorphGNT markers, observable-vs-interpretive Isaiah layering, item-specific application confidence, and a small banned set covering the previously identified absurd distractors.
