@@ -150,7 +150,7 @@ def test_all_32_research_prototypes_reconciled_and_rejected_templates_are_not_au
         assert review["product_rewrite_disposition"] == "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
 
 
-def test_historical_holds_remain_visible_but_effective_claims_are_canonical_and_nonhold():
+def test_historical_holds_remain_visible_without_runtime_status_laundering():
     assert contract.HISTORICAL_HOLD_IDS == {"w3q_050", "w3q_051", "w3q_075"}
     for candidate_id in contract.HISTORICAL_HOLD_IDS:
         locator = contract.claim_locator(candidate_id)
@@ -159,7 +159,8 @@ def test_historical_holds_remain_visible_but_effective_claims_are_canonical_and_
         assert locator["research_sha"] == contract.RESEARCH_AUTHORITY_SHA
         assert locator["candidate_id"] == candidate_id
         assert locator["effective_claim_digest"] == research["effective_claim_digest"]
-        assert research["status"] != "HOLD"
+        assert research["competitive_candidate"] is False
+        assert "status" not in research
 
 
 def test_textual_unit_5_2_edges_are_independent():
