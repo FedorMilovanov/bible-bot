@@ -60,13 +60,21 @@ def test_manifest_pins_same_twelve_ids_and_zero_holds():
     }
 
 
-def test_authority_checkpoint_still_makes_no_gameplay_change():
+def test_later_layer_consumes_exact_authority_and_keeps_challenge_closed():
     authorized = set(CHAPTER3_RANKING_AUTHORIZED_IDS)
-    assert authorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
-    assert authorized.isdisjoint(_ids(questions.BATTLE_POOL))
+    chapter3_ids = _ids(questions.get_pool_by_key("chapter3"))
+    unauthorized = chapter3_ids - authorized
+
+    assert chapter3_ids & _ids(questions.COMPETITIVE_POOL) == authorized
+    assert chapter3_ids & _ids(questions.BATTLE_POOL) == authorized
+    assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
+    assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
     for key, pool in questions.CHALLENGE_POOLS.items():
         assert authorized.isdisjoint(_ids(pool)), key
 
+    # The authority artifact is an immutable earlier checkpoint; it records that
+    # authority alone did not mutate pools. The stacked Battle-admission layer is
+    # the separate consumer of this exact list.
     assert MANIFEST["gameplay_admission"] is False
     assert MANIFEST["competitive_pool_mutated"] is False
     assert MANIFEST["battle_pool_mutated"] is False
