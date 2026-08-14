@@ -20,6 +20,7 @@ from .chapter1 import (
     practical_v17_25_questions as _raw_practical_p2,
 )
 from .chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
+from .chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
 from .content_truth_review import apply_review_overrides
 from .intro import (
@@ -54,9 +55,10 @@ intro_part1_questions = _canonical(_raw_intro1, "intro1")
 intro_part2_questions = _canonical(_raw_intro2, "intro2")
 intro_part3_questions = _canonical(_raw_intro3, "intro3")
 
-# Chapter 2 crosses the production boundary only through its reviewed aggregate.
-# It is intentionally a normal-learning pool, not a ranking/Challenge/PvP pool.
+# Chapters 2 and 3 cross the product boundary only through reviewed aggregates.
+# Both are intentionally normal-learning pools, not ranking/Challenge/PvP pools.
 chapter2_questions = list(CHAPTER2_REVIEWED_QUESTIONS)
+chapter3_questions = list(CHAPTER3_REVIEWED_QUESTIONS)
 
 
 _POOLS: dict[str, list[dict]] = {
@@ -81,6 +83,7 @@ _POOLS: dict[str, list[dict]] = {
     "intro2": intro_part2_questions,
     "intro3": intro_part3_questions,
     "chapter2": chapter2_questions,
+    "chapter3": chapter3_questions,
 }
 
 
@@ -115,8 +118,8 @@ _CHAPTER1_LEAF_KEYS = [
 ]
 all_chapter1_questions = _dedupe_pool(_CHAPTER1_LEAF_KEYS)
 
-# random_all remains the legacy Chapter-1/context learning pool. Chapter 2 is
-# admitted separately so normal-learning exposure cannot silently enlarge
+# random_all remains the legacy Chapter-1/context learning pool. Chapters 2 and
+# 3 are admitted separately so normal-learning exposure cannot silently enlarge
 # Challenge 20 or other legacy random/ranking behavior.
 _RANDOM_ALL_LEAF_KEYS = _CHAPTER1_LEAF_KEYS + ["intro1", "intro2", "intro3"]
 _POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
@@ -243,6 +246,7 @@ __all__ = [
     "intro_part2_questions",
     "intro_part3_questions",
     "chapter2_questions",
+    "chapter3_questions",
     "POOL_REGISTRY",
     "SOURCE_CATALOG",
     "RANKING_QUARANTINE_IDS",
