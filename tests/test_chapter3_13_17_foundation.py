@@ -1,3 +1,5 @@
+from collections import Counter
+
 import questions
 
 from questions.chapter3.application_13_17 import APPLICATION_3_13_17
@@ -10,7 +12,18 @@ from questions.chapter3.theology_13_17 import DISPUTED_3_13_17, THEOLOGY_3_13_17
 ALLOWED_CLAIM_TYPES = {"text", "greek", "history", "interpretation", "application"}
 ALLOWED_POSITIONS = {"neutral", "project"}
 ALLOWED_CONFIDENCE = {"high", "medium", "contested"}
-METADATA_ONLY_SOURCES = {"jobes_becnt_1peter_2022", "achtemeier_hermeneia_1peter"}
+NON_CLAIM_EVIDENCE_STATUSES = {
+    "bibliographic_control_only",
+    "metadata_preview_only_not_claim_evidence",
+    "edition_metadata_inspected",
+    "abstract_only",
+}
+CLAIM_EVIDENCE_STATUSES = {
+    "relevant_article_text_inspected",
+    "relevant_case_study_inspected_not_author_independent_from_2002",
+    "relevant_3_15_comment_inspected",
+    "entry_inspected",
+}
 BANNED_ABSURD_DISTRACTORS = {"Имя Пётр", "Иерусалим", "Средневековая глосса", "Христос назван ангелом"}
 
 LANE_ITEMS = (
@@ -65,12 +78,42 @@ def test_chapter3_13_17_options_are_valid_unique_and_not_absurd():
         assert max(lengths) <= 3 * min(lengths), item["id"]
 
 
-def test_chapter3_13_17_sources_resolve_and_metadata_only_controls_do_not_leak_into_claims():
+def test_chapter3_13_17_answer_positions_are_balanced_without_simple_leakage():
+    positions = [item["correct"] for item in LANE_ITEMS]
+    counts = Counter(positions)
+    assert set(counts) == {0, 1, 2, 3}
+    assert sorted(counts.values()) == [6, 7, 7, 7]
+    assert all(not (positions[i] == positions[i + 1] == positions[i + 2]) for i in range(len(positions) - 2))
+    for period in range(1, 5):
+        assert any(positions[i] != positions[i % period] for i in range(period, len(positions)))
+
+
+def test_chapter3_13_17_lane_source_inspection_statuses_are_classified():
+    known_statuses = NON_CLAIM_EVIDENCE_STATUSES | CLAIM_EVIDENCE_STATUSES
+    for source_id, source in LANE_SOURCES.items():
+        assert source.get("inspection_status") in known_statuses, source_id
+
+
+def test_chapter3_13_17_sources_resolve_and_nonclaim_controls_do_not_leak_into_claims():
     known = _all_source_ids()
     for item in LANE_ITEMS:
         assert item["sources"], item["id"]
         assert set(item["sources"]) <= known, item["id"]
-        assert not (set(item["sources"]) & METADATA_ONLY_SOURCES), item["id"]
+        for source_id in item["sources"]:
+            if source_id not in LANE_SOURCES:
+                continue
+            status = LANE_SOURCES[source_id]["inspection_status"]
+            assert status not in NON_CLAIM_EVIDENCE_STATUSES, (item["id"], source_id, status)
+
+
+def test_chapter3_13_17_apologia_uses_bounded_inspected_lexical_control():
+    source = LANE_SOURCES["abbott_smith_apologia_1922"]
+    assert source["inspection_status"] == "entry_inspected"
+    assert "ἀπολογία" in source["inspection_scope"]
+    interpretation = next(item for item in THEOLOGY_3_13_17 if item["id"] == "ch3_theol_302")
+    application = next(item for item in APPLICATION_3_13_17 if item["id"] == "ch3_app_302")
+    assert "abbott_smith_apologia_1922" in interpretation["sources"]
+    assert "abbott_smith_apologia_1922" in application["sources"]
 
 
 def test_chapter3_13_17_greek_has_exact_morphgnt_backing():
@@ -126,8 +169,8 @@ def test_chapter3_13_17_apologia_guardrail():
     greek = next(item for item in GREEK_3_13_17 if item["id"] == "ch3_gr_304")
     interpretation = next(item for item in THEOLOGY_3_13_17 if item["id"] == "ch3_theol_302")
     application = next(item for item in APPLICATION_3_13_17 if item["id"] == "ch3_app_302")
-    assert "не выбирает одну современную" in greek["explanation"]
-    assert "без автоматического выбора" in interpretation["options"][0]
+    assert "не выводятся из parsing code" in greek["explanation"]
+    assert "не выбирая одну современную школу" in interpretation["options"][interpretation["correct"]]
     assert "требует дополнительных аргументов" in application["explanation"]
 
 
