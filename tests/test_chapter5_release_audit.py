@@ -35,7 +35,11 @@ def test_release_counts_and_review_boundary():
 
 def test_reviewed_cards_are_deep_copy_isolated():
     assert CHAPTER5_REVIEWED_QUESTIONS is not CHAPTER5_STAGING_QUESTIONS
-    for raw, reviewed in zip(CHAPTER5_STAGING_QUESTIONS, CHAPTER5_REVIEWED_QUESTIONS):
+    for raw, reviewed in zip(
+        CHAPTER5_STAGING_QUESTIONS,
+        CHAPTER5_REVIEWED_QUESTIONS,
+        strict=True,
+    ):
         assert raw is not reviewed
         assert raw["options"] is not reviewed["options"]
 
@@ -46,7 +50,13 @@ def test_schema_ids_sources_and_visible_project_markers():
         ids.append(card["id"])
         assert len(card["options"]) == 4
         assert card["correct"] in {0, 1, 2, 3}
-        assert card["claim_type"] in {"text", "greek", "history", "interpretation", "application"}
+        assert card["claim_type"] in {
+            "text",
+            "greek",
+            "history",
+            "interpretation",
+            "application",
+        }
         assert card["confidence"] in {"high", "medium", "contested"}
         assert card["position"] in {"neutral", "project"}
         assert card["competitive"] is False
@@ -57,21 +67,31 @@ def test_schema_ids_sources_and_visible_project_markers():
 
 
 def test_correct_index_distribution_global_and_subgroups():
-    assert Counter(card["correct"] for card in CHAPTER5_REVIEWED_QUESTIONS) == {0: 18, 1: 18, 2: 18, 3: 18}
+    assert Counter(card["correct"] for card in CHAPTER5_REVIEWED_QUESTIONS) == {
+        0: 18,
+        1: 18,
+        2: 18,
+        3: 18,
+    }
     by_type = defaultdict(list)
     by_verse = defaultdict(list)
     for card in CHAPTER5_REVIEWED_QUESTIONS:
         by_type[card["claim_type"]].append(card["correct"])
         by_verse[card["verse"]].append(card["correct"])
-    # Audit for authoring bias: no sizeable domain/verse bucket may collapse to one answer slot.
     for values in list(by_type.values()) + list(by_verse.values()):
         if len(values) >= 4:
             assert len(set(values)) >= 2
 
 
 def test_no_duplicate_or_near_duplicate_exact_surfaces():
-    questions = [" ".join(card["question"].lower().split()) for card in CHAPTER5_REVIEWED_QUESTIONS]
-    option_sets = [tuple(sorted(" ".join(o.lower().split()) for o in card["options"])) for card in CHAPTER5_REVIEWED_QUESTIONS]
+    questions = [
+        " ".join(card["question"].lower().split())
+        for card in CHAPTER5_REVIEWED_QUESTIONS
+    ]
+    option_sets = [
+        tuple(sorted(" ".join(option.lower().split()) for option in card["options"]))
+        for card in CHAPTER5_REVIEWED_QUESTIONS
+    ]
     assert len(questions) == len(set(questions))
     assert len(option_sets) == len(set(option_sets))
 
@@ -82,7 +102,10 @@ def test_chapter5_is_normal_learning_only():
     assert not ch5.intersection(_ids(POOL_REGISTRY["random_all"]))
     assert not ch5.intersection(_ids(COMPETITIVE_POOL))
     assert not ch5.intersection(_ids(BATTLE_POOL))
-    assert all(not ch5.intersection(_ids(pool)) for pool in CHALLENGE_POOLS.values())
+    assert all(
+        not ch5.intersection(_ids(pool))
+        for pool in CHALLENGE_POOLS.values()
+    )
 
 
 def test_ranking_audit_fails_closed():
