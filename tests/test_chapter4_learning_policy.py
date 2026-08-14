@@ -96,6 +96,8 @@ def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monke
         "new_achievements": [],
         "kind": "learning",
         "level_key": "chapter4",
+        "score": 9,
+        "total": 10,
     }
     update = captured["update"]
     assert update["$inc"] == {
@@ -109,3 +111,5 @@ def test_learning_persistence_updates_chapter4_progress_not_ranking_totals(monke
     assert "perfect_count" not in update["$inc"]
     assert captured["receipt"]["daily_bonus"] == 0
     assert captured["receipt"]["new_achievements"] == []
+    assert captured["receipt"]["score"] == 9
+    assert captured["receipt"]["total"] == 10
