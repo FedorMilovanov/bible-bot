@@ -2,9 +2,9 @@
 """Diagnose Chapter 4/5 product mappings against final Research authority.
 
 This tool intentionally avoids importing ``questions``. The root package is a
-production fail-closed boundary and must remain free to reject stale Chapter-5
-metadata. Release diagnostics read authoring data and the immutable vendored
-handoff directly so one bad card cannot hide the rest of the mismatch set.
+production fail-closed boundary. Chapter-5 diagnostics read the exact Agent-3 raw
+bank and verify that the canonical release projection only removes redundant
+source identities; it may never add evidence that Agent 3 did not review.
 """
 from __future__ import annotations
 
@@ -200,32 +200,44 @@ def _audit_ch5(
     card: dict,
     vendored: dict[str, dict],
     rows: dict[str, dict],
-) -> dict | None:
+) -> tuple[dict | None, dict | None]:
     claim_id = str(card.get("research_candidate_id") or "")
     research = vendored.get(claim_id)
     reasons: list[str] = []
+    narrowing: dict | None = None
     if research is None or research["chapter"] != 5:
         reasons.append("MISSING_RESEARCH_CLAIM")
     else:
         reasons.extend(_metadata_reasons(card, research))
-        product_sources = tuple(str(source_id) for source_id in card.get("sources", ()))
-        missing_sources = sorted(set(product_sources) - set(research["source_ids"]))
-        if missing_sources:
-            reasons.append("SOURCE_NOT_IN_FINAL_RESEARCH_CLAIM")
+        raw_sources = tuple(str(source_id) for source_id in card.get("sources", ()))
+        canonical_sources = tuple(str(source_id) for source_id in research["source_ids"])
+        missing_from_raw = sorted(set(canonical_sources) - set(raw_sources))
+        if missing_from_raw:
+            reasons.append("FINAL_RESEARCH_SOURCE_NOT_REVIEWED_BY_AGENT3")
+        removed = tuple(source_id for source_id in raw_sources if source_id not in canonical_sources)
+        if removed:
+            narrowing = {
+                "candidate_id": claim_id,
+                "removed_source_ids": list(removed),
+                "canonical_source_ids": list(canonical_sources),
+            }
     if not reasons:
-        return None
+        return None, narrowing
     current_row = rows.get(claim_id)
-    return {
-        "chapter": 5,
-        "product_card_id": str(card["id"]),
-        "mapped_claim_id": claim_id,
-        "reasons": sorted(set(reasons)),
-        "product_card": _card_snapshot(card),
-        "mapped_research_claim": (
-            _candidate_snapshot(claim_id, current_row) if current_row else None
-        ),
-        "top_semantic_candidates": _rank(card, rows),
-    }
+    return (
+        {
+            "chapter": 5,
+            "product_card_id": str(card["id"]),
+            "mapped_claim_id": claim_id,
+            "reasons": sorted(set(reasons)),
+            "product_card": _card_snapshot(card),
+            "mapped_research_claim": (
+                _candidate_snapshot(claim_id, current_row) if current_row else None
+            ),
+            "top_semantic_candidates": _rank(card, rows),
+        },
+        narrowing,
+    )
 
 
 def main() -> None:
@@ -248,11 +260,12 @@ def main() -> None:
         ROOT / "questions" / "chapter4" / "authoring.py", "CHAPTER4_STAGING_QUESTIONS"
     )
     ch5_cards = _load_data_file(
-        ROOT / "questions" / "chapter5" / "bank.py", "CHAPTER5_STAGING_QUESTIONS"
+        ROOT / "questions" / "chapter5" / "bank_raw.py", "CHAPTER5_STAGING_QUESTIONS"
     )
     ch4_mapping = _chapter4_rows()
 
     findings: list[dict] = []
+    narrowing: list[dict] = []
     for card in ch4_cards:
         mapping = ch4_mapping.get(str(card["id"]))
         if mapping is None:
@@ -272,14 +285,18 @@ def main() -> None:
         if finding:
             findings.append(finding)
     for card in ch5_cards:
-        finding = _audit_ch5(card, vendored, ch5_rows)
+        finding, narrowed = _audit_ch5(card, vendored, ch5_rows)
         if finding:
             findings.append(finding)
+        if narrowed:
+            narrowing.append(narrowed)
 
     summary = {
         "chapter4_staging": len(ch4_cards),
         "chapter5_staging": len(ch5_cards),
         "finding_count": len(findings),
+        "source_narrowing_count": len(narrowing),
+        "source_narrowing": narrowing,
         "findings": findings,
     }
     args.report.write_text(
@@ -288,7 +305,7 @@ def main() -> None:
     )
     print(
         json.dumps(
-            {key: value for key, value in summary.items() if key != "findings"},
+            {key: value for key, value in summary.items() if key not in {"findings", "source_narrowing"}},
             sort_keys=True,
         )
     )
