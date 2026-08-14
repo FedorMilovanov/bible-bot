@@ -10,19 +10,24 @@ Fail-closed evidence discipline from `CONTENT_SOURCE_POLICY.md` and the Research
 
 - 3:1 addresses wives toward **their own husbands**. `καὶ εἴ τινες` permits a case where **some** husbands disobey the word; it does not describe every marriage.
 - 3:1–2 links the hoped-for “winning” of resistant husbands to observable `ἀναστροφή` and `ἄνευ λόγου`; this is not a doctrine of gospel-less salvation.
-- `ὑποτασσόμεναι` is present passive participle, nominative plural feminine, not a finite imperative; its paraenetic force is contextual.
+- Both occurrences of `ὁμοίως` (3:1 and 3:7) are MorphGNT adverbs (`D- --------`); morphology does not decide the exact discourse force of the second occurrence.
+- `ὑποτασσόμεναι` is present passive participle, nominative plural feminine (`V- -PPPNPF-`), not a finite imperative; its paraenetic force is contextual.
+- `ἀναστροφῆς` is genitive singular of `ἀναστροφή`; context and lexical/exegetical control support “conduct/way of life,” not a social-status reconstruction.
 - `φόβῳ` is morphologically a dative of `φόβος`; morphology does not identify the referent.
 - `κόσμος` is a noun; the adornment list controls its contextual sense. The normative force of `οὐχ ... ἀλλʼ` is interpretation.
 - `πραέως` and `ἡσυχίου` are genitive singular neuter with `πνεύματος`; this does not lexically encode a ban on truthful speech.
 - `ἀσθενεστέρῳ` is comparative dative singular neuter with `σκεύει`; morphology does not encode the dimension of weakness.
-- `συγκληρονόμοις` is dative plural; `ἐγκόπτεσθαι` is present passive infinitive in `εἰς τὸ μὴ ...`.
+- `συγκληρονόμοις` is adjective dative plural; morphology confirms the co-heir construction but does not by itself settle its full theological implications.
+- `ἐγκόπτεσθαι` is present passive infinitive in `εἰς τὸ μὴ ...`.
 - `κατὰ γνῶσιν` is grammatically “according to knowledge/with understanding”; the object/content of that knowledge is not expressed.
+
+The lane-local test freezes all 23 selected MorphGNT rows for 3:1–7 as separate POS + parsing fields and checks the stored surface, lemma, verse, POS, and parse values against that fixture.
 
 ## Sarah / LXX
 
 **Genesis 18:12 LXX:** Sarah laughs within herself and calls Abraham `κύριός μου`. 1 Pet 3:6 names Sarah and says she was `κύριον αὐτὸν καλοῦσα`. Decision: a clear named narrative reference/verbal allusion, not a formal quotation. Genesis is not a scene where Abraham commands Sarah to use the title.
 
-**Proverbs 3:25 LXX:** `οὐ φοβηθήσῃ πτόησιν` closely parallels 1 Pet 3:6 `μὴ φοβούμεναι μηδεμίαν πτόησιν`. Decision: strong LXX background/allusion, not formal quotation; no citation formula appears and wording is adapted.
+**Proverbs 3:25 LXX:** `οὐ φοβηθήσῃ πτόησιν` closely parallels 1 Pet 3:6 `μὴ φοβούμεναι μηδεμίαν πτόησιν`. Decision: strong LXX background/allusion, not formal quotation; no citation formula appears and wording is adapted. The lane source now points directly to the LXX Proverbs 3 text rather than a secondary interlinear interface.
 
 ## Social history
 
