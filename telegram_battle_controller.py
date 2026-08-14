@@ -125,8 +125,12 @@ async def show_battle_menu(update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        active = get_open_durable_battles_for_user(user_id, limit=10)
-        waiting = get_waiting_durable_battles(limit=10)
+        active = await asyncio.to_thread(
+            get_open_durable_battles_for_user,
+            user_id,
+            limit=10,
+        )
+        waiting = await asyncio.to_thread(get_waiting_durable_battles, limit=10)
     except (LegacyBattleRecoveryUnavailable, LegacyBattleSessionUnavailable, ValueError):
         await query.answer("⚠️ База битв временно недоступна.", show_alert=True)
         return
@@ -152,7 +156,8 @@ async def create_battle(update, context):
         return
     battle_id = f"battle_{uuid.uuid4().hex[:16]}"
     try:
-        create_durable_battle(
+        await asyncio.to_thread(
+            create_durable_battle,
             battle_id=battle_id,
             creator_id=user.id,
             creator_name=user.first_name or "Игрок",
@@ -180,7 +185,8 @@ async def join_battle(update, context):
     user = query.from_user
     battle_id = (query.data or "").replace("join_battle_", "", 1)
     try:
-        battle = claim_durable_battle_opponent(
+        battle = await asyncio.to_thread(
+            claim_durable_battle_opponent,
             battle_id,
             user.id,
             user.first_name or "Игрок",
@@ -227,7 +233,7 @@ async def start_battle_questions(update, context):
     user_id = query.from_user.id
     try:
         battle_id, requested_role = _parse_start(query.data)
-        battle = get_owned_open_durable_battle(battle_id, user_id)
+        battle = await asyncio.to_thread(get_owned_open_durable_battle, battle_id, user_id)
     except (LegacyBattleSessionUnavailable, ValueError):
         await query.answer("⚠️ База битв временно недоступна.", show_alert=True)
         return ConversationHandler.END
@@ -239,7 +245,7 @@ async def start_battle_questions(update, context):
         await query.answer("⏳ Сначала дождись соперника.", show_alert=True)
         return ConversationHandler.END
     try:
-        state = ensure_battle_progress(battle_id, user_id, role)
+        state = await asyncio.to_thread(ensure_battle_progress, battle_id, user_id, role)
     except (LegacyBattleProgressUnavailable, LegacyBattleProgressConflict, LegacyBattleProgressInvalid):
         await query.answer("⚠️ Durable progress сейчас нельзя восстановить.", show_alert=True)
         return ConversationHandler.END
@@ -268,7 +274,7 @@ async def _disable_message_keyboard(bot, chat_id: int, message_id: int) -> None:
 
 async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, role: str):
     try:
-        state = ensure_battle_progress(battle_id, user_id, role)
+        state = await asyncio.to_thread(ensure_battle_progress, battle_id, user_id, role)
     except (LegacyBattleProgressUnavailable, LegacyBattleProgressConflict, LegacyBattleProgressInvalid):
         await bot.send_message(chat_id=chat_id, text="⚠️ Не удалось восстановить durable progress битвы.")
         return
@@ -315,7 +321,8 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
         logger.warning("battle question Telegram delivery failed", exc_info=True)
         return
     try:
-        mark_battle_question_sent(
+        await asyncio.to_thread(
+            mark_battle_question_sent,
             battle_id,
             user_id,
             role,
@@ -337,7 +344,11 @@ async def battle_answer(update, context):
     user_id = query.from_user.id
     try:
         callback_token, question_index, option_token = parse_battle_answer_callback(query.data)
-        battle = resolve_owned_open_battle_callback(user_id, callback_token)
+        battle = await asyncio.to_thread(
+            resolve_owned_open_battle_callback,
+            user_id,
+            callback_token,
+        )
         role = battle_role_for_user(battle, user_id)
         if role is None:
             raise LegacyBattleSessionConflict("callback owner is not a participant")
@@ -345,7 +356,8 @@ async def battle_answer(update, context):
         if question_index < 0 or question_index >= len(questions):
             raise LegacyBattleCallbackInvalid("battle question callback is stale")
         user_answer = resolve_battle_option(questions[question_index].get("options", []), option_token)
-        outcome = record_battle_answer_once(
+        outcome = await asyncio.to_thread(
+            record_battle_answer_once,
             battle["_id"],
             user_id,
             role,
@@ -387,8 +399,14 @@ async def battle_answer(update, context):
 
 async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str, role: str):
     try:
-        result = completed_battle_result_inputs(battle_id, user_id, role)
-        battle = record_battle_result(
+        result = await asyncio.to_thread(
+            completed_battle_result_inputs,
+            battle_id,
+            user_id,
+            role,
+        )
+        battle = await asyncio.to_thread(
+            record_battle_result,
             battle_id,
             user_id,
             role,
@@ -409,7 +427,8 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str
 
     if battle.get("creator_finished") and battle.get("opponent_finished"):
         try:
-            claim_final_battle(
+            await asyncio.to_thread(
+                claim_final_battle,
                 battle_id,
                 delivery_protocol=BATTLE_DELIVERY_PROTOCOL_OUTBOX,
             )
@@ -483,7 +502,11 @@ async def cancel_battle(update, context):
     query = update.callback_query
     battle_id = (query.data or "").replace("cancel_battle_", "", 1)
     try:
-        deleted = cancel_unstarted_battle(battle_id, query.from_user.id)
+        deleted = await asyncio.to_thread(
+            cancel_unstarted_battle,
+            battle_id,
+            query.from_user.id,
+        )
     except (LegacyBattleCancelUnavailable, ValueError):
         await query.answer("⚠️ База битв временно недоступна.", show_alert=True)
         return
@@ -501,7 +524,7 @@ async def cancel_battle(update, context):
 
 
 async def battle_maintenance_job(context):
-    finalization = finalize_ready_battles(limit=50)
+    finalization = await asyncio.to_thread(finalize_ready_battles, limit=50)
     if finalization.errors:
         logger.warning("battle finalization sweep errors: %s", finalization.errors)
     try:
@@ -509,6 +532,9 @@ async def battle_maintenance_job(context):
     except Exception:
         logger.exception("battle outbox maintenance failed")
     try:
-        cleanup_stale_waiting_battles(max_age_minutes=10)
+        await asyncio.to_thread(
+            cleanup_stale_waiting_battles,
+            max_age_minutes=10,
+        )
     except LegacyBattleCleanupUnavailable:
         logger.warning("battle stale cleanup unavailable", exc_info=True)
