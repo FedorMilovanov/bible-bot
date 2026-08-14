@@ -55,11 +55,16 @@ def test_nonempty_taxonomy_buckets_do_not_create_answer_position_leakage():
         assert max(positions.values()) - min(positions.values()) <= 1, (level, positions)
 
 
-def test_taxonomy_checkpoint_still_does_not_modify_challenge_pools():
+def test_later_admission_consumes_taxonomy_exactly_and_preserves_fallback_boundary():
     chapter3_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
-    for level, pool in questions.CHALLENGE_POOLS.items():
-        assert chapter3_ids.isdisjoint(_ids(pool)), level
+    for level in ("easy", "medium", "hard"):
+        expected = set(CHAPTER3_CHALLENGE_TAXONOMY[level])
+        assert _ids(questions.CHAPTER3_CHALLENGE_POOLS[level]) == expected
+        assert chapter3_ids & _ids(questions.CHALLENGE_POOLS[level]) == expected
     assert chapter3_ids.isdisjoint(_ids(questions.CHALLENGE_FALLBACK_POOL))
+
+    # The taxonomy manifest remains the immutable earlier authority checkpoint:
+    # it did not itself mutate Challenge. The stacked admission layer consumes it.
     assert MANIFEST["challenge_pools_mutated"] is False
     assert MANIFEST["challenge_fallback_mutated"] is False
     assert MANIFEST["automatic_admission"] is False
