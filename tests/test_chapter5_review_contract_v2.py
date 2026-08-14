@@ -44,7 +44,7 @@ def _git_blob_sha(raw: bytes) -> str:
 def test_exact_product_bank_blob_and_no_padding_machinery():
     bank_path = Path(__file__).resolve().parents[1] / "questions" / "chapter5" / "bank.py"
     raw = bank_path.read_bytes()
-    assert _git_blob_sha(raw) == "91d51413a6a0a3f3ad7e6e308c2a6885426ed38f"
+    assert _git_blob_sha(raw) == "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9"
     source = raw.decode("utf-8")
     assert ".ljust(" not in source
     assert ".rjust(" not in source
@@ -91,6 +91,20 @@ def test_all_72_cards_have_v2_trace_and_independent_research_metadata():
         assert review["blacklist_review"] == "PASS_AUTHORITATIVE_SURFACE"
         assert review["ranking_disposition"] == contract.RANKING_DISPOSITION
         assert review["competitive"] is False
+
+
+def test_post_green_source_minimum_findings_are_closed_in_card_and_review():
+    expected_minimum = {
+        "w3q_095": {"sblgnt", "morphgnt_1peter"},
+        "w3q_127": {"sblgnt", "morphgnt_1peter", "w3g_step_varapp_1p5"},
+    }
+    for candidate_id, required in expected_minimum.items():
+        card = _card(candidate_id)
+        review = _review(candidate_id)
+        assert required.issubset(set(card["sources"]))
+        assert required.issubset(set(review["source_subset"]))
+        edge_sources = {edge["source_id"] for edge in review["claim_source_edges"]}
+        assert required.issubset(edge_sources)
 
 
 def test_all_chapter5_authoring_strings_are_normalized():
