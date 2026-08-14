@@ -7,3 +7,5 @@ ignore = ["E501"]
 
 [lint.per-file-ignores]
 "tests/*.py" = ["B011"]
+"telegram_challenge_controller.py" = ["RUF001"]
+"telegram_controller.py" = ["UP035"]
