@@ -28,9 +28,9 @@ Retained reading families:
 2. **Christ through Noah** — Grudem: Christ preached through Noah in Noah's generation.
 3. **descensus / human dead reception** — historically important reading, with recent serious re-evaluation by Chi-Kin Lei. Lei is used as reception/exegetical control, not as a morphology-based identification of `πνεύματα`.
 
-`πνεύμασιν` morphology cannot choose a family. `ἐκήρυξεν` alone cannot establish time/content. `ἐν ᾧ` likewise needs exegesis.
+`πνεύμασιν` morphology cannot choose a family. `ἐκήρυξεν` alone cannot establish time/content. `ἐν ᾧ` likewise needs exegesis. `πορευθεὶς` is MorphGNT `-APPNSM-`; its parsing likewise does not establish chronology or destination.
 
-Primary background: LXX Genesis 6 is narrative background, not a lexical definition. 1 Enoch 10:4-14 depicts confinement/judgment of rebellious Watchers; 12:4-14:6 depicts Enoch carrying a judicial message. Treat this as **probable Second Temple background for one reading**, not explicit quotation. Marcar controls wider Noah/flood usage.
+Primary background: LXX Genesis 6 is narrative background, not a lexical definition. 1 Enoch 10:4-14 depicts confinement/judgment of rebellious Watchers; 12:4-14:6 depicts Enoch carrying a judicial message. Treat this as **probable Second Temple background for one reading**, not explicit quotation or demonstrated direct literary dependence. Marcar controls wider Noah/flood usage.
 
 ## 3:20-21
 
@@ -40,11 +40,11 @@ Keep the whole sequence: `δι’ ὕδατος`; `ἀντίτυπον ... βά�
 
 ### `ἐπερώτημα`
 
-Parsing: noun nom. neut. sg. Translation/history: disputed. LSJ preserves question/request and legal-stipulation history. Crawford, JTS 67.1 (2016), 23-37, argues a contractual/pledge reading and uses early baptismal reception plus the connection with `ὁμολογία`; that is a substantive historical-exegetical argument, not a parsing fact. Keep `appeal/request`, `pledge/stipulation`, and `confession/response-related` analyses distinct.
+Parsing: noun nom. neut. sg. Translation/history: disputed. LSJ preserves question/request and legal-stipulation history. The passage-level UBS handbook explicitly preserves multiple translation/semantic options, including appeal/request and contractual/pledge lines. Crawford, JTS 67.1 (2016), 23-37, argues a contractual/pledge reading and uses early baptismal reception plus the connection with `ὁμολογία`; that is a substantive historical-exegetical argument, not a parsing fact. Keep `appeal/request`, `pledge/stipulation`, and `confession/response-related` analyses distinct.
 
 ### Baptismal efficacy
 
-Do not weaken `σῴζει` or isolate it from `οὐ ... ἀλλὰ` and resurrection. Viable families include sacramental efficacy/instrumentality and evangelical faith/appeal/pledge/confessional readings. Crawford, Westfall and major commentaries control the dispute.
+Do not weaken `σῴζει` or isolate it from `οὐ ... ἀλλὰ` and resurrection. Viable families include sacramental efficacy/instrumentality and evangelical faith/appeal/pledge/confessional readings. Crawford, Westfall, passage-level translation control, evangelical witnesses and critical commentary keep the dispute visible.
 
 PROJECT guardrail: not mere external dirt-removal or automatic water; read with good-conscience `ἐπερώτημα` and Christ's resurrection. Denominational precision is HOLD.
 
@@ -56,11 +56,18 @@ Christ is at God's right hand, has gone into heaven, and angels, authorities and
 
 **Primary:** SBLGNT; MorphGNT; LXX Genesis 6; 1 Enoch 10:4-14; 12:4-14:6.
 
-**Peer-reviewed/specialist:** Matthew R. Crawford, JTS 67.1 (2016), 23-37; Sigurd Grindheim, Biblica 105.1 (2024), 113-126; Katie Marcar, NTS 63.4 (2017), 550-566; Chad T. Pierce, WUNT II/305 (2011); Chi-Kin Lei, WUNT II/636 (2025); Horrell/Williams, ICC vol. 2 (2023); Elliott, AYB (2001); Cynthia Long Westfall, in *Resurrection*, JSNTSup 186 (1999), 106-135.
+**Peer-reviewed/specialist:** Matthew R. Crawford, JTS 67.1 (2016), 23-37; Sigurd Grindheim, Biblica 105.1 (2024), 113-126; Katie Marcar, NTS 63.4 (2017), 550-566; Chad T. Pierce, WUNT II/305 (2011); Chi-Kin Lei, WUNT II/636 (2025); Horrell/Williams, ICC vol. 2 (2023); Cynthia Long Westfall, in *Resurrection*, JSNTSup 186 (1999), 106-135.
 
-**Evangelical/project:** MacArthur, *The Triumph of Christ's Suffering*, Parts 1-3; Wayne Grudem, Trinity Journal 7.2 (Fall 1986), 3-31; Davids, NICNT; Schreiner, NAC.
+**Evangelical/project:** MacArthur, *The Triumph of Christ's Suffering*, Parts 1-3; Wayne Grudem, Trinity Journal 7.2 (Fall 1986), 3-31; Thomas Schreiner, NAC, with his 3:19 position independently cross-checked in public teaching. Davids NICNT remains catalogued only as bibliographic/general commentary control in this lane and is not used to attribute an exact disputed-passage position.
 
-**Lexical:** LSJ `ἐπερώτημα` plus historical/exegetical control.
+**Lexical/translation:** LSJ `ἐπερώτημα`; Arichea/Nida, UBS Handbook passage-level commentary on 1 Pet 3:21; Crawford as peer-reviewed historical-exegetical control.
+
+## Source gaps kept fail-closed
+
+- Crawford full article was not read end-to-end in this lane; publisher abstract/metadata and independent audit support the limited claims used here. Do not rank `pledge` on that basis.
+- Davids and Elliott exact 3:18-22 positions were not directly inspected in this lane; they are not used as claim-specific proof.
+- No critical apparatus was inspected for manuscript-distribution claims at 3:18; no such claim is made.
+- No direct literary dependence on 1 Enoch is claimed.
 
 ## HOLD
 
