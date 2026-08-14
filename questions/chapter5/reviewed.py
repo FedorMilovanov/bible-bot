@@ -3,15 +3,17 @@
 from copy import deepcopy
 
 from .bank import CHAPTER5_STAGING_QUESTIONS
+from .bank_identity_v2 import validate_product_bank_identity
 from .research_metadata_v2 import validate_all_research_metadata
 from .review_contract_v2 import PRODUCT_REVIEW_RECORDS, validate_full_bank
 from .sources import SOURCE_CATALOG
 
 CHAPTER5_REVIEW_QUARANTINE_IDS = frozenset()
 
-# Validate the exact Research metadata independently from the product review
-# records, then validate the immutable Research/product handoff before exposing
-# any Chapter-5 card to the root pool registry.
+# Admission is intentionally fail-closed in three independent layers: exact
+# product blob identity, exact effective Research metadata, then the immutable
+# per-card Research/product review contract.
+validate_product_bank_identity()
 validate_all_research_metadata(CHAPTER5_STAGING_QUESTIONS)
 validate_full_bank()
 
