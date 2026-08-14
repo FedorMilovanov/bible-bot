@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import lzma
 import re
 import runpy
 from pathlib import Path
@@ -87,9 +88,10 @@ def _canonical_rows(expanded_dir: Path, chapter: int) -> dict[str, dict]:
 
 
 def _vendored_claims() -> tuple[dict, dict[str, dict]]:
-    payload = json.loads(
-        (ROOT / "data" / "1peter-research-handoff-v2.json").read_text(encoding="utf-8")
+    raw = lzma.decompress(
+        (ROOT / "data" / "1peter-research-handoff-v2.json.xz").read_bytes()
     )
+    payload = json.loads(raw.decode("utf-8"))
     return payload, {str(row["candidate_id"]): row for row in payload["claims"]}
 
 
@@ -151,9 +153,6 @@ def _audit_ch4(
     vendored: dict[str, dict],
     rows: dict[str, dict],
 ) -> dict | None:
-    # _ROWS tuple schema: card_id, review_record_id, content_digest,
-    # research_claim_id, claimed_position, claimed_confidence, claimed_type,
-    # prototype_id, prototype_classification.
     claim_id = str(mapping[3])
     research = vendored.get(claim_id)
     reasons: list[str] = []
@@ -173,8 +172,9 @@ def _audit_ch4(
         prototype_class = str(mapping[8] or "")
         if prototype_id:
             matches = [
-                p for p in research.get("prototypes", ())
-                if str(p.get("prototype_id")) == prototype_id
+                item
+                for item in research.get("prototypes", ())
+                if str(item.get("prototype_id")) == prototype_id
             ]
             if len(matches) != 1:
                 reasons.append("PROTOTYPE_NOT_OWNED_BY_FINAL_CLAIM")
