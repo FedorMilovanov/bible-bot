@@ -6,6 +6,7 @@ from questions.chapter5.adversarial_review_v2 import (
     FIRST_GREEN_HEAD,
     SECOND_PASS_FINDING_COUNT,
     SECOND_PASS_MATRIX,
+    SECOND_PASS_RESOLVED_FINDINGS,
     validate_second_pass,
 )
 from questions.chapter5.review_contract_v2 import PROTOTYPE_AUDIT_RECORDS
@@ -16,8 +17,12 @@ def test_second_adversarial_readback_is_72_of_72_and_anchored_after_first_green(
     assert FIRST_GREEN_HEAD == "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8"
     assert len(ADVERSARIAL_REVIEW_RECORDS) == 72
     assert SECOND_PASS_FINDING_COUNT == 0
-    assert len(SECOND_PASS_MATRIX) == 10
+    assert len(SECOND_PASS_MATRIX) == 11
+    assert set(SECOND_PASS_RESOLVED_FINDINGS) == {"w3q_095", "w3q_127"}
     assert all(record["finding_count"] == 0 for record in ADVERSARIAL_REVIEW_RECORDS.values())
+    for candidate_id, finding in SECOND_PASS_RESOLVED_FINDINGS.items():
+        assert finding
+        assert ADVERSARIAL_REVIEW_RECORDS[candidate_id]["resolved_finding"] == finding
 
 
 def test_materialized_prototype_audit_matches_runtime_contract():
