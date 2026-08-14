@@ -116,7 +116,7 @@
   "releaseGates": {
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},
-    "finalExactHead": "PENDING_FINAL_GATE_AFTER_PASS2",
-    "status": "PENDING_FINAL_EXACT_HEAD_GREEN"
+    "finalGatePolicy": "The post-pass2 PR head must have CI, Security Audit and CodeQL SUCCESS on the same exact head. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked audit does not mutate itself after the gate.",
+    "status": "REQUIRES_POST_PASS2_EXACT_HEAD_GREEN"
   }
 }
