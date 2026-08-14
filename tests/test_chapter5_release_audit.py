@@ -1,40 +1,97 @@
-from collections import Counter
+from collections import Counter, defaultdict
 
 from questions import (
     BATTLE_POOL,
     CHALLENGE_POOLS,
     COMPETITIVE_POOL,
     POOL_REGISTRY,
-    SOURCE_CATALOG,
+    chapter5_questions,
 )
+from questions.chapter5.bank import CHAPTER5_STAGING_QUESTIONS
 from questions.chapter5.ranking_audit import (
-    CHAPTER5_RANKING_AUDIT as RANKING_AUDIT,
     CHAPTER5_RANKING_HOLD_IDS,
     CHAPTER5_RANKING_READY_IDS,
+    RANKING_AUDIT,
 )
-from questions.chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
+from questions.chapter5.reviewed import (
+    CHAPTER5_REVIEWED_QUESTIONS,
+    CHAPTER5_REVIEW_QUARANTINE_IDS,
+)
 from questions.pool_policy import NON_SCORING_LEARNING_POOLS
+from questions.source_registry import SOURCE_CATALOG
 
 
 def _ids(items):
-    return {str(item["id"]) for item in items}
+    return {item["id"] for item in items}
 
 
-def test_chapter5_reviewed_count_and_answer_positions():
+def test_release_counts_and_review_boundary():
+    assert len(CHAPTER5_STAGING_QUESTIONS) == 72
     assert len(CHAPTER5_REVIEWED_QUESTIONS) == 72
+    assert CHAPTER5_REVIEW_QUARANTINE_IDS == frozenset()
+    assert len(chapter5_questions) == 72
+    assert POOL_REGISTRY["chapter5"] == chapter5_questions
+
+
+def test_reviewed_cards_are_deep_copy_isolated():
+    assert CHAPTER5_REVIEWED_QUESTIONS is not CHAPTER5_STAGING_QUESTIONS
+    for raw, reviewed in zip(
+        CHAPTER5_STAGING_QUESTIONS,
+        CHAPTER5_REVIEWED_QUESTIONS,
+        strict=True,
+    ):
+        assert raw is not reviewed
+        assert raw["options"] is not reviewed["options"]
+
+
+def test_schema_ids_sources_and_visible_project_markers():
+    ids = []
+    for card in CHAPTER5_REVIEWED_QUESTIONS:
+        ids.append(card["id"])
+        assert len(card["options"]) == 4
+        assert card["correct"] in {0, 1, 2, 3}
+        assert card["claim_type"] in {
+            "text",
+            "greek",
+            "history",
+            "interpretation",
+            "application",
+        }
+        assert card["confidence"] in {"high", "medium", "contested"}
+        assert card["position"] in {"neutral", "project"}
+        assert card["competitive"] is False
+        assert card["sources"]
+        if card["position"] == "project":
+            assert card["question"].startswith("[Позиция курса]")
+    assert len(ids) == len(set(ids)) == 72
+
+
+def test_correct_index_distribution_global_and_subgroups():
     assert Counter(card["correct"] for card in CHAPTER5_REVIEWED_QUESTIONS) == {
         0: 18,
         1: 18,
         2: 18,
         3: 18,
     }
+    by_type = defaultdict(list)
+    by_verse = defaultdict(list)
+    for card in CHAPTER5_REVIEWED_QUESTIONS:
+        by_type[card["claim_type"]].append(card["correct"])
+        by_verse[card["verse"]].append(card["correct"])
+    for values in list(by_type.values()) + list(by_verse.values()):
+        if len(values) >= 4:
+            assert len(set(values)) >= 2
 
 
-def test_chapter5_has_unique_ids_questions_and_option_sets():
-    ids = [card["id"] for card in CHAPTER5_REVIEWED_QUESTIONS]
-    questions = [card["question"] for card in CHAPTER5_REVIEWED_QUESTIONS]
-    option_sets = [tuple(card["options"]) for card in CHAPTER5_REVIEWED_QUESTIONS]
-    assert len(ids) == len(set(ids))
+def test_no_duplicate_or_near_duplicate_exact_surfaces():
+    questions = [
+        " ".join(card["question"].lower().split())
+        for card in CHAPTER5_REVIEWED_QUESTIONS
+    ]
+    option_sets = [
+        tuple(sorted(" ".join(option.lower().split()) for option in card["options"]))
+        for card in CHAPTER5_REVIEWED_QUESTIONS
+    ]
     assert len(questions) == len(set(questions))
     assert len(option_sets) == len(set(option_sets))
 
