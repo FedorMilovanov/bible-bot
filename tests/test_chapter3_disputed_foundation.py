@@ -53,7 +53,7 @@ def test_spirits_question_preserves_materially_different_readings_and_quorum():
     assert {
         "fallen_spirits_watchers",
         "christ_through_noah",
-        "human_dead_descensus",
+        "human_dead_descensus_reception",
     } <= set(item["readings"])
     assert {
         "gty_1p3_18_20",
