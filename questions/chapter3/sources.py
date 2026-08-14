@@ -26,6 +26,11 @@ SOURCE_CATALOG = {
         "url": "https://academic.oup.com/jts/article/67/1/23/2451894",
         "kind": "peer_reviewed_scholarship_disputed",
     },
+    "ubs_handbook_1p3_21": {
+        "title": "Daniel C. Arichea and Eugene A. Nida, A Handbook on The First Letter from Peter: translation commentary on 1 Peter 3:21 (UBS Handbook Series, 1980)",
+        "url": "https://tips.translation.bible/tip_term/translation-commentary-on-1-peter-321/",
+        "kind": "translation_handbook_lexical_control",
+    },
     "pierce_spirits_2011": {
         "title": "Chad T. Pierce, Spirits and the Proclamation of Christ: 1 Peter 3:18-22 in Light of Sin and Punishment Traditions in Early Jewish and Christian Literature (WUNT II/305, 2011)",
         "url": "https://www.mohrsiebeck.com/en/book/spirits-and-the-proclamation-of-christ-9783161508585",
@@ -49,7 +54,7 @@ SOURCE_CATALOG = {
     "davids_1peter_nicnt": {
         "title": "Peter H. Davids, The First Epistle of Peter (NICNT, 1990)",
         "url": "https://www.eerdmans.com/9781467422918/the-first-epistle-of-peter/",
-        "kind": "evangelical_academic_commentary",
+        "kind": "evangelical_academic_commentary_bibliographic_control",
     },
     "schreiner_1peter_nac": {
         "title": "Thomas R. Schreiner, 1, 2 Peter, Jude (New American Commentary)",
@@ -59,7 +64,7 @@ SOURCE_CATALOG = {
     "elliott_1peter_ayb": {
         "title": "John H. Elliott, 1 Peter (Anchor Yale Bible, 2001)",
         "url": "https://yalebooks.yale.edu/book/9780300139914/1-peter/",
-        "kind": "academic_commentary",
+        "kind": "academic_commentary_bibliographic_control",
     },
     "horrell_williams_icc_v2": {
         "title": "David G. Horrell and Travis B. Williams, 1 Peter: A Critical and Exegetical Commentary, Vol. 2: Chapters 3-5 (ICC, 2023)",
