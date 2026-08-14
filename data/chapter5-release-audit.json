@@ -4,13 +4,15 @@
   "baseSha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
   "researchSha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
   "researchAuthorityDigest": "51b935cd819a664ddc6d036c72f38d903c3a1d1c862e283a64b82987dfa7175b",
-  "productBankGitBlobSha": "91d51413a6a0a3f3ad7e6e308c2a6885426ed38f",
+  "productBankGitBlobSha": "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9",
   "counts": {
     "effectiveResearchClaims": 72,
     "productCards": 72,
     "productReviewRecords": 72,
     "independentlyReadBackPass1": 72,
     "independentlyReadBackPass2": 72,
+    "pass2ResolvedFindings": 2,
+    "pass2UnresolvedFindings": 0,
     "prototypesReconciled": 32,
     "rejectedPrototypeTemplates": 2,
     "independentProductRewritesAccepted": 2,
@@ -57,11 +59,16 @@
     }
   },
   "semanticReadbackPass2": {
-    "status": "COMPLETE_PASS",
+    "status": "COMPLETE_WITH_REPAIRS_PASS",
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "recordSource": "questions/chapter5/adversarial_review_v2.py::ADVERSARIAL_REVIEW_RECORDS",
     "count": 72,
-    "findingCount": 0,
+    "resolvedFindingCount": 2,
+    "unresolvedFindingCount": 0,
+    "resolvedFindings": {
+      "w3q_095": "Added morphgnt_1peter required by the exact Research minimum source set.",
+      "w3q_127": "Added morphgnt_1peter required by the exact Research minimum source set."
+    },
     "matrix": [
       "question_matches_claim",
       "keyed_answer_evidence_bounded",
@@ -72,7 +79,8 @@
       "no_history_inference_from_toponym_or_text_form",
       "textual_unit_scope_preserved",
       "named_witness_not_promoted_to_original_text",
-      "ecm_based_route_not_promoted_to_direct_decm_readback"
+      "ecm_based_route_not_promoted_to_direct_decm_readback",
+      "research_minimum_source_set_preserved"
     ]
   },
   "textualControls": {
@@ -102,7 +110,7 @@
     "direct_decm_wording_from_ecm_based_evidence", "manuscript_unanimity", "project_to_neutral",
     "claim_type_or_confidence_strengthening", "competitive_true", "challenge_leakage",
     "challenge_fallback_leakage", "whitespace_or_padding", "duplicate_option_surfaces",
-    "wrong_answer_position_metadata", "pre_answer_public_api_leakage"
+    "wrong_answer_position_metadata", "pre_answer_public_api_leakage", "research_minimum_source_set_regression"
   ],
   "safetyInvariants": [
     "exact_product_bank_blob_pinned", "independent_research_metadata_pinned",
@@ -110,13 +118,13 @@
     "project_labels_visible", "all_ch5_competitive_false", "normal_learning_non_scoring",
     "random_all_excluded", "battle_excluded", "challenge_excluded", "challenge_fallback_excluded",
     "canonical_strings_have_no_outer_whitespace", "canonical_options_not_padded_for_layout",
-    "claim_source_depth_lane_scoped", "historical_holds_audit_visible",
-    "wave3n_effective_closures_control_production"
+    "claim_source_depth_lane_scoped", "research_minimum_source_sets_preserved",
+    "historical_holds_audit_visible", "wave3n_effective_closures_control_production"
   ],
   "releaseGates": {
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},
-    "finalGatePolicy": "The post-pass2 PR head must have CI, Security Audit and CodeQL SUCCESS on the same exact head. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked audit does not mutate itself after the gate.",
-    "status": "REQUIRES_POST_PASS2_EXACT_HEAD_GREEN"
+    "finalGatePolicy": "The post-pass2-repair PR head must have CI, Security Audit and CodeQL SUCCESS on the same exact head. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked audit does not mutate itself after the gate.",
+    "status": "REQUIRES_POST_PASS2_REPAIR_EXACT_HEAD_GREEN"
   }
 }
