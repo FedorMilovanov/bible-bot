@@ -19,7 +19,7 @@
     "3:1-7": ["text", "greek", "intertext", "history", "theology", "disputed", "application"],
     "3:8-12": ["text", "greek", "intertext", "theology", "disputed", "application"],
     "3:13-17": ["text", "greek", "intertext", "theology", "disputed", "application"],
-    "3:18-22": ["text", "greek", "intertext", "theology", "disputed", "application"]
+    "3:18-22": ["text", "greek", "disputed", "intertext", "theology", "application"]
   },
   "editorial_policy": {
     "project_questions_visible_label": "[Позиция курса]",
