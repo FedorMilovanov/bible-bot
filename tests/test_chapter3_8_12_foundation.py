@@ -41,28 +41,28 @@ def test_claim_type_separation_by_pool():
 
 
 def test_morphgnt_anchor_forms_are_exact():
-    assert MORPHGNT_3_8_12["ὁμόφρονες"] == ("ὁμόφρων", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["συμπαθεῖς"] == ("συμπαθής", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["φιλάδελφοι"] == ("φιλάδελφος", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["εὔσπλαγχνοι"] == ("εὔσπλαγχνος", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["ταπεινόφρονες"] == ("ταπεινόφρων", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["ἀποδιδόντες"] == ("ἀποδίδωμι", "V- -PAPNPM-")
-    assert MORPHGNT_3_8_12["εὐλογοῦντες"] == ("εὐλογέω", "V- -PAPNPM-")
-    assert MORPHGNT_3_8_12["ἐκλήθητε"] == ("καλέω", "V- 2API-P--")
-    assert MORPHGNT_3_8_12["κληρονομήσητε"] == ("κληρονομέω", "V- 2AAS-P--")
-    for form in ("παυσάτω", "ἐκκλινάτω", "ποιησάτω", "ζητησάτω", "διωξάτω"):
+    assert MORPHGNT_3_8_12["\u1f41\u03bc\u03cc\u03c6\u03c1\u03bf\u03bd\u03b5\u03c2"] == ("\u1f41\u03bc\u03cc\u03c6\u03c1\u03c9\u03bd", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["\u03c3\u03c5\u03bc\u03c0\u03b1\u03b8\u03b5\u1fd6\u03c2"] == ("\u03c3\u03c5\u03bc\u03c0\u03b1\u03b8\u03ae\u03c2", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["\u03c6\u03b9\u03bb\u03ac\u03b4\u03b5\u03bb\u03c6\u03bf\u03b9"] == ("\u03c6\u03b9\u03bb\u03ac\u03b4\u03b5\u03bb\u03c6\u03bf\u03c2", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["\u03b5\u1f54\u03c3\u03c0\u03bb\u03b1\u03b3\u03c7\u03bd\u03bf\u03b9"] == ("\u03b5\u1f54\u03c3\u03c0\u03bb\u03b1\u03b3\u03c7\u03bd\u03bf\u03c2", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["\u03c4\u03b1\u03c0\u03b5\u03b9\u03bd\u03cc\u03c6\u03c1\u03bf\u03bd\u03b5\u03c2"] == ("\u03c4\u03b1\u03c0\u03b5\u03b9\u03bd\u03cc\u03c6\u03c1\u03c9\u03bd", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["\u1f00\u03c0\u03bf\u03b4\u03b9\u03b4\u03cc\u03bd\u03c4\u03b5\u03c2"] == ("\u1f00\u03c0\u03bf\u03b4\u03af\u03b4\u03c9\u03bc\u03b9", "V- -PAPNPM-")
+    assert MORPHGNT_3_8_12["\u03b5\u1f50\u03bb\u03bf\u03b3\u03bf\u1fe6\u03bd\u03c4\u03b5\u03c2"] == ("\u03b5\u1f50\u03bb\u03bf\u03b3\u03ad\u03c9", "V- -PAPNPM-")
+    assert MORPHGNT_3_8_12["\u1f10\u03ba\u03bb\u03ae\u03b8\u03b7\u03c4\u03b5"] == ("\u03ba\u03b1\u03bb\u03ad\u03c9", "V- 2API-P--")
+    assert MORPHGNT_3_8_12["\u03ba\u03bb\u03b7\u03c1\u03bf\u03bd\u03bf\u03bc\u03ae\u03c3\u03b7\u03c4\u03b5"] == ("\u03ba\u03bb\u03b7\u03c1\u03bf\u03bd\u03bf\u03bc\u03ad\u03c9", "V- 2AAS-P--")
+    for form in ("\u03c0\u03b1\u03c5\u03c3\u03ac\u03c4\u03c9", "\u1f10\u03ba\u03ba\u03bb\u03b9\u03bd\u03ac\u03c4\u03c9", "\u03c0\u03bf\u03b9\u03b7\u03c3\u03ac\u03c4\u03c9", "\u03b6\u03b7\u03c4\u03b7\u03c3\u03ac\u03c4\u03c9", "\u03b4\u03b9\u03c9\u03be\u03ac\u03c4\u03c9"):
         assert MORPHGNT_3_8_12[form][1] == "V- 3AAD-S--"
 
 
 def test_lxx_quote_extent_and_observable_differences_are_pinned():
-    assert LXX_PS33_13_17[13].startswith("τίς ἐστιν ἄνθρωπος")
-    assert FIRST_PETER_3_10_12[10].startswith("ὁ γὰρ θέλων")
-    assert "γλῶσσάν σου" in LXX_PS33_13_17[14]
-    assert "γλῶσσαν ἀπὸ" in FIRST_PETER_3_10_12[10]
-    assert "παῦσον" in LXX_PS33_13_17[14]
-    assert "παυσάτω" in FIRST_PETER_3_10_12[10]
-    assert "τοῦ ἐξολεθρεῦσαι ἐκ γῆς τὸ μνημόσυνον αὐτῶν" in LXX_PS33_13_17[17]
-    assert "ἐξολεθρεῦσαι" not in FIRST_PETER_3_10_12[12]
+    assert LXX_PS33_13_17[13].startswith("\u03c4\u03af\u03c2 \u1f10\u03c3\u03c4\u03b9\u03bd \u1f04\u03bd\u03b8\u03c1\u03c9\u03c0\u03bf\u03c2")
+    assert FIRST_PETER_3_10_12[10].startswith("\u1f41 \u03b3\u1f70\u03c1 \u03b8\u03ad\u03bb\u03c9\u03bd")
+    assert "\u03b3\u03bb\u1ff6\u03c3\u03c3\u03ac\u03bd " + "\u03c3\u03bf\u03c5" in LXX_PS33_13_17[14]
+    assert "\u03b3\u03bb\u1ff6\u03c3\u03c3\u03b1\u03bd \u1f00\u03c0\u1f78" in FIRST_PETER_3_10_12[10]
+    assert "\u03c0\u03b1\u1fe6\u03c3\u03bf\u03bd" in LXX_PS33_13_17[14]
+    assert "\u03c0\u03b1\u03c5\u03c3\u03ac\u03c4\u03c9" in FIRST_PETER_3_10_12[10]
+    assert "\u03c4\u03bf\u1fe6 \u1f10\u03be\u03bf\u03bb\u03b5\u03b8\u03c1\u03b5\u1fe6\u03c3\u03b1\u03b9 \u1f10\u03ba \u03b3\u1fc6\u03c2 \u03c4\u1f78 \u03bc\u03bd\u03b7\u03bc\u03cc\u03c3\u03c5\u03bd\u03bf\u03bd \u03b1\u1f50\u03c4\u1ff6\u03bd" in LXX_PS33_13_17[17]
+    assert "\u1f10\u03be\u03bf\u03bb\u03b5\u03b8\u03c1\u03b5\u1fe6\u03c3\u03b1\u03b9" not in FIRST_PETER_3_10_12[12]
 
 
 def test_nontrivial_intertext_items_meet_scholarly_control_quorum():
