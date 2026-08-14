@@ -9,7 +9,7 @@ def _d(qid, question, answer, wrong, explanation, verse, sources, readings):
 
 
 SPIRITS = ["sblgnt", "morphgnt_1peter", "gty_1p3_18_20", "grudem_noah_1p3_19", "pierce_spirits_2011", "grindheim_spirits_2024", "lei_descensus_2025", "horrell_williams_icc_v2"]
-BAPTISM = ["sblgnt", "jts_crawford_1p3_21", "westfall_baptism_1999", "elliott_1peter_ayb", "davids_1peter_nicnt", "schreiner_1peter_nac", "gty_1p3_20_22", "horrell_williams_icc_v2"]
+BAPTISM = ["sblgnt", "jts_crawford_1p3_21", "westfall_baptism_1999", "elliott_1peter_ayb", "schreiner_1peter_nac", "gty_1p3_20_22", "horrell_williams_icc_v2"]
 
 DISPUTED_3_18_22 = [
     _d(
@@ -59,7 +59,7 @@ DISPUTED_3_18_22 = [
         ["πνεύματι — глагол", "μέν ... δέ требует двух субъектов", "σαρκί и πνεύματι стоят в разных падежах"],
         "MorphGNT фиксирует оба причастия как APPNSM и оба существительных как дативы; синтаксико-богословский вывод требует комментариев.",
         "1 Пет. 3:18",
-        ["sblgnt", "morphgnt_1peter", "davids_1peter_nicnt", "schreiner_1peter_nac", "elliott_1peter_ayb", "horrell_williams_icc_v2"],
+        ["sblgnt", "morphgnt_1peter", "schreiner_1peter_nac", "horrell_williams_icc_v2"],
         ["sphere_or_mode_contrast", "holy_spirit_agency"],
     ),
     _d(
