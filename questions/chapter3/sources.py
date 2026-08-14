@@ -13,11 +13,11 @@ SOURCE_CATALOG = {
     },
     "gty_1p3_20_22": {
         "title": "John MacArthur, The Triumph of Christ's Suffering, Part 3 (1 Peter 3:20-22)",
-        "url": "https://www.gty.org/library/sermons-library/60-38/The-Triumph-of-Christs-Suffering-Part-3",
+        "url": "https://www.gty.org/resources/study-guides/chapters/60-38/the-triumph-of-christs-suffering-part-3",
         "kind": "conservative_exposition_position",
     },
     "grudem_noah_1p3_19": {
-        "title": "Wayne Grudem, Christ Preaching through Noah: 1 Peter 3:19-20 in the Light of Dominant Themes in Jewish Literature, Trinity Journal 7.2 (1986), 3-31",
+        "title": "Wayne Grudem, Christ Preaching through Noah: 1 Peter 3:19-20 in the Light of Dominant Themes in Jewish Literature, Trinity Journal 7.2 (Fall 1986), 3-31",
         "url": "https://www.waynegrudem.com/christ-preaching-through-noah-1-peter-319-20-in-the-light-of-dominant-themes-in-jewish-literature",
         "kind": "evangelical_scholarship_disputed",
     },
@@ -67,8 +67,8 @@ SOURCE_CATALOG = {
         "kind": "critical_academic_commentary",
     },
     "westfall_baptism_1999": {
-        "title": "Cynthia Long Westfall, The Relationship between the Resurrection, the Proclamation to the Spirits in Prison and Baptismal Regeneration: 1 Peter 3:19-22 (JSNTSup 186, 1999), 106-153",
-        "url": "https://www.opentext.org/about/partners/clw.html",
+        "title": "Cynthia Long Westfall, The Relationship between the Resurrection, the Proclamation to the Spirits in Prison and Baptismal Regeneration: 1 Peter 3:19-22, in Resurrection (JSNTSup 186, 1999), 106-135",
+        "url": "https://bible.ixtheo.de/Record/1535231688",
         "kind": "academic_chapter_baptism_disputed",
     },
     "lsj_eperotema": {
@@ -83,7 +83,7 @@ SOURCE_CATALOG = {
     },
     "enoch_10_14_charles": {
         "title": "1 Enoch 10-14, R. H. Charles translation (primary Second Temple witness in translation)",
-        "url": "https://www.ccel.org/c/charles/otpseudepig/enoch/ENOCH_1.HTM",
+        "url": "https://www.ccel.org/c/charles/otpseudepig/enoch.htm",
         "kind": "primary_second_temple_translation",
     },
 }
