@@ -5,7 +5,7 @@
 - bible-bot integration base: `e4dea87d7348ee940bc628f7f8d53379e05a5a3a`
 - exact Research authority: `FedorMilovanov/Research@0142430af8ba80f28e0fd9cde669d32611a1d2af`
 - Research authority digest: `51b935cd819a664ddc6d036c72f38d903c3a1d1c862e283a64b82987dfa7175b`
-- reviewed product-bank Git blob: `91d51413a6a0a3f3ad7e6e308c2a6885426ed38f`
+- reviewed product-bank Git blob after pass-2 repairs: `b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9`
 - effective Chapter-5 claims: **72**
 - Chapter-5 Research prototypes reconciled: **32/32**
 
@@ -30,11 +30,11 @@ Only after the corrected bank and the v2 admission contract were frozen did the 
 - CodeQL — **SUCCESS**
 - full pytest, Mini App JavaScript checks/tests, production Docker build, production-controller import and built-container web smoke all completed successfully inside CI.
 
-That exact green head is the immutable anchor recorded in every second-pass adversarial review record.
+That exact green head remains the anchor recorded in every second-pass adversarial review record.
 
 ## Second independent adversarial readback — 72/72
 
-A second semantic pass was performed only after the first exact-head green and against the same frozen product-bank blob `91d51413a6a0a3f3ad7e6e308c2a6885426ed38f`. It did not reuse the first pass as a proof. The adversarial matrix independently attacked:
+A second semantic pass was performed only after the first exact-head green. It did not reuse the first pass as proof. The adversarial matrix independently attacked:
 
 - claim/stem mismatch;
 - keyed answers that silently strengthen the evidence;
@@ -44,9 +44,15 @@ A second semantic pass was performed only after the first exact-head green and a
 - historical conclusions inferred merely from a toponym, morphology or text form;
 - leakage between independent textual units;
 - promotion of a named witness into an original-text verdict;
-- promotion of ECM-based published evidence into a claim of direct project dECM readback.
+- promotion of ECM-based published evidence into a claim of direct project dECM readback;
+- loss of an exact Research `source_minimum` member from the product review/source-edge trace.
 
-Result: **72/72 PASS, finding count = 0**. The most sensitive textual cards were re-read explicitly, including `w3q_050`, `051`, `068`, `075`, `078`, `119`, `125–128`, `141–144`. No further semantic bank edit was required, so the reviewed product-bank Git blob remained unchanged. The second pass is materialized in `questions/chapter5/adversarial_review_v2.py` and is now a mandatory admission gate, not merely prose evidence.
+This second pass found **two provenance defects**, both in otherwise semantically safe cards:
+
+1. `w3q_095` had only `sblgnt` in the product source subset although the exact Research candidate requires the minimum set `sblgnt + morphgnt_1peter`.
+2. `w3q_127` had SBLGNT, secondary apparatus and Wave3n sources but omitted `morphgnt_1peter`, which is part of the exact Research minimum `sblgnt + morphgnt_1peter + w3g_step_varapp_1p5`.
+
+Both defects were fixed in the canonical authoring bank, not hidden by weakening the review contract. The bank was repinned to `b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9`, and regression coverage now requires those minimum sources to appear in the card, review `source_subset`, and claim/source edges. Final second-pass state is therefore **72/72 PASS, 2 findings resolved, 0 unresolved**. The second pass is materialized in `questions/chapter5/adversarial_review_v2.py` and remains a mandatory admission gate.
 
 ## Prototype reconciliation — 32/32
 
@@ -86,8 +92,8 @@ Before an answer is accepted, Mini App `public_question()` exposes exactly `id`,
 
 ## Negative and mutation coverage
 
-The v2 suite rejects stale authority digest, wrong claim digest, fabricated inspection edge, a source borrowed from the wrong 5:2 textual unit, direct-dECM wording from ECM-based evidence, manuscript-unanimity wording, project→neutral relabelling, claim-type/confidence strengthening, `competitive=True`, Challenge/fallback leakage, canonical whitespace/padding, duplicated option surfaces, wrong answer-position metadata and pre-answer public-API leakage.
+The v2 suite rejects stale authority digest, wrong claim digest, fabricated inspection edge, a source borrowed from the wrong 5:2 textual unit, direct-dECM wording from ECM-based evidence, manuscript-unanimity wording, project→neutral relabelling, claim-type/confidence strengthening, `competitive=True`, Challenge/fallback leakage, canonical whitespace/padding, duplicated option surfaces, wrong answer-position metadata and pre-answer public-API leakage. It also has an explicit post-green regression that requires the Research minimum source sets for `w3q_095` and `w3q_127` to survive in card/review/edge provenance.
 
 ## Final release gate policy
 
-The second pass is complete. The only remaining release condition is a fresh exact-head run after the second-pass records/docs were added: **CI + Security Audit + CodeQL must all succeed on the same post-pass2 PR head**, including full pytest, JS checks, production Docker build/import and built-container web smoke. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked document does not mutate its own release head. PR #29 remains Draft and `main` remains untouched until Agent 5 performs the later integration decision.
+The second pass is complete with both findings repaired. The remaining release condition is a fresh exact-head run after these pass-2 repairs and updated audit records: **CI + Security Audit + CodeQL must all succeed on the same post-repair PR head**, including full pytest, JS checks, production Docker build/import and built-container web smoke. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked document does not mutate its own release head. PR #29 remains Draft and `main` remains untouched until Agent 5 performs the later integration decision.
