@@ -9,8 +9,10 @@ from datetime import UTC, datetime
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
+from course_catalog import COURSE_ENTRIES, SURFACE_MINIAPP, course_for_pool, public_catalog
 from .auth import require_user
 from .quiz import (
+    MODE_CONFIG,
     answer_quiz,
     cancel_quiz,
     get_active_quiz,
@@ -40,6 +42,11 @@ _PUBLIC_USER_FIELDS = frozenset(
     }
 )
 _PUBLIC_LEVEL_SUFFIXES = ("attempts", "correct", "total", "best_score")
+_PUBLIC_MODE_LABELS = {
+    "relaxed": "🧘 Спокойный",
+    "timed": "⏱ На время",
+    "speed": "⚡ Скоростной",
+}
 
 
 def _uptime_seconds() -> int:
@@ -68,15 +75,17 @@ def _total_users() -> int:
 
 def _public_user_document(document: dict | None) -> dict:
     allowed = set(_PUBLIC_USER_FIELDS)
+    level_keys = {entry.pool_key for entry in COURSE_ENTRIES}
     try:
         from database import ALL_LEVEL_KEYS
-        allowed.update(
-            f"{level_key}_{suffix}"
-            for level_key in ALL_LEVEL_KEYS
-            for suffix in _PUBLIC_LEVEL_SUFFIXES
-        )
+        level_keys.update(ALL_LEVEL_KEYS)
     except Exception:
         pass
+    allowed.update(
+        f"{level_key}_{suffix}"
+        for level_key in level_keys
+        for suffix in _PUBLIC_LEVEL_SUFFIXES
+    )
     return {key: value for key, value in (document or {}).items() if key in allowed}
 
 
@@ -130,6 +139,38 @@ def _hard_leaderboard(limit: int = 20) -> list[dict]:
         return []
 
 
+def _public_mode_catalog() -> dict[str, dict]:
+    modes: dict[str, dict] = {}
+    for mode, config in MODE_CONFIG.items():
+        time_limit = config.get("time_limit")
+        detail = f"{int(time_limit)} сек" if time_limit else "без таймера"
+        modes[mode] = {
+            "id": mode,
+            "label": _PUBLIC_MODE_LABELS.get(mode, mode),
+            "description": detail,
+            "time_limit": time_limit,
+        }
+    return modes
+
+
+def _attach_course_key(body: dict | None) -> dict | None:
+    """Enrich a normal active-session response for old sessions without course_key."""
+    if not isinstance(body, dict) or body.get("challenge"):
+        return body
+    if body.get("course_key"):
+        return body
+    pool_key = str(body.get("pool_key", ""))
+    if not pool_key:
+        return body
+    try:
+        entry = course_for_pool(pool_key, surface=SURFACE_MINIAPP)
+    except Exception:
+        entry = None
+    if entry is not None:
+        body["course_key"] = entry.key
+    return body
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR) if STATIC_DIR.is_dir() else None, static_url_path="")
 
@@ -166,6 +207,21 @@ def create_app() -> Flask:
         if (STATIC_DIR / path).is_file():
             return send_from_directory(str(STATIC_DIR), path)
         return home()
+
+    @app.get("/api/catalog")
+    def catalog():
+        """Public, deployment-fresh learning catalog; no question/source internals."""
+        try:
+            body = public_catalog(surface=SURFACE_MINIAPP)
+            body["modes"] = _public_mode_catalog()
+            response = jsonify(body)
+            # A pool can appear/disappear only with a server deploy. Avoid a
+            # browser/proxy keeping the previous deployment's availability.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        except Exception:
+            logger.exception("course catalog unavailable")
+            return _json_error("course catalog unavailable", 503)
 
     @app.get("/stats")
     @app.get("/api/stats")
@@ -216,6 +272,7 @@ def create_app() -> Flask:
         if error:
             return error
         body, message, status = get_active_quiz(user)
+        body = _attach_course_key(body)
         return jsonify(body) if body is not None else _json_error(message, status)
 
     @app.post("/api/quiz/start")

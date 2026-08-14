@@ -1,6 +1,6 @@
 /* Telegram Mini App — server-authoritative quiz client.
    The browser never receives future questions, never decides correctness,
-   and never submits a self-reported score. */
+   and never submits a self-reported score or ranking policy. */
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
@@ -11,36 +11,12 @@ if (tg) {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const quizFlow = new window.QuizFlowGuard();
-
-const LEVELS = [
-  { key: 'easy_p1', name: '🟢 Легкий — 1 (ст. 1–16)', pts: 1 },
-  { key: 'easy_p2', name: '🟢 Легкий — 2 (ст. 17–25)', pts: 1 },
-  { key: 'medium_p1', name: '🟡 Средний — 1', pts: 2 },
-  { key: 'medium_p2', name: '🟡 Средний — 2', pts: 2 },
-  { key: 'hard_p1', name: '🔴 Сложный — 1', pts: 3 },
-  { key: 'hard_p2', name: '🔴 Сложный — 2', pts: 3 },
-  { key: 'practical_p1', name: '🙏 Применение — 1', pts: 2 },
-  { key: 'practical_p2', name: '🙏 Применение — 2', pts: 2 },
-  { key: 'linguistics_ch1', name: '🔬 Лингвистика — 1', pts: 3 },
-  { key: 'linguistics_ch1_2', name: '🔬 Лингвистика — 2', pts: 3 },
-  { key: 'linguistics_ch1_3', name: '🔬 Лингвистика — 3', pts: 3 },
-];
-
-const HIST = [
-  { key: 'intro1', name: '📜 Введение: Авторство ч. 1', pts: 2 },
-  { key: 'intro2', name: '📜 Введение: Авторство ч. 2', pts: 2 },
-  { key: 'intro3', name: '📜 Введение: Структура', pts: 2 },
-  { key: 'nero', name: '👑 Нерон', pts: 2 },
-  { key: 'geography', name: '🌍 География', pts: 2 },
-];
-
-const MODES = [
-  { id: 'relaxed', label: '🧘 Спокойный', desc: 'без таймера · ×1' },
-  { id: 'timed', label: '⏱ На время', desc: '30 сек · ×1.5' },
-  { id: 'speed', label: '⚡ Скоростной', desc: '15 сек · ×2' },
-];
+const courseCatalogModel = window.CourseCatalog;
+let courseCatalog = null;
+let catalogRequest = null;
 
 const state = {
+  courseKey: null,
   poolKey: null,
   mode: 'relaxed',
   challenge: false,
@@ -170,10 +146,11 @@ function updateTimer() {
   element.className = `timer${state.timeLeft <= 5 ? ' danger' : state.timeLeft <= 10 ? ' warn' : ''}`;
 }
 
-function resetQuizState(poolKey, mode, count, challenge) {
+function resetQuizState(courseKey, mode, count, challenge) {
   stopTimer();
   Object.assign(state, {
-    poolKey,
+    courseKey: challenge ? null : courseKey,
+    poolKey: challenge ? 'random_all' : null,
     mode,
     challenge,
     requestedCount: count,
@@ -196,6 +173,8 @@ function resetQuizState(poolKey, mode, count, challenge) {
 
 function applySessionState(data) {
   state.sessionId = data.session_id;
+  if (data.course_key) state.courseKey = data.course_key;
+  if (data.pool_key) state.poolKey = data.pool_key;
   state.score = Number(data.score || 0);
   state.streak = Number(data.current_streak || 0);
   state.maxStreak = Number(data.max_streak || 0);
@@ -236,73 +215,191 @@ async function ensureTelegramAuth() {
   return false;
 }
 
-function openLevels(title, list) {
+function coursePolicyText(course) {
+  if (courseCatalogModel.isLearningOnly(course)) {
+    return `учебный режим · без рейтинга · ${course.default_question_count} вопросов`;
+  }
+  return `${course.points_per_question} балл(а) за верный ответ · ${course.default_question_count} вопросов`;
+}
+
+function renderCourseMenu(catalog) {
+  const container = $('#courseMenu');
+  container.replaceChildren();
+  container.setAttribute('aria-busy', 'false');
+
+  const groups = courseCatalogModel.groups(catalog).filter((group) => group.home_card !== false);
+  if (!groups.length) {
+    const empty = document.createElement('div');
+    empty.className = 'card';
+    empty.textContent = 'Учебные модули сейчас недоступны.';
+    container.appendChild(empty);
+    return;
+  }
+
+  groups.forEach((group) => {
+    const button = document.createElement('button');
+    button.className = `card${group.key === 'chapter1' ? ' card-primary' : ''}`;
+    button.type = 'button';
+    button.setAttribute('aria-label', `${group.title}. ${group.description}`);
+
+    const emoji = document.createElement('span');
+    emoji.className = 'card-emoji';
+    emoji.setAttribute('aria-hidden', 'true');
+    emoji.textContent = group.icon || '📖';
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    title.textContent = group.title;
+    const desc = document.createElement('span');
+    desc.className = 'card-desc';
+    desc.textContent = group.description;
+    button.append(emoji, title, desc);
+    button.addEventListener('click', () => openCourseGroup(group.key));
+    container.appendChild(button);
+  });
+}
+
+function renderCatalogFailure(message) {
+  const container = $('#courseMenu');
+  container.replaceChildren();
+  container.setAttribute('aria-busy', 'false');
+  const card = document.createElement('div');
+  card.className = 'card';
+  const text = document.createElement('p');
+  text.className = 'muted';
+  text.textContent = message;
+  const retry = document.createElement('button');
+  retry.className = 'btn btn-outline';
+  retry.type = 'button';
+  retry.textContent = '↻ Обновить курсы';
+  retry.addEventListener('click', () => { void refreshCourseCatalog({ force: true }); });
+  card.append(text, retry);
+  container.appendChild(card);
+}
+
+async function refreshCourseCatalog({ force = false, quiet = false } = {}) {
+  if (!force && courseCatalog) return courseCatalog;
+  if (!force && catalogRequest) return catalogRequest;
+  const container = $('#courseMenu');
+  container?.setAttribute('aria-busy', 'true');
+  catalogRequest = api('/api/catalog')
+    .then((raw) => courseCatalogModel.validateCatalog(raw))
+    .then((catalog) => {
+      courseCatalog = catalog;
+      renderCourseMenu(catalog);
+      return catalog;
+    })
+    .catch((error) => {
+      if (!quiet) renderCatalogFailure(`Не удалось загрузить учебные модули: ${error.message}`);
+      throw error;
+    })
+    .finally(() => { catalogRequest = null; });
+  return catalogRequest;
+}
+
+function openCourseGroup(groupKey) {
+  const group = courseCatalogModel.getGroup(courseCatalog, groupKey);
+  if (!group) {
+    toast('Курс больше недоступен. Обновляю каталог…', 3200);
+    void refreshCourseCatalog({ force: true });
+    return;
+  }
+  const courses = Array.isArray(group.courses) ? group.courses : [];
+  if (courses.length === 1) {
+    openModePicker(courses[0]);
+    return;
+  }
+  openLevels(group.title, courses, group.key);
+}
+
+function openLevels(title, list, groupKey) {
   $('#levelsTitle').textContent = title;
   const container = $('#levelsList');
   container.replaceChildren();
 
-  list.forEach((level) => {
+  list.forEach((course) => {
     const button = document.createElement('button');
     button.className = 'level-btn';
+    button.type = 'button';
+    button.setAttribute('aria-label', `${course.title}. ${coursePolicyText(course)}`);
 
     const left = document.createElement('span');
     const name = document.createElement('b');
-    name.textContent = level.name;
+    name.textContent = course.title;
     const meta = document.createElement('span');
     meta.className = 'level-meta';
-    meta.textContent = `${level.pts} балла за верный ответ · 10 вопросов`;
+    meta.textContent = coursePolicyText(course);
     left.append(name, document.createElement('br'), meta);
 
     const action = document.createElement('span');
     action.className = 'level-badge';
     action.textContent = 'Играть →';
     button.append(left, action);
-    button.addEventListener('click', () => openModePicker(level));
+    button.addEventListener('click', () => openModePicker(course));
     container.appendChild(button);
   });
+
+  const back = document.createElement('button');
+  back.className = 'btn btn-ghost';
+  back.type = 'button';
+  back.textContent = '← Назад';
+  back.addEventListener('click', () => showScreen('home'));
+  back.dataset.group = groupKey || '';
+  container.appendChild(back);
   showScreen('levels');
 }
 
-function openModePicker(level) {
-  $('#levelsTitle').textContent = level.name;
+function openModePicker(course) {
+  if (!course || !courseCatalogModel.getCourse(courseCatalog, course.key)) {
+    toast('Курс больше недоступен. Обновляю каталог…', 3200);
+    void refreshCourseCatalog({ force: true });
+    return;
+  }
+  $('#levelsTitle').textContent = course.title;
   const container = $('#levelsList');
   container.replaceChildren();
 
   const info = document.createElement('div');
   info.className = 'card';
   const title = document.createElement('b');
-  title.textContent = level.name;
+  title.textContent = course.title;
   const desc = document.createElement('p');
   desc.className = 'muted';
-  desc.textContent = 'Результат проверяется сервером и синхронизируется с общей статистикой.';
+  desc.textContent = `${course.description}. ${coursePolicyText(course)}. Политика результата определяется сервером.`;
   info.append(title, desc);
   container.appendChild(info);
 
-  MODES.forEach((mode) => {
+  course.modes.forEach((modeId) => {
+    const mode = courseCatalogModel.getMode(courseCatalog, modeId);
+    if (!mode) return;
     const button = document.createElement('button');
     button.className = 'level-btn';
+    button.type = 'button';
+    button.setAttribute('aria-label', `${mode.label}. ${mode.description}`);
     const left = document.createElement('span');
     const label = document.createElement('b');
     label.textContent = mode.label;
     const meta = document.createElement('span');
     meta.className = 'level-meta';
-    meta.textContent = mode.desc;
+    meta.textContent = `${mode.description}${courseCatalogModel.isLearningOnly(course) ? ' · учебный режим' : ''}`;
     left.append(label, document.createElement('br'), meta);
     const play = document.createElement('span');
     play.textContent = '▶';
     button.append(left, play);
-    button.addEventListener('click', () => startQuiz(level.key, mode.id, 10, false));
+    button.addEventListener('click', () => startQuiz(course.key, mode.id, course.default_question_count, false));
     container.appendChild(button);
   });
 
   const back = document.createElement('button');
   back.className = 'btn btn-ghost';
+  back.type = 'button';
   back.textContent = '← Назад';
-  back.addEventListener('click', () => openLevels(
-    HIST.some((item) => item.key === level.key) ? 'Исторический контекст' : 'Глава 1 — выбери уровень',
-    HIST.some((item) => item.key === level.key) ? HIST : LEVELS,
-  ));
+  back.addEventListener('click', () => {
+    const group = courseCatalogModel.getGroup(courseCatalog, course.group);
+    if (!group || (group.courses || []).length <= 1) showScreen('home');
+    else openLevels(group.title, group.courses, group.key);
+  });
   container.appendChild(back);
+  showScreen('levels');
 }
 
 function openChallenge() {
@@ -321,28 +418,53 @@ function openChallenge() {
   ].forEach((variant) => {
     const button = document.createElement('button');
     button.className = 'level-btn';
+    button.type = 'button';
     const label = document.createElement('b');
     label.textContent = variant.label;
     const play = document.createElement('span');
     play.textContent = '▶';
     button.append(label, play);
-    button.addEventListener('click', () => startQuiz('random_all', variant.mode, 20, true));
+    button.addEventListener('click', () => startQuiz(null, variant.mode, 20, true));
     container.appendChild(button);
   });
   showScreen('levels');
 }
 
-async function startQuiz(poolKey, mode = 'relaxed', count = 10, challenge = false) {
+async function startQuiz(courseKey, mode = 'relaxed', count = 10, challenge = false) {
   if (!(await ensureTelegramAuth())) return;
+  let payload;
+  if (challenge) {
+    payload = { pool_key: 'random_all', mode, count: 20, challenge: true };
+    count = 20;
+  } else {
+    const course = courseCatalogModel.getCourse(courseCatalog, courseKey);
+    if (!course) {
+      toast('Курс недоступен. Обновляю каталог…', 3200);
+      try { await refreshCourseCatalog({ force: true }); } catch (_) { return; }
+    }
+    const current = courseCatalogModel.getCourse(courseCatalog, courseKey);
+    if (!current) {
+      toast('Этот курс больше не доступен.', 3200);
+      return;
+    }
+    try {
+      payload = courseCatalogModel.buildCourseStartPayload(current, mode);
+    } catch (error) {
+      toast(error.message, 3200);
+      return;
+    }
+    count = current.default_question_count;
+  }
+
   const flowEpoch = quizFlow.begin();
-  resetQuizState(poolKey, mode, count, challenge);
+  resetQuizState(courseKey, mode, count, challenge);
   showScreen('quiz');
   setQuizLoading('Готовлю вопросы…');
 
   try {
     const data = await api('/api/quiz/start', {
       method: 'POST',
-      body: JSON.stringify({ pool_key: poolKey, mode, count, challenge }),
+      body: JSON.stringify(payload),
     });
     if (!isCurrentQuizFlow(flowEpoch)) return;
     applySessionState(data);
@@ -351,6 +473,9 @@ async function startQuiz(poolKey, mode = 'relaxed', count = 10, challenge = fals
     if (!quizFlow.isCurrent(flowEpoch)) return;
     invalidateQuizFlow();
     showScreen('home');
+    if (error.status === 409 && /course unavailable/i.test(error.message)) {
+      void refreshCourseCatalog({ force: true, quiet: true }).catch(() => {});
+    }
     toast(error.status === 401 ? 'Открой приложение из Telegram-бота.' : `Не удалось начать тест: ${error.message}`, 4200);
   }
 }
@@ -385,7 +510,7 @@ async function restoreActiveQuiz() {
 
   const flowEpoch = quizFlow.begin();
   resetQuizState(
-    data.pool_key,
+    data.course_key || null,
     data.mode || 'relaxed',
     Number(data.total || 10),
     Boolean(data.challenge),
@@ -419,6 +544,7 @@ async function loadCurrentQuestion() {
     box.replaceChildren();
     const retry = document.createElement('button');
     retry.className = 'btn btn-primary';
+    retry.type = 'button';
     retry.textContent = '↻ Повторить загрузку';
     retry.addEventListener('click', loadCurrentQuestion);
     box.appendChild(retry);
@@ -450,6 +576,7 @@ function renderQuestion(remainingSeconds = null) {
   question.options.forEach((text, index) => {
     const button = document.createElement('button');
     button.className = 'opt';
+    button.type = 'button';
     button.textContent = `${index + 1}. ${text}`;
     button.addEventListener('click', () => submitAnswer(index, false));
     options.appendChild(button);
@@ -558,6 +685,7 @@ async function exitQuiz() {
     if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
     invalidateQuizFlow();
     showScreen('home');
+    void refreshCourseCatalog({ force: true, quiet: true }).catch(() => {});
     toast('Незавершённый тест отменён.', 2400);
   } catch (error) {
     if (!isCurrentQuizFlow(flowEpoch, sessionId)) return;
@@ -569,6 +697,7 @@ async function exitQuiz() {
           showScreen('home');
           toast('Тест уже завершён — результат сохранён.', 3200);
           void updateUserBadge();
+          void refreshCourseCatalog({ force: true, quiet: true }).catch(() => {});
           return;
         }
       } catch (_) {
@@ -608,12 +737,18 @@ function showResult() {
 
   const stats = $('#resultStats');
   stats.replaceChildren();
+  const course = state.courseKey ? courseCatalogModel.getCourse(courseCatalog, state.courseKey) : null;
   const points = document.createElement('span');
   points.className = 'stat';
-  points.textContent = `💎 +${state.awardedPoints} баллов`;
+  if (course && courseCatalogModel.isLearningOnly(course)) {
+    points.textContent = '📚 Учебный прогресс · без рейтинга';
+  } else {
+    points.textContent = `💎 +${state.awardedPoints} баллов`;
+  }
   const mode = document.createElement('span');
   mode.className = 'stat';
-  mode.textContent = state.challenge ? '🎲 Challenge 20' : `⏱ ${state.mode}`;
+  const modeMeta = courseCatalogModel.getMode(courseCatalog, state.mode);
+  mode.textContent = state.challenge ? '🎲 Challenge 20' : (modeMeta?.label || `⏱ ${state.mode}`);
   stats.append(points, mode);
 
   showScreen('result');
@@ -748,9 +883,7 @@ async function openBot() {
 $$('[data-action]').forEach((button) => {
   button.addEventListener('click', () => {
     const action = button.dataset.action;
-    if (action === 'chapter1') openLevels('Глава 1 — выбери уровень', LEVELS);
-    else if (action === 'historical') openLevels('Исторический контекст', HIST);
-    else if (action === 'challenge') openChallenge();
+    if (action === 'challenge') openChallenge();
     else if (action === 'battle') toast('⚔️ PvP-битвы пока остаются в боте — там сохранена полная логика.');
     else if (action === 'leaderboard') openLeaderboard();
     else if (action === 'stats') openStats();
@@ -764,8 +897,9 @@ $('#quizExit').addEventListener('click', () => { void exitQuiz(); });
 $('#resultHome').addEventListener('click', () => {
   invalidateQuizFlow();
   showScreen('home');
+  void refreshCourseCatalog({ force: true, quiet: true }).catch(() => {});
 });
-$('#resultRetry').addEventListener('click', () => startQuiz(state.poolKey, state.mode, state.requestedCount, state.challenge));
+$('#resultRetry').addEventListener('click', () => startQuiz(state.courseKey, state.mode, state.requestedCount, state.challenge));
 $('#resultReview').addEventListener('click', showReview);
 $('#resultShare').addEventListener('click', async () => {
   const total = state.total;
@@ -783,12 +917,15 @@ $('#resultShare').addEventListener('click', async () => {
 
 function openStartParam() {
   try {
+    if (!courseCatalog) return;
     const params = new URLSearchParams(window.location.search);
     const startParam = params.get('tgWebAppStartParam') || params.get('start');
     if (!startParam) return;
-    const key = startParam.replace(/^level_/, '');
-    const level = [...LEVELS, ...HIST].find((item) => item.key === key);
-    if (level) window.setTimeout(() => openModePicker(level), 250);
+    let course = courseCatalogModel.getCourse(courseCatalog, startParam);
+    if (!course && !startParam.startsWith('level_')) {
+      course = courseCatalogModel.getCourse(courseCatalog, `level_${startParam}`);
+    }
+    if (course) window.setTimeout(() => openModePicker(course), 250);
   } catch (_) {}
 }
 
@@ -807,17 +944,32 @@ if (tg?.BackButton) {
   observer.observe(document.getElementById('app'), { attributes: true, subtree: true });
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!$('#screen-home')?.classList.contains('active')) return;
+  void refreshCourseCatalog({ force: true, quiet: true }).catch(() => {});
+});
+
 async function bootstrapMiniApp() {
   void updateUserBadge();
   if (getInitData()) {
     try {
-      if (await restoreActiveQuiz()) return;
+      if (await restoreActiveQuiz()) {
+        // Active durable sessions resume even if a fresh catalog request fails.
+        void refreshCourseCatalog({ quiet: true }).catch(() => {});
+        return;
+      }
     } catch (error) {
       toast(`Не удалось восстановить незавершённый тест: ${error.message}`, 4200);
       return;
     }
   }
-  openStartParam();
+  try {
+    await refreshCourseCatalog();
+    openStartParam();
+  } catch (_) {
+    // renderCatalogFailure already leaves a retry control on the home screen.
+  }
 }
 
 void bootstrapMiniApp();

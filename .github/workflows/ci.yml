@@ -58,6 +58,7 @@ jobs:
       - name: Lint maintained Python layer
         run: >-
           ruff check
+          course_catalog.py
           web_api
           keep_alive.py
           intro.py
@@ -68,6 +69,11 @@ jobs:
           legacy_*.py
           scripts
           tests
+          --extend-per-file-ignores=course_catalog.py:RUF001
+          --extend-per-file-ignores=course_catalog.py:UP035
+          --extend-per-file-ignores=course_catalog.py:RUF022
+          --extend-per-file-ignores=telegram_course_surface.py:RUF001
+          --extend-per-file-ignores=web_api/routes.py:RUF001
           --output-format=github
       - name: Check legacy core for fatal Python errors
         run: ruff check bot.py database.py --select=E9,F63,F7,F82 --output-format=github
@@ -78,6 +84,7 @@ jobs:
       - name: Check Mini App JavaScript syntax
         run: |
           node --check miniapp/flow_guard.js
+          node --check miniapp/course_catalog.js
           node --check miniapp/app.js
           node --check miniapp/lifecycle.js
       - name: Run Mini App JavaScript unit tests
@@ -100,12 +107,30 @@ jobs:
           trap 'docker stop bible-bot-ci-web >/dev/null 2>&1 || true' EXIT
           for _ in {1..20}; do
             if curl --fail --silent --show-error http://127.0.0.1:18080/live >/tmp/live.json \
+              && curl --fail --silent --show-error http://127.0.0.1:18080/api/catalog >/tmp/catalog.json \
               && curl --fail --silent --show-error http://127.0.0.1:18080/ >/tmp/miniapp.html \
-              && curl --fail --silent --show-error http://127.0.0.1:18080/flow_guard.js >/tmp/flow_guard.js; then
+              && curl --fail --silent --show-error http://127.0.0.1:18080/flow_guard.js >/tmp/flow_guard.js \
+              && curl --fail --silent --show-error http://127.0.0.1:18080/course_catalog.js >/tmp/course_catalog.js; then
               grep -q '"status":"ok"' /tmp/live.json
+              python - <<'PY'
+          import json
+
+          with open('/tmp/catalog.json', encoding='utf-8') as handle:
+              payload = json.load(handle)
+          assert payload['version'] == 1
+          courses = [course for group in payload['groups'] for course in group['courses']]
+          keys = [course['key'] for course in courses]
+          assert len(keys) == len(set(keys))
+          assert {'chapter2', 'chapter3'} <= set(keys)
+          for course in courses:
+              assert 'pool_key' not in course
+              assert 'ranked' not in course
+          PY
               grep -q '<title>Библейский тест — 1 Петра</title>' /tmp/miniapp.html
               grep -q '<script src="flow_guard.js"></script>' /tmp/miniapp.html
+              grep -q '<script src="course_catalog.js"></script>' /tmp/miniapp.html
               grep -q 'class QuizFlowGuard' /tmp/flow_guard.js
+              grep -q 'buildCourseStartPayload' /tmp/course_catalog.js
               exit 0
             fi
             sleep 1

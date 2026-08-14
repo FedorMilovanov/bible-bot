@@ -32,27 +32,11 @@
         <p>Изучаем 1-е послание Петра<br>глубоко и с удовольствием</p>
       </div>
 
+      <div id="courseMenu" class="menu-grid" aria-live="polite" aria-busy="true">
+        <div class="card" id="courseMenuStatus">Загрузка учебных модулей…</div>
+      </div>
+
       <div class="menu-grid">
-        <button class="card card-primary" data-action="chapter1" type="button">
-          <span class="card-emoji" aria-hidden="true">📖</span>
-          <span class="card-title">Глава 1</span>
-          <span class="card-desc">Уровни от фактов до лингвистики</span>
-        </button>
-        <button class="card" data-action="chapter2" type="button">
-          <span class="card-emoji" aria-hidden="true">📘</span>
-          <span class="card-title">Глава 2</span>
-          <span class="card-desc">Исследовательский курс · без рейтинга</span>
-        </button>
-        <button class="card" data-action="chapter3" type="button">
-          <span class="card-emoji" aria-hidden="true">📙</span>
-          <span class="card-title">Глава 3</span>
-          <span class="card-desc">Reviewed-курс · спорные места · без рейтинга</span>
-        </button>
-        <button class="card" data-action="historical" type="button">
-          <span class="card-emoji" aria-hidden="true">🏛</span>
-          <span class="card-title">Контекст</span>
-          <span class="card-desc">Нерон • География • Введение</span>
-        </button>
         <button class="card card-accent" data-action="challenge" type="button">
           <span class="card-emoji" aria-hidden="true">🎲</span>
           <span class="card-title">Challenge 20</span>
@@ -131,20 +115,10 @@
       <h2>📚 О проекте</h2>
       <div class="about">
         <p><b>Библейский тест-бот: 1 Петра</b> — интерактивный инструмент для глубокого изучения Писания.</p>
-        <p>Вопросы по тексту и контексту · 3 режима скорости · Challenge 20 · PvP · достижения</p>
-        <ul>
-          <li>🟢 Лёгкий — факты, имена, даты</li>
-          <li>🟡 Средний — контекст и связи</li>
-          <li>🔴 Сложный — богословие</li>
-          <li>🙏 Применение — практика жизни</li>
-          <li>🔬 Лингвистика — греческие слова</li>
-          <li>📘 Глава 2 — текст, греческий, ВЗ/LXX, история и богословие</li>
-          <li>📙 Глава 3 — reviewed-банк: текст, греческий, ВЗ/LXX, история, богословие и спорные места</li>
-          <li>🏛 Контекст — Нерон, география, авторство</li>
-        </ul>
-        <p>Режимы: 🧘 спокойно · ⏱ 30 сек ×1.5 · ⚡ 15 сек ×2</p>
-        <p class="muted">Mini App v2.4 · server-authoritative scoring · Soli Deo Gloria</p>
-        <button class="btn btn-primary" data-action="chapter1" type="button">🎯 Начать тест</button>
+        <p>Вопросы по тексту и контексту · учебные курсы · Challenge 20 · PvP · достижения</p>
+        <p>Доступные главы, уровни, число вопросов и режим начисления результата загружаются из серверного каталога курса.</p>
+        <p class="muted">Mini App · server-authoritative course catalog/scoring · Soli Deo Gloria</p>
+        <button class="btn btn-primary" data-back="home" type="button">🎯 К учебным модулям</button>
       </div>
     </section>
   </main>
@@ -152,9 +126,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 <script src="flow_guard.js"></script>
+<script src="course_catalog.js"></script>
 <script src="app.js"></script>
-<script src="chapter2.js"></script>
-<script src="chapter3.js"></script>
 <script src="lifecycle.js"></script>
 </body>
 </html>

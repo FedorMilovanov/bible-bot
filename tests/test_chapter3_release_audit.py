@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import questions
+from course_catalog import SURFACE_MINIAPP, public_catalog
 from questions.chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from questions.chapter3.product_sources import SOURCE_CATALOG as CHAPTER3_PRODUCT_SOURCE_IDENTITIES
 from questions.chapter3.ranking_audit import (
@@ -15,7 +16,8 @@ from questions.pool_policy import is_non_scoring_learning_pool
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = json.loads((ROOT / "data" / "chapter3-release-audit.json").read_text(encoding="utf-8"))
 MINIAPP_INDEX = (ROOT / "miniapp" / "index.html").read_text(encoding="utf-8")
-MINIAPP_CHAPTER3 = (ROOT / "miniapp" / "chapter3.js").read_text(encoding="utf-8")
+MINIAPP_APP = (ROOT / "miniapp" / "app.js").read_text(encoding="utf-8")
+MINIAPP_CATALOG = (ROOT / "miniapp" / "course_catalog.js").read_text(encoding="utf-8")
 
 
 def _ids(items):
@@ -133,11 +135,23 @@ def test_product_source_identities_do_not_encode_claim_depth():
 
 
 def test_miniapp_exposes_reviewed_chapter3_learning_without_ranked_normal_mode():
-    assert 'data-action="chapter3"' in MINIAPP_INDEX
-    assert '<script src="chapter3.js"></script>' in MINIAPP_INDEX
-    assert "startQuiz('chapter3', mode.id, 10, false)" in MINIAPP_CHAPTER3
-    assert "startQuiz('chapter3', mode.id, 10, true)" not in MINIAPP_CHAPTER3
-    assert "без рейтинга" in MINIAPP_CHAPTER3.lower()
+    catalog = public_catalog(surface=SURFACE_MINIAPP)
+    chapter3 = next(
+        course
+        for group in catalog["groups"]
+        for course in group["courses"]
+        if course["key"] == "chapter3"
+    )
+    assert chapter3["scoring_mode"] == "learning"
+    assert chapter3["points_per_question"] == 0
+    assert '<div id="courseMenu"' in MINIAPP_INDEX
+    assert '<script src="course_catalog.js"></script>' in MINIAPP_INDEX
+    assert "chapter3.js" not in MINIAPP_INDEX
+    assert "buildCourseStartPayload" in MINIAPP_CATALOG
+    assert "course_key: course.key" in MINIAPP_CATALOG
+    assert "ranked:" not in MINIAPP_CATALOG
+    assert "scoring_mode:" not in MINIAPP_CATALOG
+    assert "api('/api/catalog')" in MINIAPP_APP
 
 
 def test_release_audit_makes_no_new_gameplay_or_merge_claim():
