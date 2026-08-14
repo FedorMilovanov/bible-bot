@@ -23,6 +23,7 @@ from .chapter2.reviewed import CHAPTER2_REVIEWED_QUESTIONS
 from .chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from .chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from .chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
+from .chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
 from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
 from .content_truth_review import apply_review_overrides
 from .intro import (
@@ -57,10 +58,11 @@ intro_part1_questions = _canonical(_raw_intro1, "intro1")
 intro_part2_questions = _canonical(_raw_intro2, "intro2")
 intro_part3_questions = _canonical(_raw_intro3, "intro3")
 
-# Chapters 2 and 3 cross the product boundary only through reviewed aggregates.
+# Chapters 2, 3 and 5 cross the product boundary only through reviewed aggregates.
 # Their normal-learning pools remain non-scoring through questions.pool_policy.
 chapter2_questions = list(CHAPTER2_REVIEWED_QUESTIONS)
 chapter3_questions = list(CHAPTER3_REVIEWED_QUESTIONS)
+chapter5_questions = list(CHAPTER5_REVIEWED_QUESTIONS)
 
 
 _POOLS: dict[str, list[dict]] = {
@@ -86,6 +88,7 @@ _POOLS: dict[str, list[dict]] = {
     "intro3": intro_part3_questions,
     "chapter2": chapter2_questions,
     "chapter3": chapter3_questions,
+    "chapter5": chapter5_questions,
 }
 
 
@@ -120,9 +123,9 @@ _CHAPTER1_LEAF_KEYS = [
 ]
 all_chapter1_questions = _dedupe_pool(_CHAPTER1_LEAF_KEYS)
 
-# random_all remains the legacy Chapter-1/context learning pool. Chapters 2 and
-# 3 are admitted separately so normal-learning exposure cannot silently enlarge
-# Challenge 20 or other legacy random behavior.
+# random_all remains the legacy Chapter-1/context learning pool. Chapters 2, 3
+# and 5 are admitted separately so normal-learning exposure cannot silently
+# enlarge Challenge 20 or other legacy random behavior.
 _RANDOM_ALL_LEAF_KEYS = _CHAPTER1_LEAF_KEYS + ["intro1", "intro2", "intro3"]
 _POOLS["random_all"] = _dedupe_pool(_RANDOM_ALL_LEAF_KEYS)
 
@@ -180,7 +183,7 @@ NON_COMPETITIVE_IDS = frozenset(
 )
 
 # Legacy PvP imports BATTLE_POOL directly. Only the explicitly authorized twelve
-# Chapter-3 cards join this surface; the other 153 Chapter-3 cards remain out.
+# Chapter-3 cards join this surface; Chapter 5 remains outside gameplay.
 BATTLE_POOL = COMPETITIVE_POOL
 
 
@@ -318,6 +321,7 @@ __all__ = [
     "intro_part3_questions",
     "chapter2_questions",
     "chapter3_questions",
+    "chapter5_questions",
     "POOL_REGISTRY",
     "SOURCE_CATALOG",
     "RANKING_QUARANTINE_IDS",
