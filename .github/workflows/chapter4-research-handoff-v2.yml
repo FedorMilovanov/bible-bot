@@ -12,6 +12,7 @@ on:
       - 'docs/CHAPTER4_RELEASE_AUDIT.md'
       - 'tests/test_chapter4_**'
       - 'scripts/verify_chapter4_research_snapshot.py'
+      - 'scripts/validate_chapter4_product_v2.py'
       - '.github/workflows/chapter4-research-handoff-v2.yml'
   workflow_dispatch:
 
@@ -63,8 +64,13 @@ jobs:
           assert len(ch4['records']) == 72
           print('chapter4-research-handoff-v2-ok')
           PY
-      - name: Validate vendored product snapshot when present
+      - name: Verify product-side Research projection
         run: python scripts/verify_chapter4_research_snapshot.py --generated-dir /tmp/chapter4-research-v2
+      - name: Validate Chapter 4 product v2 against Agent-E prototypes
+        run: >-
+          python scripts/validate_chapter4_product_v2.py
+          --research-root .research-authority/1_PETER_BOT
+          --generated-dir /tmp/chapter4-research-v2
       - name: Upload recomputed handoff artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
