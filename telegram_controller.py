@@ -15,7 +15,7 @@ import os
 import random
 import signal
 import time
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
@@ -92,6 +92,25 @@ from legacy_session_recovery import (
 from session_integrity import QuizSessionAnswerConflict, QuizSessionStoreUnavailable
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
+
+
+async def _run_blocking_io(
+    function: Callable[..., _T],
+    /,
+    *args,
+    **kwargs,
+) -> _T:
+    """Run one synchronous persistence/network boundary outside the PTB loop.
+
+    Mongo remains the durable concurrency authority.  This helper is only an
+    event-loop scheduling boundary; it deliberately adds no process-local
+    locking or retry semantics of its own.
+    """
+    if kwargs:
+        return await asyncio.to_thread(lambda: function(*args, **kwargs))
+    return await asyncio.to_thread(function, *args)
+
 
 # Importing bot.py intentionally reuses the mature presentation/non-quiz layer and
 # starts keep_alive(), but bot.py also installs an obsolete RAM->Mongo shutdown
@@ -177,8 +196,6 @@ def _hydrate_session(
 def _lifecycle_keyboard(session: dict, *, include_cancel: bool = True) -> InlineKeyboardMarkup:
     payloads = session_action_payloads(session)
     rows = [[InlineKeyboardButton("▶️ Продолжить", callback_data=payloads["res"])]]
-    # Retry-error practice is deliberately non-scoring. Do not expose Restart:
-    # a replacement attempt must never accidentally lose the persisted policy.
     if session.get("is_retry") is not True:
         rows.append([InlineKeyboardButton("🔁 Начать заново", callback_data=payloads["rst"])])
     if include_cancel:
@@ -248,7 +265,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
     data["result_pending"] = False
     data["user_id"] = user_id
     percentage = round(score / max(total, 1) * 100)
-    position, _entry = legacy.get_user_position(user_id)
+    position, _entry = await _run_blocking_io(legacy.get_user_position, user_id)
     position_text = f"#{position}" if position else "—"
 
     answered = data.get("answered_questions", [])
@@ -362,7 +379,8 @@ async def show_results(bot, user_id: int):
         return
 
     try:
-        outcome = finalize_live_persisted_attempt(
+        outcome = await _run_blocking_io(
+            finalize_live_persisted_attempt,
             user_id=user_id,
             data=data,
             username=data.get("username"),
@@ -389,7 +407,8 @@ async def show_challenge_results(bot, user_id: int):
     if not data:
         return
     try:
-        outcome = finalize_live_persisted_attempt(
+        outcome = await _run_blocking_io(
+            finalize_live_persisted_attempt,
             user_id=user_id,
             data=data,
             username=data.get("username"),
@@ -448,7 +467,8 @@ async def _launch_attempt(
 ) -> dict | None:
     question_ids = [legacy.get_qid(question) for question in questions]
     try:
-        outcome = launch_quiz_attempt(
+        outcome = await _run_blocking_io(
+            launch_quiz_attempt,
             user_id=user.id,
             mode=mode,
             question_ids=question_ids,
@@ -474,7 +494,7 @@ async def _launch_attempt(
             )
             return None
         try:
-            active = get_active_quiz_session_strict(user.id)
+            active = await _run_blocking_io(get_active_quiz_session_strict, user.id)
         except (QuizSessionAccessUnavailable, QuizSessionAccessSchemaInvalid):
             await bot.send_message(chat_id=chat_id, text="⚠️ База сессий временно недоступна.")
             return None
@@ -858,7 +878,8 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
             return
 
     try:
-        canonical_sent_at = mark_live_question_sent(
+        canonical_sent_at = await _run_blocking_io(
+            mark_live_question_sent,
             user_id,
             data,
             target,
@@ -939,7 +960,8 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
     lock = legacy.user_locks.setdefault(user_id, asyncio.Lock())
     async with lock:
         try:
-            outcome = apply_live_answer_once(
+            outcome = await _run_blocking_io(
+                apply_live_answer_once,
                 user_id,
                 data,
                 query.data,
@@ -991,7 +1013,8 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
 
         if outcome.applied:
             try:
-                legacy.record_question_stat(
+                await _run_blocking_io(
+                    legacy.record_question_stat,
                     outcome.question_id,
                     data.get("level_key"),
                     outcome.is_correct,
@@ -1048,7 +1071,8 @@ async def _handle_question_timeout(
     lock = legacy.user_locks.setdefault(user_id, asyncio.Lock())
     async with lock:
         try:
-            outcome = apply_live_timeout_once(
+            outcome = await _run_blocking_io(
+                apply_live_timeout_once,
                 user_id,
                 data,
                 expected_index,
@@ -1080,7 +1104,8 @@ async def _handle_question_timeout(
 
         if outcome.applied:
             try:
-                legacy.record_question_stat(
+                await _run_blocking_io(
+                    legacy.record_question_stat,
                     outcome.question_id,
                     data.get("level_key"),
                     False,
@@ -1175,7 +1200,7 @@ async def resume_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = resolve_session_action(query.data, "res", user_id)
+        resolved = await _run_blocking_io(resolve_session_action, query.data, "res", user_id)
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1194,7 +1219,7 @@ async def restart_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = resolve_session_action(query.data, "rst", user_id)
+        resolved = await _run_blocking_io(resolve_session_action, query.data, "rst", user_id)
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1229,7 +1254,8 @@ async def restart_session_handler(update: Update, context):
         return
 
     try:
-        result = restart_owned_quiz_attempt(
+        result = await _run_blocking_io(
+            restart_owned_quiz_attempt,
             resolved.session_id,
             user_id,
             expected_attempt_id=resolved.attempt_id,
@@ -1271,7 +1297,7 @@ async def cancel_session_handler(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        resolved = resolve_session_action(query.data, "can", user_id)
+        resolved = await _run_blocking_io(resolve_session_action, query.data, "can", user_id)
     except LegacySessionActionUnavailable:
         await query.answer("⚠️ База сессий временно недоступна.", show_alert=True)
         return
@@ -1279,7 +1305,8 @@ async def cancel_session_handler(update: Update, context):
         await query.answer("Эта кнопка уже устарела.", show_alert=True)
         return
     try:
-        cancel_owned_incomplete_quiz_attempt(
+        await _run_blocking_io(
+            cancel_owned_incomplete_quiz_attempt,
             resolved.session_id,
             user_id,
             expected_attempt_id=resolved.attempt_id,
@@ -1303,7 +1330,7 @@ async def cancel_session_handler(update: Update, context):
 
 async def _cancel_current(user_id: int) -> tuple[bool, str]:
     try:
-        result = cancel_current_incomplete_session(user_id)
+        result = await _run_blocking_io(cancel_current_incomplete_session, user_id)
     except LegacySessionResultPending:
         return False, "result_pending"
     except LegacySessionControlUnavailable:
@@ -1402,7 +1429,7 @@ async def reset_session_inline(update: Update, context):
 
 async def _status_session(user_id: int):
     try:
-        session = get_active_quiz_session_strict(user_id)
+        session = await _run_blocking_io(get_active_quiz_session_strict, user_id)
     except QuizSessionAccessUnavailable:
         return None, "unavailable"
     except QuizSessionAccessSchemaInvalid:
@@ -1478,8 +1505,8 @@ async def show_status_inline(update: Update, context):
 
 async def start(update: Update, context):
     user = update.effective_user
-    legacy.init_user_stats(user.id, user.username, user.first_name)
-    legacy._touch(user.id)
+    await _run_blocking_io(legacy.init_user_stats, user.id, user.username, user.first_name)
+    await _run_blocking_io(legacy._touch, user.id)
 
     try:
         if update.message:
@@ -1717,7 +1744,7 @@ async def remind_unfinished_tests_job(context):
     from database import get_stale_sessions
 
     try:
-        stale = get_stale_sessions(max_age_hours=2)
+        stale = await _run_blocking_io(get_stale_sessions, max_age_hours=2)
     except Exception:
         logger.warning("stale-session reminder lookup failed", exc_info=True)
         return
