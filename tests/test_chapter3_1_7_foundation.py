@@ -14,10 +14,10 @@ G = g.GREEK_3_1_7
 D = y.DISPUTED_3_1_7
 A = a.APPLICATION_3_1_7
 H = h.HISTORY_3_1_7
-O = o.INTERTEXT_3_1_7
+OT = o.INTERTEXT_3_1_7
 Y = y.THEOLOGY_3_1_7
 T = t.TEXT_3_1_7
-ALL = T + G + O + H + Y + D + A
+ALL = T + G + OT + H + Y + D + A
 
 
 def test_contract_sources_ids():
@@ -84,6 +84,6 @@ def test_explicit_boundaries_and_semantic_control():
 
 
 def test_noncompetitive_defaults_and_application_split():
-    assert all(not x["competitive"] for x in G + H + O + Y + D + A)
+    assert all(not x["competitive"] for x in G + H + OT + Y + D + A)
     assert all(x["claim_type"] == "application" for x in A)
     assert all(x["claim_type"] != "application" for x in T + G + H)
