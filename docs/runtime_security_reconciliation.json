@@ -1,7 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
   "branch": "agent/runtime-security-reconciliation",
+  "old_prs": {
+    "2": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
+    "3": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
+    "4": "25c8790247a84a220dbce9b3b20fe325b90ccff4"
+  },
   "status_legend": {
     "A": "EXACTLY_PRESENT_IN_CURRENT_MAIN",
     "B": "FUNCTIONALLY_SUPERSEDED_BY_STRONGER_IMPLEMENTATION",
@@ -13,239 +18,269 @@
   "entries": [
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "single Flask/Waitress public server and POST /telegram/webhook",
-      "current_equivalent": "keep_alive.py + web_api/__init__.py + web_api/telegram_transport.py",
-      "status": "A",
-      "evidence": "telegram_production starts one keep_alive Waitress server; Flask owns /telegram/webhook",
-      "action_required": "none"
+      "old_symbol": "single Flask/Waitress server + POST /telegram/webhook",
+      "current_equivalent": "keep_alive.py; web_api/__init__.py; web_api/telegram_transport.py",
+      "base_status": "A",
+      "evidence": "The production process owns one Waitress HTTP server and Flask exposes POST /telegram/webhook.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "validate webhook secret before JSON parsing",
-      "current_equivalent": "web_api.telegram_transport.telegram_webhook",
-      "status": "A",
-      "evidence": "secret/readiness rejection occurs before request JSON/body decode",
-      "action_required": "none"
+      "old_symbol": "webhook secret check before request JSON decode",
+      "current_equivalent": "web_api/__init__.py webhook handler",
+      "base_status": "A",
+      "evidence": "Readiness/acceptance and hmac.compare_digest secret rejection happen before get_json/Update decoding.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "real PTB Update decode and invalid update_id rejection",
-      "current_equivalent": "web_api.telegram_transport.telegram_webhook",
-      "status": "B",
-      "evidence": "Update.de_json is used and update_id rejects bool, non-int and negative values",
-      "action_required": "none"
+      "old_symbol": "PTB Update decode + update_id validation",
+      "current_equivalent": "web_api/__init__.py webhook handler",
+      "base_status": "B",
+      "evidence": "Current code uses Update.de_json with the live PTB bot and rejects bool/non-int/invalid update identifiers before enqueue.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "Waitress thread to asyncio queue bridge",
-      "current_equivalent": "web_api.telegram_transport TelegramWebhookBridge",
-      "status": "B",
-      "evidence": "threadsafe submission to PTB update_queue plus completion/drain semantics",
-      "action_required": "none"
+      "old_symbol": "Waitress-thread -> asyncio/PTB update queue bridge",
+      "current_equivalent": "web_api.telegram_transport.TelegramWebhookBridge",
+      "base_status": "B",
+      "evidence": "Current bridge uses thread-safe loop submission and explicitly tracks accepting/inflight/drain state.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "initialize/start/readiness, cold 503, shutdown barrier, drain, stop/save/shutdown",
-      "current_equivalent": "telegram_production.run_webhook_mode + web_api.telegram_transport lifecycle",
-      "status": "B",
-      "evidence": "setWebhook is fail-closed before start; readiness is explicit; shutdown deactivates intake, drains, stops, saves and exits application context without deleting webhook",
-      "action_required": "none"
+      "old_symbol": "initialize/start/readiness + cold-start 503",
+      "current_equivalent": "web_api.telegram_transport.run_telegram_application; /ready; /telegram/ready",
+      "base_status": "B",
+      "evidence": "Application initialization, transport registration, start and readiness are explicit; HTTP ingress returns 503 until acceptance is enabled.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "polling rollback",
-      "current_equivalent": "telegram_production polling mode",
-      "status": "A",
-      "evidence": "polling remains an explicit deployment mode",
-      "action_required": "none"
+      "old_symbol": "shutdown barrier: stop intake, drain inflight, Application.stop, save, shutdown",
+      "current_equivalent": "web_api.telegram_transport.run_telegram_application",
+      "base_status": "B",
+      "evidence": "Shutdown first deactivates ingress/readiness, drains inflight submissions, stops PTB, invokes session shutdown hook and shuts the application down while intentionally retaining the configured webhook.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "message/callback/inline-query update allowlist",
-      "current_equivalent": "telegram_production.WEBHOOK_ALLOWED_UPDATES",
-      "status": "E",
-      "evidence": "current production composition has message and callback handlers but no InlineQueryHandler; accepting inline_query would widen ingress without a consumer",
-      "action_required": "do not restore inline_query"
+      "old_symbol": "polling rollback without destructive pending-update loss",
+      "current_equivalent": "web_api.telegram_transport polling configuration",
+      "base_status": "B",
+      "evidence": "Polling remains an explicit mode and removes webhook ownership with drop_pending_updates=False.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "webhook max_connections",
-      "current_equivalent": "telegram_production configurable max_connections",
-      "status": "B",
-      "evidence": "current default/deploy value is 1, matching single-consumer ordering and still configurable",
-      "action_required": "none"
+      "old_symbol": "message/callback_query/inline_query webhook allowlist",
+      "current_equivalent": "TELEGRAM_ALLOWED_UPDATES / production handler graph",
+      "base_status": "E",
+      "evidence": "Current production composition has no InlineQueryHandler. Restoring inline_query would widen public ingress without a consumer; message and callback_query are the least-privilege set.",
+      "branch_action": "do_not_restore_inline_query"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "separate server request envelope from Mini App JSON limit",
-      "current_equivalent": "render.yaml + keep_alive.py + web_api/__init__.py",
-      "status": "C",
-      "evidence": "Render sets 1 MiB envelope and 64 KiB Mini App limit, but keep_alive.py fallback is 64 KiB while Flask fallback is 1 MiB",
-      "action_required": "align server-envelope fallback to 1 MiB and add regression coverage"
+      "old_symbol": "webhook max_connections",
+      "current_equivalent": "web_api.telegram_transport transport config; render.yaml TELEGRAM_MAX_CONNECTIONS=1",
+      "base_status": "B",
+      "evidence": "Value is validated in Telegram's supported range and production is deliberately serialized at one connection.",
+      "branch_action": "none"
     },
     {
       "old_pr": 2,
-      "old_head": "e4b83f9fe5cd0e3c8e7f11b0f0ca311735cf8e9a",
-      "old_change": "setWebhook fail-closed, HTTPS URL validation, no-store responses",
-      "current_equivalent": "telegram_production + web_api.telegram_transport",
-      "status": "B",
-      "evidence": "current validation is stricter and webhook responses are non-cacheable",
-      "action_required": "none"
+      "old_symbol": "server request envelope separate from Mini App JSON limit",
+      "current_equivalent": "keep_alive.py; web_api/__init__.py; render.yaml",
+      "base_status": "C",
+      "evidence": "Render explicitly used 1 MiB server envelope and 64 KiB Mini App limit, but keep_alive.py fallback was 64 KiB while Flask fallback was 1 MiB.",
+      "branch_action": "Aligned Waitress fallback to the 1 MiB server envelope without changing the 64 KiB Mini App limit; regression covered.",
+      "branch_commit": "04ef7e1"
+    },
+    {
+      "old_pr": 2,
+      "old_symbol": "setWebhook fail-closed + HTTPS/public URL validation + no-store",
+      "current_equivalent": "web_api.telegram_transport; web_api/__init__.py",
+      "base_status": "B",
+      "evidence": "False/exception from setWebhook aborts readiness; webhook URL validation is stricter than the old PR and readiness/webhook responses are non-cacheable.",
+      "branch_action": "none"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "atomic simultaneous battle join and opponent overwrite prevention",
-      "current_equivalent": "battle_integrity.join_waiting_battle",
-      "status": "B",
-      "evidence": "find_one_and_update predicates waiting state, empty opponent and creator != joiner; role derives from persisted document",
-      "action_required": "add explicit barrier-based concurrent regression test"
+      "old_symbol": "battle_role_for_user",
+      "current_equivalent": "battle_integrity.battle_role_for_user + server-owned callback resolution",
+      "base_status": "B",
+      "evidence": "Role is derived from persisted creator/opponent identity; callback-provided role is not authoritative.",
+      "branch_action": "retain_authorization_regressions"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "participant-only cancel and server-authoritative battle role",
-      "current_equivalent": "battle_integrity + telegram_battle_controller",
-      "status": "B",
-      "evidence": "participant identity is resolved from persisted creator/opponent fields; destructive actions are participant scoped",
-      "action_required": "retain and exercise authorization tests"
+      "old_symbol": "join_battle_atomic",
+      "current_equivalent": "battle_integrity.claim_battle_opponent",
+      "base_status": "B",
+      "evidence": "Single Mongo find_one_and_update predicates waiting state, empty opponent and creator != joiner, preventing overwrite and self-join across workers.",
+      "branch_action": "Added barrier/thread simultaneous-join regression proving exactly one winner.",
+      "branch_commit": "ce3b506"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "duplicate finish, late answer and question-index race protection",
-      "current_equivalent": "battle_integrity progress/finalization CAS helpers",
-      "status": "B",
-      "evidence": "durable predicates gate progress and terminal transitions rather than process-local mutexes",
-      "action_required": "add concurrent duplicate/late-finish regression coverage where missing"
+      "old_symbol": "record_battle_finish_atomic",
+      "current_equivalent": "battle_integrity.record_battle_result",
+      "base_status": "B",
+      "evidence": "Per-participant terminal result is a durable compare-and-set with replay recognition rather than a process-local finish flag.",
+      "branch_action": "retain_duplicate_finish_and_late_callback_guards"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "exactly-once battle reward receipt",
-      "current_equivalent": "battle_integrity durable SHA-256 reward receipt fields",
-      "status": "B",
-      "evidence": "receipt insertion and point/stat increments occur atomically in one user-document update; receipts are non-evicting",
-      "action_required": "retain retry/partial-recovery tests"
+      "old_symbol": "_finalization_filter + claim_battle_finalization",
+      "current_equivalent": "battle_integrity.claim_final_battle",
+      "base_status": "B",
+      "evidence": "Final claim is durable and independently retry-safe for both participant outcomes; partial reward application is recovered from receipts.",
+      "branch_action": "none"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "partial reward retry and crash-safe finalization",
-      "current_equivalent": "battle_integrity finalization claim/lease plus recovery jobs",
-      "status": "B",
-      "evidence": "finalization is replayable and already-applied participant rewards are recognized by durable receipts",
-      "action_required": "none for semantics; move blocking Mongo boundaries off PTB loop"
+      "old_symbol": "apply_battle_reward_once + _battle_result_increment",
+      "current_equivalent": "battle_integrity._apply_battle_outcome_once",
+      "base_status": "B",
+      "evidence": "Atomic user-document reward/stat update is guarded by a deterministic SHA-256 receipt-map key. Unlike the old 100-item receipt array, current receipts are non-evicting.",
+      "branch_action": "do_not_port_old_bounded_receipt_cap"
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "result delivery receipts and delete only after both deliveries",
-      "current_equivalent": "battle_integrity result outbox + legacy_battle_delivery_drain",
-      "status": "B",
-      "evidence": "per-recipient lease/ack state is durable and cleanup requires both result deliveries",
-      "action_required": "move synchronous outbox claim/query/ack/release I/O off PTB event loop"
+      "old_symbol": "mark_battle_result_delivered + delete_battle_if_fully_delivered",
+      "current_equivalent": "durable battle result outbox with per-recipient claim token/lease/ack + terminal cleanup",
+      "base_status": "B",
+      "evidence": "Each participant delivery has durable ownership/ack state and final evidence is retained until both deliveries are settled.",
+      "branch_action": "Moved synchronous claim/list/ack/release storage boundaries off the PTB loop and retained delivery-order guards.",
+      "branch_commits": ["fc16847", "f93439d", "8a70c90"]
     },
     {
       "old_pr": 3,
-      "old_head": "a40e21ae3a1bae1ea5c912b470eeb2b54b66d978",
-      "old_change": "stale waiting cleanup and bounded recovery",
-      "current_equivalent": "battle_integrity cleanup + telegram_battle_controller maintenance",
-      "status": "C",
-      "evidence": "durable cleanup/recovery exists but synchronous Mongo work is invoked from async maintenance paths",
-      "action_required": "offload operation boundaries with asyncio.to_thread and test loop responsiveness"
+      "old_symbol": "cancel_battle_for_participant",
+      "current_equivalent": "battle_integrity.cancel_unstarted_battle + telegram_battle_controller.cancel_battle",
+      "base_status": "B",
+      "evidence": "Cancellation is participant scoped and refuses states containing durable result/finalization evidence, preserving crash recovery.",
+      "branch_action": "none"
+    },
+    {
+      "old_pr": 3,
+      "old_symbol": "get_battles_needing_finalization / recovery job",
+      "current_equivalent": "battle recovery/outbox maintenance jobs",
+      "base_status": "C",
+      "evidence": "Durable recovery existed, but synchronous Mongo list/claim/maintenance calls were executed from async PTB JobQueue paths.",
+      "branch_action": "Offloaded Mongo operation boundaries with asyncio.to_thread; no process-local durability lock introduced; loop-responsiveness tests added.",
+      "branch_commits": ["f93439d", "ce3b506"]
     },
     {
       "old_pr": 4,
-      "old_head": "25c8790247a84a220dbce9b3b20fe325b90ccff4",
-      "old_change": "resume session is owner-bound",
-      "current_equivalent": "legacy_session_action + telegram_controller resume flow",
-      "status": "B",
-      "evidence": "signed action token is only a locator; Mongo resolution includes current effective user id",
-      "action_required": "retain cross-user fail-closed regression coverage"
+      "old_symbol": "get_owned_quiz_session",
+      "current_equivalent": "legacy_session_access.get_active_quiz_session_strict + legacy_session_action.resolve_session_action",
+      "base_status": "B",
+      "evidence": "Current-user identity is part of durable lookup; ambiguous duplicate-active-session or Mongo failure raises instead of authorizing by UUID possession.",
+      "branch_action": "retain_cross_user_and_outage_tests"
     },
     {
       "old_pr": 4,
-      "old_head": "25c8790247a84a220dbce9b3b20fe325b90ccff4",
-      "old_change": "restart session is owner-bound and one-shot",
+      "old_symbol": "claim_owned_quiz_session_restart",
       "current_equivalent": "legacy_session_lifecycle.restart_owned_quiz_attempt",
-      "status": "B",
-      "evidence": "current-user ownership plus expected attempt_id CAS makes the restart claim one-shot",
-      "action_required": "retain cross-user and duplicate-restart tests"
+      "base_status": "B",
+      "evidence": "Restart is stronger: owner + expected attempt_id + exact lifecycle state CAS, creates a new attempt_id in the same durable container and recognizes only safe lost-response replay.",
+      "branch_action": "none"
     },
     {
       "old_pr": 4,
-      "old_head": "25c8790247a84a220dbce9b3b20fe325b90ccff4",
-      "old_change": "cancel session is owner-bound and in-progress only",
-      "current_equivalent": "legacy_session_action + session lifecycle CAS",
-      "status": "B",
-      "evidence": "current-user scope and status predicate fail closed on foreign/terminal sessions",
-      "action_required": "retain cross-user tests"
+      "old_symbol": "cancel_owned_quiz_session",
+      "current_equivalent": "legacy_session_lifecycle.cancel_owned_incomplete_quiz_attempt; legacy_session_control.cancel_current_incomplete_session",
+      "base_status": "B",
+      "evidence": "Cancellation requires current owner and an incomplete recoverable state; result-pending/finalizable evidence cannot be destructively cancelled.",
+      "branch_action": "none"
     },
     {
       "old_pr": 4,
-      "old_head": "25c8790247a84a220dbce9b3b20fe325b90ccff4",
-      "old_change": "review_errors target user must equal current user",
+      "old_symbol": "resume_session_* callback authorization",
+      "current_equivalent": "telegram_controller.resume_session_handler + legacy_session_action.resolve_session_action",
+      "base_status": "B",
+      "evidence": "Callback token locates an attempt; effective_user.id supplies authorization and Mongo is the authority.",
+      "branch_action": "Core session DB boundary additionally moved off PTB event loop."
+    },
+    {
+      "old_pr": 4,
+      "old_symbol": "restart_session_* one-shot authorization",
+      "current_equivalent": "telegram_controller.restart_session_handler; telegram_challenge_controller.restart_session_handler",
+      "base_status": "B",
+      "evidence": "Current user and attempt_id are checked before the restart CAS; duplicate/stale callbacks cannot claim the replacement attempt twice.",
+      "branch_action": "Challenge and quiz persistence boundaries moved off PTB event loop."
+    },
+    {
+      "old_pr": 4,
+      "old_symbol": "cancel_session_* owner/in-progress authorization",
+      "current_equivalent": "telegram_controller.cancel_session_handler",
+      "base_status": "B",
+      "evidence": "Current user is included in action resolution and terminal/pending-result states fail closed.",
+      "branch_action": "Persistence boundary moved off PTB event loop."
+    },
+    {
+      "old_pr": 4,
+      "old_symbol": "review_errors_* self-review authorization",
       "current_equivalent": "bot.review_errors_handler",
-      "status": "A",
-      "evidence": "embedded target id is compared with callback effective_user.id; foreign target is rejected before accessing user_data",
-      "action_required": "none"
+      "base_status": "A",
+      "evidence": "Embedded target user id is explicitly compared to callback query.from_user.id before any foreign user_data access; review_nav implicitly targets the current user.",
+      "branch_action": "none"
     },
     {
       "old_pr": 4,
-      "old_head": "25c8790247a84a220dbce9b3b20fe325b90ccff4",
-      "old_change": "Mongo outage fails session authorization closed",
-      "current_equivalent": "legacy_session_access/action/lifecycle exceptions",
-      "status": "B",
-      "evidence": "persistence ambiguity raises unavailable/schema errors rather than treating missing data as authorization success",
-      "action_required": "retain outage regression coverage"
+      "old_symbol": "Mongo outage fails session authorization closed",
+      "current_equivalent": "legacy_session_access/action/lifecycle unavailable/schema/conflict exceptions",
+      "base_status": "B",
+      "evidence": "Persistence ambiguity is surfaced as an error/stale response; it is never converted into authorization success or a new attempt.",
+      "branch_action": "retain_DB_failure_tests"
     }
   ],
   "wave11_current_main": [
     {
-      "finding": "create_quiz_session may return generated id after failed insert",
+      "finding": "create_quiz_session() can return generated id after failed insert",
       "status": "PARTIAL",
-      "evidence": "insert exceptions now fail closed, but create_quiz_session and create_quiz_session_strict do not reject acknowledged == false",
-      "action_required": "require acknowledged writes on durable session creation and test exception/timeout/unacknowledged/duplicate paths"
+      "base_evidence": "Insert exceptions and duplicate-key conflicts already failed closed, but InsertOneResult.acknowledged == false was not rejected on all creation paths.",
+      "branch_resolution": "Strict Telegram creation, Mini App session creation and legacy database.create_quiz_session now require acknowledged writes; exception/duplicate/unacknowledged cases are regression-tested.",
+      "branch_commits": ["1ff6eed", "ce3b506"]
     },
     {
-      "finding": "finish and scoring are separate non-idempotent writes",
+      "finding": "finish session and scoring are separate non-idempotent writes",
       "status": "FIXED_ALREADY",
-      "evidence": "legacy_result_finalize + legacy_result_store use durable attempt/result receipts and a replay-safe staged finalizer",
-      "action_required": "none"
+      "base_evidence": "Current main already uses owner/attempt completion CAS, a scoring claim state, deterministic scoring request id and a durable user score receipt before terminal session transition.",
+      "branch_resolution": "No replacement transaction added; existing explicit retry-safe state machine retained."
     },
     {
-      "finding": "score may be credited while session remains in_progress",
+      "finding": "score can be credited while session remains in_progress",
       "status": "FIXED_ALREADY",
-      "evidence": "a crash can leave a physically partial state, but durable result receipts make it replay-safe and prevent duplicate credit before terminal session transition",
-      "action_required": "retain crash-recovery tests"
+      "base_evidence": "A crash may physically leave status=in_progress/result_pending with scoring_state=applied, but this is explicit recovery evidence: the receipt prevents duplicate credit and replay completes the terminal transition.",
+      "branch_resolution": "Existing recovery semantics retained and exercised."
     },
     {
-      "finding": "finished history shares short transient TTL",
+      "finding": "finished history is subject to the same short TTL as transient sessions",
       "status": "FIXED_ALREADY",
-      "evidence": "legacy_session_retention uses state-aware expires_at: transient 6h, cancelled 7d, finished 90d with migration-safe index handling",
-      "action_required": "do not shorten finished retention without a product migration"
+      "base_evidence": "legacy_session_retention already migrates unsafe generic TTL indexes to a terminal-only partial TTL keyed by terminal_updated_at; in-progress/result_pending recovery evidence is not put under the terminal TTL. Terminal retention defaults to 90 days and migration fails closed if unsafe scoring evidence would be lost.",
+      "branch_resolution": "No duplicate startup migration retained; baseline session_integrity import already executes the migration before runtime authority is used."
     },
     {
-      "finding": "synchronous Mongo blocks PTB event loop",
+      "finding": "synchronous Mongo can block the PTB event loop",
       "status": "PARTIAL",
-      "evidence": "some recovery/delivery/maintenance async jobs still invoke synchronous Mongo operation boundaries directly",
-      "action_required": "offload latency-sensitive and maintenance storage boundaries without wrapping pure computation"
+      "base_evidence": "Core quiz, battle recovery/delivery and other async durable jobs still invoked synchronous Mongo operation boundaries directly.",
+      "branch_resolution": "Latency-sensitive quiz/Challenge CAS/finalization, Battle maintenance/outbox, report acceptance/outbox and broadcast outbox boundaries now use thread offload. Startup/index hardening remains synchronous intentionally before the PTB loop. Legacy read-only presentation/admin queries remain classified responsiveness debt, not durable correctness authority.",
+      "branch_commits": ["fc16847", "f93439d", "67090ad", "624fd2f", "da10952", "d300ffa", "8402c9f"]
     },
     {
-      "finding": "Mini App retries are result-idempotent but distinct concurrent results can duplicate daily or Challenge bonus",
+      "finding": "Mini App retries are result-idempotent but distinct concurrent results can both receive Daily/Challenge bonus",
       "status": "CONFIRMED",
-      "evidence": "web_api.result_store computes bonus eligibility from a pre-read while _persist_once only predicates on result-id receipt absence",
-      "action_required": "serialize scoring results with Mongo optimistic CAS on durable total_tests and make weekly best update monotonic"
+      "base_evidence": "Bonus eligibility was derived from a pre-read while the persistence predicate only guarded one result_id receipt, allowing two distinct concurrent results to observe the same eligibility state.",
+      "branch_resolution": "Mini App scoring now uses durable optimistic CAS against the user aggregate/receipt state shared with Telegram scoring; weekly-best projection is monotonic and duplicate-key race safe. Barrier/thread tests cover distinct concurrent result ids.",
+      "branch_commit": "5d16c2e"
     }
-  ]
+  ],
+  "old_pr_disposition_if_final_gates_pass": {
+    "2": "FULLY_SUPERSEDED",
+    "3": "FULLY_SUPERSEDED_BY_STRONGER_IMPLEMENTATION",
+    "4": "FULLY_SUPERSEDED_BY_STRONGER_IMPLEMENTATION"
+  }
 }
