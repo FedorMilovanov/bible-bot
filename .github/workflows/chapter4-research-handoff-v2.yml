@@ -49,6 +49,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install release test dependencies
+        run: pip install -r requirements-dev.txt
+
       - name: Reconstruct canonical Research handoff
         run: |
           set -euo pipefail
