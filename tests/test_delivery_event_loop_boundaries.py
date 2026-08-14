@@ -1,16 +1,16 @@
 import asyncio
 import inspect
+import os
 import threading
 
-import pytest
+os.environ.setdefault("ADMIN_USER_ID", "1")
 
-import legacy_report_delivery_drain as report_drain
-import telegram_broadcast_controller as broadcast
-import telegram_report_controller as reports
+import legacy_report_delivery_drain as report_drain  # noqa: E402
+import telegram_broadcast_controller as broadcast  # noqa: E402
+import telegram_report_controller as reports  # noqa: E402
 
 
-@pytest.mark.asyncio
-async def test_report_queue_lookup_does_not_block_event_loop(monkeypatch):
+def test_report_queue_lookup_does_not_block_event_loop(monkeypatch):
     release = threading.Event()
     backup_fired = threading.Event()
 
@@ -24,29 +24,32 @@ async def test_report_queue_lookup_does_not_block_event_loop(monkeypatch):
         release.set()
 
     monkeypatch.setattr(report_drain, "get_pending_reports", blocking_lookup)
-    timer = threading.Timer(0.4, emergency_release)
-    timer.start()
-    try:
-        task = asyncio.create_task(
-            report_drain.drain_pending_reports(
-                photo_sender=lambda report: asyncio.sleep(0),
-                text_sender=lambda report: asyncio.sleep(0),
-                limit=7,
+
+    async def scenario():
+        timer = threading.Timer(0.4, emergency_release)
+        timer.start()
+        try:
+            task = asyncio.create_task(
+                report_drain.drain_pending_reports(
+                    photo_sender=lambda report: asyncio.sleep(0),
+                    text_sender=lambda report: asyncio.sleep(0),
+                    limit=7,
+                )
             )
-        )
-        await asyncio.sleep(0.02)
-        assert not backup_fired.is_set()
-        assert not task.done()
-        release.set()
-        summary = await asyncio.wait_for(task, timeout=0.5)
-        assert summary.reports_seen == 0
-    finally:
-        release.set()
-        timer.cancel()
+            await asyncio.sleep(0.02)
+            assert not backup_fired.is_set()
+            assert not task.done()
+            release.set()
+            summary = await asyncio.wait_for(task, timeout=0.5)
+            assert summary.reports_seen == 0
+        finally:
+            release.set()
+            timer.cancel()
+
+    asyncio.run(scenario())
 
 
-@pytest.mark.asyncio
-async def test_broadcast_store_boundary_does_not_block_event_loop():
+def test_broadcast_store_boundary_does_not_block_event_loop():
     release = threading.Event()
     backup_fired = threading.Event()
 
@@ -58,18 +61,21 @@ async def test_broadcast_store_boundary_does_not_block_event_loop():
         backup_fired.set()
         release.set()
 
-    timer = threading.Timer(0.4, emergency_release)
-    timer.start()
-    try:
-        task = asyncio.create_task(broadcast._store_call(blocking_store, "ok"))
-        await asyncio.sleep(0.02)
-        assert not backup_fired.is_set()
-        assert not task.done()
-        release.set()
-        assert await asyncio.wait_for(task, timeout=0.5) == "ok"
-    finally:
-        release.set()
-        timer.cancel()
+    async def scenario():
+        timer = threading.Timer(0.4, emergency_release)
+        timer.start()
+        try:
+            task = asyncio.create_task(broadcast._store_call(blocking_store, "ok"))
+            await asyncio.sleep(0.02)
+            assert not backup_fired.is_set()
+            assert not task.done()
+            release.set()
+            assert await asyncio.wait_for(task, timeout=0.5) == "ok"
+        finally:
+            release.set()
+            timer.cancel()
+
+    asyncio.run(scenario())
 
 
 def test_report_acceptance_and_cooldown_use_thread_boundaries():
