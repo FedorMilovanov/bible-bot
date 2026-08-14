@@ -224,7 +224,7 @@ def test_mutation_rejects_source_from_wrong_5_2_textual_unit():
     review = deepcopy(_review("w3q_050"))
     card["sources"].append("w3n_stanojevic_ecm_2021")
     review["source_subset"] = tuple(card["sources"])
-    with pytest.raises(ValueError, match="canonical Research claim|different textual unit"):
+    with pytest.raises(ValueError, match=r"canonical Research claim|different textual unit"):
         contract.validate_product_review(card, review)
 
 
