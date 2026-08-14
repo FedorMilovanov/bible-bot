@@ -6,12 +6,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
-from questions.chapter4.authoring import CHAPTER4_STAGING_QUESTIONS
-from questions.chapter4.prototype_crosswalk import CHAPTER4_PROTOTYPE_CROSSWALK
-from questions.chapter4.review_contract import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from questions.chapter4.authoring import CHAPTER4_STAGING_QUESTIONS  # noqa: E402
+from questions.chapter4.prototype_crosswalk import CHAPTER4_PROTOTYPE_CROSSWALK  # noqa: E402
+from questions.chapter4.review_contract import (  # noqa: E402
     validate_all_research_dispositions,
     validate_registry,
 )
