@@ -32,23 +32,27 @@ def test_synthetic_chapter4_and_5_auto_surface_without_competitive_widening(monk
     }
     random_before = [item["id"] for item in questions.get_pool_by_key("random_all")]
 
-    synthetic_registry = dict(questions.POOL_REGISTRY)
-    synthetic_registry["chapter4"] = _synthetic_pool("chapter4")
-    synthetic_registry["chapter5"] = _synthetic_pool("chapter5")
-    monkeypatch.setattr(questions, "POOL_REGISTRY", synthetic_registry)
+    chapter4 = _synthetic_pool("chapter4")
+    chapter5 = _synthetic_pool("chapter5")
+    # POOL_REGISTRY is the canonical runtime registry object used by
+    # get_pool_by_key(). Mutate it in place to model real Chapter authoring
+    # registration; rebinding only the exported alias would be an artificial
+    # state production registration never creates.
+    monkeypatch.setitem(questions.POOL_REGISTRY, "chapter4", chapter4)
+    monkeypatch.setitem(questions.POOL_REGISTRY, "chapter5", chapter5)
 
     for surface in (SURFACE_TELEGRAM, SURFACE_MINIAPP):
         keys = _course_keys(surface)
         assert {"chapter4", "chapter5"} <= keys
 
-    for chapter in ("chapter4", "chapter5"):
+    for chapter, synthetic in (("chapter4", chapter4), ("chapter5", chapter5)):
         entry = course_catalog.resolve_course(
             chapter,
             surface=SURFACE_MINIAPP,
             mode="relaxed",
         )
         assert entry.pool_key == chapter
-        assert course_catalog.resolve_course_pool(entry) == synthetic_registry[chapter]
+        assert course_catalog.resolve_course_pool(entry) == synthetic
 
         policy = get_pool_policy(chapter)
         assert policy.scoring_mode == SCORING_MODE_LEARNING
