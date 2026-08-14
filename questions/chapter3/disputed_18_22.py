@@ -9,7 +9,7 @@ def _d(qid, question, answer, wrong, explanation, verse, sources, readings):
 
 
 SPIRITS = ["sblgnt", "morphgnt_1peter", "gty_1p3_18_20", "grudem_noah_1p3_19", "pierce_spirits_2011", "grindheim_spirits_2024", "lei_descensus_2025", "horrell_williams_icc_v2"]
-BAPTISM = ["sblgnt", "jts_crawford_1p3_21", "westfall_baptism_1999", "elliott_1peter_ayb", "schreiner_1peter_nac", "gty_1p3_20_22", "horrell_williams_icc_v2"]
+BAPTISM = ["sblgnt", "jts_crawford_1p3_21", "ubs_handbook_1p3_21", "westfall_baptism_1999", "schreiner_1peter_nac", "gty_1p3_20_22", "horrell_williams_icc_v2"]
 
 DISPUTED_3_18_22 = [
     _d(
@@ -37,9 +37,9 @@ DISPUTED_3_18_22 = [
         "Что показывает lexical-history review ἐπερώτημα в 3:21?",
         "Parsing noun nom. neut. sg. надёжен; appeal/request, pledge/stipulation и confession-related baptismal-response analyses нужно различать, а не превращать в parsing fact",
         ["Именительный падеж доказывает «обет»", "Средний род доказывает «просьба»", "У слова нет внебиблейской истории"],
-        "LSJ фиксирует вопрос/запрос и юридическую stipulatio. Crawford аргументирует contractual pledge reading и показывает раннюю связь ἐπερώτημα с ὁμολογία; это сильный исторический аргумент, но не морфологическая дефиниция слова.",
+        "LSJ и passage-level UBS handbook фиксируют вопрос/request и contractual/pledge possibilities. Crawford аргументирует contractual pledge reading и раннюю связь с ὁμολογία; его вывод остаётся историко-экзегетическим аргументом, не морфологической дефиницией.",
         "1 Пет. 3:21",
-        ["sblgnt", "morphgnt_1peter", "lsj_eperotema", "jts_crawford_1p3_21", "elliott_1peter_ayb", "horrell_williams_icc_v2"],
+        ["sblgnt", "morphgnt_1peter", "lsj_eperotema", "ubs_handbook_1p3_21", "jts_crawford_1p3_21", "horrell_williams_icc_v2"],
         ["appeal_request", "pledge_stipulation", "confession_response_related"],
     ),
     _d(
@@ -47,7 +47,7 @@ DISPUTED_3_18_22 = [
         "Как представить спор вокруг βάπτισμα ... νῦν σῴζει в 3:21?",
         "Сохранить «крещение спасает», отрицание внешнего омовения, good-conscience ἐπερώτημα и воскресение; затем различать sacramental и evangelical/faith-confessional модели",
         ["σῴζει доказывает механическую эффективность воды", "βάπτισμα здесь не означает крещение", "οὐ ... ἀλλὰ отменяет σῴζει"],
-        "σῴζει читается вместе с квалификациями; Crawford/Westfall и крупные комментарии подтверждают реальный систематический спор, поэтому его нельзя закрывать одной глоссой ἐπερώτημα.",
+        "σῴζει читается вместе с квалификациями; Crawford/Westfall, passage-level translation control и серьёзные evangelical/critical witnesses подтверждают реальный спор, который нельзя закрывать одной глоссой ἐπερώτημα.",
         "1 Пет. 3:21",
         BAPTISM,
         ["sacramental_efficacy", "faith_appeal_or_pledge_instrumentality", "sign_confession_resurrection_relation"],
