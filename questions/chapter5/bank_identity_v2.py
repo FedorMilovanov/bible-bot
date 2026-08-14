@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-PRODUCT_BANK_GIT_BLOB_SHA = "91d51413a6a0a3f3ad7e6e308c2a6885426ed38f"
+PRODUCT_BANK_GIT_BLOB_SHA = "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9"
 
 
 def current_product_bank_git_blob_sha() -> str:
