@@ -33,6 +33,7 @@ def _import_legacy_presentation():
 
 legacy = _import_legacy_presentation()
 
+import telegram_course_surface as courses  # noqa: E402
 import telegram_admin_controller as admin  # noqa: E402
 import telegram_battle_controller as battles  # noqa: E402
 import telegram_battle_create_controller as battle_create  # noqa: E402
@@ -145,6 +146,26 @@ async def _sync_public_command_menu_job(context):
 async def _start(update, context):
     if await battle_share.handle_start_deep_link(update, context):
         return
+
+    # Course deep links are resolved by the canonical catalog before the legacy
+    # controller sees command arguments. Unknown tokens preserve the historical
+    # fallback-to-main-menu behavior, but bot.py LEVEL_CONFIG is never consulted
+    # by the production /start path.
+    original_args = list(context.args or [])
+    if original_args and await courses.start_course_deep_link(
+        update,
+        context,
+        original_args[0],
+    ):
+        return
+
+    if original_args:
+        context.args = []
+        try:
+            await quiz.start(update, context)
+        finally:
+            context.args = original_args
+        return
     await quiz.start(update, context)
 
 
@@ -178,7 +199,7 @@ async def _about_callback(update, context):
 async def _start_test_callback(update, context):
     query = _touch_presentation_callback(update)
     await query.answer()
-    await legacy.choose_level(update, context, is_callback=True)
+    await courses.choose_level(update, context, is_callback=True)
 
 
 async def _leaderboard_callback(update, context):
@@ -212,9 +233,10 @@ async def _achievements_callback(update, context):
 
 
 async def _coming_soon_callback(update, context):
-    del context
+    """Old deployed Chapter-2 button: redirect to the fresh catalog menu."""
     query = _touch_presentation_callback(update)
-    await query.answer("Coming soon.", show_alert=True)
+    await query.answer("Меню курсов обновлено.")
+    await courses.choose_level(update, context, is_callback=True)
 
 
 def main() -> None:
@@ -273,7 +295,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", _start))
     app.add_handler(CommandHandler("app", _app_command))
     app.add_handler(CommandHandler("menu", quiz.start))
-    app.add_handler(CommandHandler("test", quiz.test_command))
+    app.add_handler(CommandHandler("test", courses.choose_level))
     app.add_handler(CommandHandler("stats", legacy.stats_command))
     app.add_handler(CommandHandler("random", quiz.random_command))
     app.add_handler(CommandHandler("reset", quiz.reset_command))
@@ -284,7 +306,15 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", broadcasts.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
 
-    app.add_handler(CallbackQueryHandler(legacy.level_selected, pattern=r"^level_"))
+    # Learning course callbacks are validated against the canonical catalog.
+    # Old level/mode patterns remain only as compatibility aliases for already
+    # delivered Telegram keyboards; production never treats bot.py LEVEL_CONFIG
+    # as course authority.
+    app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern=r"^course_menu$"))
+    app.add_handler(CallbackQueryHandler(courses.show_group_callback, pattern=r"^course_group:"))
+    app.add_handler(CallbackQueryHandler(courses.course_callback, pattern=r"^course:"))
+    app.add_handler(CallbackQueryHandler(courses.course_mode_callback, pattern=r"^course_mode:"))
+    app.add_handler(CallbackQueryHandler(courses.legacy_level_callback, pattern=r"^level_"))
     app.add_handler(CallbackQueryHandler(retry.retry_errors, pattern="^retry_errors_"))
     app.add_handler(CallbackQueryHandler(challenge.challenge_start, pattern="^challenge_start_"))
     app.add_handler(CallbackQueryHandler(quiz.quiz_inline_answer, pattern=r"^qa:"))
@@ -298,10 +328,18 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(battles.cancel_battle, pattern="^cancel_battle_"))
     app.add_handler(CallbackQueryHandler(battles.show_battle_menu, pattern="^battle_menu$"))
 
-    app.add_handler(CallbackQueryHandler(legacy.confirm_level_handler, pattern=r"^confirm_level_"))
-    app.add_handler(CallbackQueryHandler(quiz.relaxed_mode_handler, pattern=r"^relaxed_mode_"))
-    app.add_handler(CallbackQueryHandler(quiz.timed_mode_handler, pattern=r"^timed_mode_"))
-    app.add_handler(CallbackQueryHandler(quiz.speed_mode_handler, pattern=r"^speed_mode_"))
+    app.add_handler(
+        CallbackQueryHandler(
+            courses.legacy_confirm_level_callback,
+            pattern=r"^confirm_level_",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            courses.legacy_mode_callback,
+            pattern=r"^(relaxed|timed|speed)_mode_",
+        )
+    )
 
     app.add_handler(CallbackQueryHandler(quiz.resume_session_handler, pattern=r"^res:"))
     app.add_handler(CallbackQueryHandler(challenge.restart_session_handler, pattern=r"^rst:"))
@@ -322,12 +360,19 @@ def main() -> None:
     )
 
     app.add_handler(CallbackQueryHandler(legacy.back_to_main, pattern="^back_to_main$"))
-    app.add_handler(CallbackQueryHandler(legacy.chapter_1_menu, pattern="^chapter_1_menu$"))
+    # Stale category buttons from old messages now resolve to the catalog rather
+    # than rendering their historical hard-coded chapter/context lists.
+    app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^chapter_1_menu$"))
     app.add_handler(CallbackQueryHandler(quiz.random_all_start_handler, pattern="^random_all_start$"))
-    app.add_handler(CallbackQueryHandler(legacy.historical_menu, pattern="^historical_menu$"))
+    app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_menu, pattern="^challenge_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.intro_hint_handler, pattern=r"^intro_hint_"))
-    app.add_handler(CallbackQueryHandler(quiz.intro_start_handler, pattern=r"^intro_start_"))
+    app.add_handler(
+        CallbackQueryHandler(
+            courses.legacy_intro_start_callback,
+            pattern=r"^intro_start_",
+        )
+    )
     app.add_handler(CallbackQueryHandler(legacy.random_fact_handler, pattern="^random_fact_intro$"))
     app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
