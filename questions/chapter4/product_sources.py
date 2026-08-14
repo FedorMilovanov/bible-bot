@@ -10,6 +10,7 @@ from __future__ import annotations
 RESEARCH_AUTHORITY_SHA = "7e0140129a4aba59a09737701967c3820ff1af57"
 
 _SOURCE_IDS = {
+    "tms_doctrinal": "The Master's Seminary doctrinal/systematics course-position identity",
     "w3_lxx_prov10": "LXX Proverbs 10:12 research witness",
     "w3_lxx_prov11": "LXX Proverbs 11:31 research witness",
     "w3_forbes_4_1_6": "Forbes, 1 Peter 4:1-6 exegetical source",
