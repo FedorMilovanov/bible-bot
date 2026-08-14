@@ -28,7 +28,7 @@ SOURCE_CATALOG = {
     "lxx_prov_3_25": {
         "title": "Septuagint Proverbs 3:25",
         "kind": "primary_text_lxx",
-        "url": "https://www.studylight.org/interlinear-study-bible/greek/proverbs/3-25.html",
+        "url": "https://www.septuagint.bible/-/paroimiai-solomontos-kephalaio-3",
     },
     "abbott_smith_ptoesis": {
         "title": "G. Abbott-Smith, Manual Greek Lexicon of the New Testament, πτόησις",
