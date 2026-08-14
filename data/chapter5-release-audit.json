@@ -10,6 +10,7 @@
     "productCards": 72,
     "productReviewRecords": 72,
     "independentlyReadBackPass1": 72,
+    "independentlyReadBackPass2": 72,
     "prototypesReconciled": 32,
     "rejectedPrototypeTemplates": 2,
     "independentProductRewritesAccepted": 2,
@@ -26,7 +27,14 @@
   },
   "correctIndex": {"0": 18, "1": 18, "2": 18, "3": 18},
   "claimTypeCoverage": {"text": 28, "interpretation": 13, "greek": 13, "application": 13, "history": 5},
+  "traceContract": ["PRODUCT_CARD", "PRODUCT_REVIEW_RECORD", "EFFECTIVE_RESEARCH_CLAIM", "CLAIM_SOURCE_EDGE", "OWNING_LANE"],
+  "reviewFieldsRequired": [
+    "research_authority_sha", "authority_digest", "claim_digest", "claim_inspection_edge_ids",
+    "source_subset", "product_review_id", "safe_phrasing_review", "blacklist_review",
+    "claimed_type", "claimed_confidence", "claimed_position", "ranking_disposition"
+  ],
   "prototypeAudit": {
+    "materializedFile": "data/chapter5-prototype-audit-v2.json",
     "recordSource": "questions/chapter5/review_contract_v2.py::PROTOTYPE_AUDIT_RECORDS",
     "publicationAuthorityAllowed": false,
     "rankingAuthorityAllowed": false,
@@ -35,41 +43,9 @@
     "rewriteDisposition": "NEEDS_REWRITE_RESOLVED_BY_INDEPENDENT_PRODUCT_REWRITE",
     "acceptedProductRewriteRecord": "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
   },
-  "traceContract": [
-    "PRODUCT_CARD",
-    "PRODUCT_REVIEW_RECORD",
-    "EFFECTIVE_RESEARCH_CLAIM",
-    "CLAIM_SOURCE_EDGE",
-    "OWNING_LANE"
-  ],
-  "reviewFieldsRequired": [
-    "research_authority_sha",
-    "authority_digest",
-    "claim_digest",
-    "claim_inspection_edge_ids",
-    "source_subset",
-    "product_review_id",
-    "safe_phrasing_review",
-    "blacklist_review",
-    "claimed_type",
-    "claimed_confidence",
-    "claimed_position",
-    "ranking_disposition"
-  ],
   "semanticReadbackPass1": {
     "status": "COMPLETE_WITH_CORRECTIONS",
     "scope": "72/72 exact Research candidates plus effective Wave3g/Wave3n overrides against product stem/correct/explanation/distractors",
-    "checks": [
-      "question_matches_claim",
-      "correct_not_stronger_than_evidence",
-      "distractors_do_not_teach_false_authority",
-      "no_fake_consensus",
-      "no_universal_manuscript_claim",
-      "project_application_visibly_labelled",
-      "no_history_inference_from_toponym_or_text_form",
-      "source_subset_meets_research_minimum",
-      "claimed_type_confidence_position_match_effective_research"
-    ],
     "correctedCards": [
       "w3q_073","w3q_084","w3q_087","w3q_105","w3q_107","w3q_108","w3q_109","w3q_110","w3q_118",
       "w3q_125","w3q_126","w3q_127","w3q_128"
@@ -79,6 +55,25 @@
       "confidenceRepairs": ["w3q_118","w3q_125","w3q_126","w3q_127"],
       "claimTypeRepairs": ["w3q_128"]
     }
+  },
+  "semanticReadbackPass2": {
+    "status": "COMPLETE_PASS",
+    "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
+    "recordSource": "questions/chapter5/adversarial_review_v2.py::ADVERSARIAL_REVIEW_RECORDS",
+    "count": 72,
+    "findingCount": 0,
+    "matrix": [
+      "question_matches_claim",
+      "keyed_answer_evidence_bounded",
+      "distractors_do_not_teach_false_authority",
+      "no_fake_consensus",
+      "no_universal_manuscript_claim_on_authoritative_surface",
+      "project_application_visibly_labelled",
+      "no_history_inference_from_toponym_or_text_form",
+      "textual_unit_scope_preserved",
+      "named_witness_not_promoted_to_original_text",
+      "ecm_based_route_not_promoted_to_direct_decm_readback"
+    ]
   },
   "textualControls": {
     "5:2A": "ἐπισκοποῦντες is independent from κατὰ θεόν; Williams-Horrell ECM-based route, no direct project dECM readback; Stanojevic source transfer from 5:2B is rejected.",
@@ -103,44 +98,25 @@
     "achievements": 0
   },
   "mutationCoverage": [
-    "stale_authority_digest",
-    "wrong_claim_digest",
-    "fake_edge",
-    "source_from_wrong_textual_unit",
-    "direct_decm_wording_from_ecm_based_evidence",
-    "manuscript_unanimity",
-    "project_to_neutral",
-    "claim_type_or_confidence_strengthening",
-    "competitive_true",
-    "challenge_leakage",
-    "challenge_fallback_leakage",
-    "whitespace_or_padding",
-    "duplicate_option_surfaces",
-    "wrong_answer_position_metadata",
-    "pre_answer_public_api_leakage"
+    "stale_authority_digest", "wrong_claim_digest", "fake_edge", "source_from_wrong_textual_unit",
+    "direct_decm_wording_from_ecm_based_evidence", "manuscript_unanimity", "project_to_neutral",
+    "claim_type_or_confidence_strengthening", "competitive_true", "challenge_leakage",
+    "challenge_fallback_leakage", "whitespace_or_padding", "duplicate_option_surfaces",
+    "wrong_answer_position_metadata", "pre_answer_public_api_leakage"
   ],
   "safetyInvariants": [
-    "exact_product_bank_blob_pinned",
-    "independent_research_metadata_pinned",
-    "reviewed_is_deep_copy",
-    "project_labels_visible",
-    "all_ch5_competitive_false",
-    "normal_learning_non_scoring",
-    "random_all_excluded",
-    "battle_excluded",
-    "challenge_excluded",
-    "challenge_fallback_excluded",
-    "canonical_strings_have_no_outer_whitespace",
-    "canonical_options_not_padded_for_layout",
-    "claim_source_depth_lane_scoped",
-    "historical_holds_audit_visible",
+    "exact_product_bank_blob_pinned", "independent_research_metadata_pinned",
+    "second_adversarial_readback_required_by_admission", "reviewed_is_deep_copy",
+    "project_labels_visible", "all_ch5_competitive_false", "normal_learning_non_scoring",
+    "random_all_excluded", "battle_excluded", "challenge_excluded", "challenge_fallback_excluded",
+    "canonical_strings_have_no_outer_whitespace", "canonical_options_not_padded_for_layout",
+    "claim_source_depth_lane_scoped", "historical_holds_audit_visible",
     "wave3n_effective_closures_control_production"
   ],
-  "secondAdversarialReadback": {
-    "status": "PENDING_FIRST_EXACT_HEAD_GREEN",
-    "requiredCount": 72
-  },
   "releaseGates": {
-    "status": "PENDING_FIRST_EXACT_HEAD_GREEN"
+    "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
+    "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},
+    "finalExactHead": "PENDING_FINAL_GATE_AFTER_PASS2",
+    "status": "PENDING_FINAL_EXACT_HEAD_GREEN"
   }
 }
