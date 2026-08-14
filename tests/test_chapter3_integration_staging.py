@@ -71,9 +71,14 @@ def test_canonical_metadata_and_editorial_shape_survive_integration():
         assert isinstance(item["correct"], int) and 0 <= item["correct"] < 4, item["id"]
 
 
-def test_application_contested_and_project_claims_are_quarantined_from_ranking():
+def test_noncompetitive_categories_remain_quarantined_from_ranking():
     for item in CHAPTER3_STAGING_QUESTIONS:
-        if item["claim_type"] == "application" or item["confidence"] == "contested" or item["position"] == "project":
+        must_be_noncompetitive = (
+            item["claim_type"] in {"greek", "history", "application"}
+            or item["confidence"] == "contested"
+            or item["position"] == "project"
+        )
+        if must_be_noncompetitive:
             assert item["competitive"] is False, item["id"]
 
 
@@ -120,7 +125,7 @@ def test_competitive_metadata_is_candidate_only_until_explicit_root_admission():
     candidates = [item for item in CHAPTER3_STAGING_QUESTIONS if item["competitive"] is True]
     assert candidates
     for item in candidates:
-        assert item["claim_type"] != "application", item["id"]
+        assert item["claim_type"] not in {"greek", "history", "application"}, item["id"]
         assert item["confidence"] != "contested", item["id"]
         assert item["position"] == "neutral", item["id"]
 
