@@ -9,6 +9,7 @@ immediate release. Durable stage evidence also repairs a missing aggregate
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -54,7 +55,7 @@ async def drain_pending_reports(
 
     errors: list[str] = []
     try:
-        reports = get_pending_reports(limit)
+        reports = await asyncio.to_thread(get_pending_reports, limit)
     except ReportStoreUnavailable as exc:
         return ReportDeliveryDrainSummary(
             errors=(f"report-list:<queue>:{type(exc).__name__}:{exc}"[:500],)
@@ -84,7 +85,7 @@ async def drain_pending_reports(
             identifier = report_id
             # Repair the crash window where both stage obligations were already
             # settled but the aggregate admin_delivered write did not land.
-            if repair_report_delivery_aggregate(report_id):
+            if await asyncio.to_thread(repair_report_delivery_aggregate, report_id):
                 continue
             try:
                 photo_sent, text_sent = await deliver_report_once(
@@ -96,12 +97,15 @@ async def drain_pending_reports(
                 # A stage acknowledgement may have landed before its aggregate
                 # write failed. Prove terminal stage evidence before surfacing
                 # the error; if repair succeeds there is nothing left to send.
-                if repair_report_delivery_aggregate(report_id):
+                if await asyncio.to_thread(repair_report_delivery_aggregate, report_id):
                     continue
                 raise
 
             stage_sends += int(photo_sent) + int(text_sent)
-            terminal = repair_report_delivery_aggregate(report_id)
+            terminal = await asyncio.to_thread(
+                repair_report_delivery_aggregate,
+                report_id,
+            )
             if not text_sent and not terminal:
                 deferred += 1
         except Exception as exc:
