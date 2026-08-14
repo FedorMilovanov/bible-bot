@@ -124,7 +124,9 @@
   "releaseGates": {
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},
-    "finalGatePolicy": "The post-pass2-repair PR head must have CI, Security Audit and CodeQL SUCCESS on the same exact head. The exact final SHA and run evidence are recorded in PR #29 after those checks so this tracked audit does not mutate itself after the gate.",
-    "status": "REQUIRES_POST_PASS2_REPAIR_EXACT_HEAD_GREEN"
+    "trackedReleaseContentComplete": true,
+    "finalGateEvidenceLocation": "PR #29 metadata plus GitHub Actions checks on the exact PR head",
+    "finalGatePolicy": "Exact final SHA and CI/Security/CodeQL run evidence intentionally live outside this tracked file because embedding the SHA here would mutate the head being attested. Agent 5 must verify PR #29 metadata and checks on that exact head.",
+    "status": "TRACKED_RELEASE_COMPLETE_EXACT_HEAD_EVIDENCE_IN_PR_METADATA"
   }
 }
