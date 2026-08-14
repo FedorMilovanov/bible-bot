@@ -1,3 +1,7 @@
+from difflib import SequenceMatcher
+import re
+import unicodedata
+
 from questions.chapter3.application_8_12 import APPLICATION_3_8_12
 from questions.chapter3.greek_8_12 import GREEK_3_8_12, MORPHGNT_3_8_12
 from questions.chapter3.intertext_8_12 import FIRST_PETER_3_10_12, INTERTEXT_3_8_12, LXX_PS33_13_17
@@ -5,11 +9,30 @@ from questions.chapter3.sources_8_12 import SOURCE_CATALOG
 from questions.chapter3.text_8_12 import TEXT_3_8_12
 from questions.chapter3.theology_8_12 import DISPUTED_3_8_12, THEOLOGY_3_8_12
 
-POOLS = [TEXT_3_8_12, GREEK_3_8_12, INTERTEXT_3_8_12, THEOLOGY_3_8_12, DISPUTED_3_8_12, APPLICATION_3_8_12]
+POOLS = [
+    TEXT_3_8_12,
+    GREEK_3_8_12,
+    INTERTEXT_3_8_12,
+    THEOLOGY_3_8_12,
+    DISPUTED_3_8_12,
+    APPLICATION_3_8_12,
+]
 ALL_ITEMS = [item for pool in POOLS for item in pool]
 
+CLAIM_TYPES = {"text", "greek", "history", "interpretation", "application"}
+POSITIONS = {"neutral", "project"}
+CONFIDENCE_LEVELS = {"high", "medium", "contested"}
+NEAR_DUPLICATE_THRESHOLD = 0.92
 
-def test_lane_has_unique_ids_in_reserved_range():
+
+def _normalize(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value).casefold()
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def test_lane_question_count_and_reserved_unique_ids():
+    assert len(ALL_ITEMS) == 37
     ids = [item["id"] for item in ALL_ITEMS]
     assert len(ids) == len(set(ids))
     allowed_prefixes = {"ch3_text", "ch3_gr", "ch3_ot", "ch3_theol", "ch3_disp", "ch3_app"}
@@ -19,17 +42,50 @@ def test_lane_has_unique_ids_in_reserved_range():
         assert int(number) >= 201
 
 
-def test_all_items_have_required_metadata_and_are_quarantined_from_competitive_play():
+def test_metadata_enums_source_resolution_and_competitive_quarantine():
     for item in ALL_ITEMS:
-        assert item["claim_type"] in {"text", "greek", "history", "interpretation", "application"}
-        assert item["confidence"] in {"high", "medium", "contested"}
-        assert item["position"] in {"neutral", "project"}
+        assert item["claim_type"] in CLAIM_TYPES
+        assert item["position"] in POSITIONS
+        assert item["confidence"] in CONFIDENCE_LEVELS
         assert item["competitive"] is False
         assert item["sources"]
         assert set(item["sources"]).issubset(SOURCE_CATALOG)
-        assert len(item["options"]) == 4
-        assert 0 <= item["correct"] < len(item["options"])
-        assert len(set(item["options"])) == len(item["options"])
+
+
+def test_editorial_option_integrity_and_valid_correct_index():
+    for item in ALL_ITEMS:
+        options = item["options"]
+        assert len(options) == 4
+        assert all(isinstance(option, str) and _normalize(option) for option in options)
+        normalized = [_normalize(option) for option in options]
+        assert len(normalized) == len(set(normalized))
+        lengths = [len(option) for option in options]
+        assert max(lengths) / min(lengths) <= 2.2, f"option-length cue in {item['id']}: {lengths}"
+        assert isinstance(item["correct"], int)
+        assert 0 <= item["correct"] < len(options)
+
+    banned_absurdity_fragments = {
+        "храмовая архитектура",
+        "одинаково одет",
+        "физически креп",
+        "ритуально чист",
+        "юридически безупреч",
+    }
+    all_option_text = "\n".join(_normalize(option) for item in ALL_ITEMS for option in item["options"])
+    assert all(fragment not in all_option_text for fragment in banned_absurdity_fragments)
+
+
+def test_no_exact_or_near_duplicate_question_stems():
+    normalized = [(item["id"], _normalize(item["question"])) for item in ALL_ITEMS]
+    stems = [stem for _, stem in normalized]
+    assert len(stems) == len(set(stems))
+
+    for index, (left_id, left) in enumerate(normalized):
+        for right_id, right in normalized[index + 1 :]:
+            ratio = SequenceMatcher(None, left, right).ratio()
+            assert ratio < NEAR_DUPLICATE_THRESHOLD, (
+                f"near-duplicate question stems: {left_id} / {right_id} = {ratio:.3f}"
+            )
 
 
 def test_claim_type_separation_by_pool():
@@ -41,35 +97,66 @@ def test_claim_type_separation_by_pool():
 
 
 def test_morphgnt_anchor_forms_are_exact():
-    assert MORPHGNT_3_8_12["\u1f41\u03bc\u03cc\u03c6\u03c1\u03bf\u03bd\u03b5\u03c2"] == ("\u1f41\u03bc\u03cc\u03c6\u03c1\u03c9\u03bd", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["\u03c3\u03c5\u03bc\u03c0\u03b1\u03b8\u03b5\u1fd6\u03c2"] == ("\u03c3\u03c5\u03bc\u03c0\u03b1\u03b8\u03ae\u03c2", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["\u03c6\u03b9\u03bb\u03ac\u03b4\u03b5\u03bb\u03c6\u03bf\u03b9"] == ("\u03c6\u03b9\u03bb\u03ac\u03b4\u03b5\u03bb\u03c6\u03bf\u03c2", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["\u03b5\u1f54\u03c3\u03c0\u03bb\u03b1\u03b3\u03c7\u03bd\u03bf\u03b9"] == ("\u03b5\u1f54\u03c3\u03c0\u03bb\u03b1\u03b3\u03c7\u03bd\u03bf\u03c2", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["\u03c4\u03b1\u03c0\u03b5\u03b9\u03bd\u03cc\u03c6\u03c1\u03bf\u03bd\u03b5\u03c2"] == ("\u03c4\u03b1\u03c0\u03b5\u03b9\u03bd\u03cc\u03c6\u03c1\u03c9\u03bd", "A- ----NPM-")
-    assert MORPHGNT_3_8_12["\u1f00\u03c0\u03bf\u03b4\u03b9\u03b4\u03cc\u03bd\u03c4\u03b5\u03c2"] == ("\u1f00\u03c0\u03bf\u03b4\u03af\u03b4\u03c9\u03bc\u03b9", "V- -PAPNPM-")
-    assert MORPHGNT_3_8_12["\u03b5\u1f50\u03bb\u03bf\u03b3\u03bf\u1fe6\u03bd\u03c4\u03b5\u03c2"] == ("\u03b5\u1f50\u03bb\u03bf\u03b3\u03ad\u03c9", "V- -PAPNPM-")
-    assert MORPHGNT_3_8_12["\u1f10\u03ba\u03bb\u03ae\u03b8\u03b7\u03c4\u03b5"] == ("\u03ba\u03b1\u03bb\u03ad\u03c9", "V- 2API-P--")
-    assert MORPHGNT_3_8_12["\u03ba\u03bb\u03b7\u03c1\u03bf\u03bd\u03bf\u03bc\u03ae\u03c3\u03b7\u03c4\u03b5"] == ("\u03ba\u03bb\u03b7\u03c1\u03bf\u03bd\u03bf\u03bc\u03ad\u03c9", "V- 2AAS-P--")
-    for form in ("\u03c0\u03b1\u03c5\u03c3\u03ac\u03c4\u03c9", "\u1f10\u03ba\u03ba\u03bb\u03b9\u03bd\u03ac\u03c4\u03c9", "\u03c0\u03bf\u03b9\u03b7\u03c3\u03ac\u03c4\u03c9", "\u03b6\u03b7\u03c4\u03b7\u03c3\u03ac\u03c4\u03c9", "\u03b4\u03b9\u03c9\u03be\u03ac\u03c4\u03c9"):
+    assert MORPHGNT_3_8_12["ὁμόφρονες"] == ("ὁμόφρων", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["συμπαθεῖς"] == ("συμπαθής", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["φιλάδελφοι"] == ("φιλάδελφος", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["εὔσπλαγχνοι"] == ("εὔσπλαγχνος", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["ταπεινόφρονες"] == ("ταπεινόφρων", "A- ----NPM-")
+    assert MORPHGNT_3_8_12["ἀποδιδόντες"] == ("ἀποδίδωμι", "V- -PAPNPM-")
+    assert MORPHGNT_3_8_12["εὐλογοῦντες"] == ("εὐλογέω", "V- -PAPNPM-")
+    assert MORPHGNT_3_8_12["ἐκλήθητε"] == ("καλέω", "V- 2API-P--")
+    assert MORPHGNT_3_8_12["κληρονομήσητε"] == ("κληρονομέω", "V- 2AAS-P--")
+    for form in ("παυσάτω", "ἐκκλινάτω", "ποιησάτω", "ζητησάτω", "διωξάτω"):
         assert MORPHGNT_3_8_12[form][1] == "V- 3AAD-S--"
 
 
-def test_lxx_quote_extent_and_observable_differences_are_pinned():
-    assert LXX_PS33_13_17[13].startswith("\u03c4\u03af\u03c2 \u1f10\u03c3\u03c4\u03b9\u03bd \u1f04\u03bd\u03b8\u03c1\u03c9\u03c0\u03bf\u03c2")
-    assert FIRST_PETER_3_10_12[10].startswith("\u1f41 \u03b3\u1f70\u03c1 \u03b8\u03ad\u03bb\u03c9\u03bd")
-    assert "\u03b3\u03bb\u1ff6\u03c3\u03c3\u03ac\u03bd " + "\u03c3\u03bf\u03c5" in LXX_PS33_13_17[14]
-    assert "\u03b3\u03bb\u1ff6\u03c3\u03c3\u03b1\u03bd \u1f00\u03c0\u1f78" in FIRST_PETER_3_10_12[10]
-    assert "\u03c0\u03b1\u1fe6\u03c3\u03bf\u03bd" in LXX_PS33_13_17[14]
-    assert "\u03c0\u03b1\u03c5\u03c3\u03ac\u03c4\u03c9" in FIRST_PETER_3_10_12[10]
-    assert "\u03c4\u03bf\u1fe6 \u1f10\u03be\u03bf\u03bb\u03b5\u03b8\u03c1\u03b5\u1fe6\u03c3\u03b1\u03b9 \u1f10\u03ba \u03b3\u1fc6\u03c2 \u03c4\u1f78 \u03bc\u03bd\u03b7\u03bc\u03cc\u03c3\u03c5\u03bd\u03bf\u03bd \u03b1\u1f50\u03c4\u1ff6\u03bd" in LXX_PS33_13_17[17]
-    assert "\u1f10\u03be\u03bf\u03bb\u03b5\u03b8\u03c1\u03b5\u1fe6\u03c3\u03b1\u03b9" not in FIRST_PETER_3_10_12[12]
+def test_psalm_quote_is_sustained_adaptation_and_exact_differences_are_pinned():
+    classification = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_201")
+    correct = classification["options"][classification["correct"]]
+    assert "sustained quotation/adaptation" in correct.casefold()
+    assert "Пс. 33:13–17 LXX" in correct
+    assert "Пс. 34:12–16 MT/common English numbering" in correct
+    assert "verbatim" not in correct.casefold()
+    assert "дослов" not in correct.casefold()
+
+    assert LXX_PS33_13_17[13].startswith("τίς ἐστιν ἄνθρωπος")
+    assert FIRST_PETER_3_10_12[10].startswith("ὁ γὰρ θέλων")
+    assert "γλῶσσάν σου" in LXX_PS33_13_17[14]
+    assert "χείλη σου" in LXX_PS33_13_17[14]
+    assert "γλῶσσαν ἀπὸ" in FIRST_PETER_3_10_12[10]
+    assert "χείλη τοῦ" in FIRST_PETER_3_10_12[10]
+    assert "παῦσον" in LXX_PS33_13_17[14]
+    assert "παυσάτω" in FIRST_PETER_3_10_12[10]
+    assert "τοῦ ἐξολεθρεῦσαι ἐκ γῆς τὸ μνημόσυνον αὐτῶν" in LXX_PS33_13_17[17]
+    assert "ἐξολεθρεῦσαι" not in FIRST_PETER_3_10_12[12]
 
 
-def test_nontrivial_intertext_items_meet_scholarly_control_quorum():
+def test_psalm_function_separates_local_text_fact_from_broader_interpretation():
+    local_link = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_208")
+    broader = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_207")
+    assert local_link["claim_type"] == "text"
+    assert local_link["confidence"] == "high"
+    assert broader["claim_type"] == "interpretation"
+    assert broader["confidence"] == "medium"
+
+
+def test_nontrivial_intertext_interpretations_meet_scholarly_control_quorum():
     scholarly = {"green_1peter_ot_ethics", "greaux_ps34_1peter", "christensen_ps34_1peter"}
     for item in INTERTEXT_3_8_12:
         if item["claim_type"] == "interpretation":
             assert len(scholarly.intersection(item["sources"])) >= 2
+
+
+def test_source_inspection_levels_bound_claims():
+    green = SOURCE_CATALOG["green_1peter_ot_ethics"]
+    greaux = SOURCE_CATALOG["greaux_ps34_1peter"]
+    christensen = SOURCE_CATALOG["christensen_ps34_1peter"]
+
+    assert green["inspection_level"] == "full_text_official_pdf"
+    assert greaux["inspection_level"] == "publisher_abstract_only"
+    assert christensen["inspection_level"] == "full_text_official_pdf"
+    for source in (green, greaux, christensen):
+        assert source["claim_limit"].strip()
 
 
 def test_project_theology_has_two_evangelical_witnesses_where_used():
@@ -79,9 +166,9 @@ def test_project_theology_has_two_evangelical_witnesses_where_used():
             assert len(evangelical.intersection(item["sources"])) >= 2
 
 
-def test_eis_touto_syntax_is_not_promoted_to_closed_fact():
+def test_eis_touto_syntax_remains_contested_with_multiple_controls():
     item = DISPUTED_3_8_12[0]
     assert item["id"] == "ch3_disp_201"
     assert item["confidence"] == "contested"
     assert item["position"] == "neutral"
-    assert {"cambridge_greek_1p3_9", "meyer_1p3_9"}.issubset(item["sources"])
+    assert {"christensen_ps34_1peter", "cambridge_greek_1p3_9", "meyer_1p3_9"}.issubset(item["sources"])
