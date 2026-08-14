@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "CHALLENGE_ADMITTED_BY_REVIEWED_TAXONOMY",
+  "parent_taxonomy_head": "62fb982da58a4a97739dd9b504e43cb5d34d7ec2",
+  "authorized_count": 12,
+  "challenge_taxonomy": {
+    "easy": [
+      "ch3_text_101",
+      "ch3_text_102",
+      "ch3_text_106",
+      "ch3_text_108",
+      "ch3_text_109",
+      "ch3_text_111"
+    ],
+    "medium": [
+      "ch3_text_103",
+      "ch3_text_104",
+      "ch3_text_105",
+      "ch3_text_107",
+      "ch3_text_110",
+      "ch3_text_112"
+    ],
+    "hard": []
+  },
+  "challenge_counts": {
+    "easy": 6,
+    "medium": 6,
+    "hard": 0
+  },
+  "challenge_fallback_source": "CHAPTER1_COMPETITIVE_POOL",
+  "fallback_chapter3_allowed": false,
+  "hard_chapter3_allowed": false,
+  "unauthorized_chapter3_count": 153,
+  "unauthorized_chapter3_challenge": 0,
+  "normal_learning_non_scoring": true,
+  "battle_authorized_count": 12,
+  "random_all_admission": false,
+  "next_gate": "exact-head CI/Security/CodeQL with deterministic Challenge distribution and leakage tests"
+}
