@@ -50,10 +50,24 @@ jobs:
             --research-root .release-research \
             --output-dir /tmp/1peter-research-handoff
 
-      - name: Upload verified handoff for release audit
+      - name: Audit product mappings against final Research authority
+        run: |
+          python scripts/audit_1peter_product_claims.py \
+            --expanded-research /tmp/1peter-research-handoff \
+            --report /tmp/1peter-product-claim-audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/1peter-product-claim-audit.json').read_text())
+          print(f"::notice title=Product/Research semantic audit::findings={report['finding_count']} ch4={report['chapter4_reviewed']} ch5={report['chapter5_reviewed']}")
+          PY
+
+      - name: Upload verified Research and diagnostic artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: canonical-research-handoff
-          path: /tmp/1peter-research-handoff
+          name: 1peter-release-diagnostics
+          path: |
+            /tmp/1peter-research-handoff
+            /tmp/1peter-product-claim-audit.json
           if-no-files-found: error
           retention-days: 1
