@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "status": "CHAPTER4_V2_READY_FOR_FIRST_EXACT_HEAD_GATE",
+  "status": "CHAPTER4_V2_SECOND_ADVERSARIAL_PASS_COMPLETE",
   "lineage": {
     "bible_bot_base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
     "research_repository": "FedorMilovanov/Research",
@@ -31,6 +31,7 @@
   "review_contract": {
     "runtime_private_research_metadata": false,
     "runtime_review_link_only": true,
+    "exact_product_card_content_digest_required": true,
     "exact_research_claim_digest_required": true,
     "exact_source_edge_pairing_required": true,
     "project_to_neutral_promotion_allowed": false,
@@ -108,11 +109,26 @@
     "public_correct_answer_leak",
     "public_review_metadata_leak"
   ],
+  "first_green_exact_head": {
+    "head_sha": "2f9ae1cb03b5d6817efefe0988e7e619c2fd5afc",
+    "ci": {"run_number": 1361, "run_id": 31843872381, "conclusion": "success"},
+    "security_audit": {"run_number": 1241, "run_id": 31843872280, "conclusion": "success"},
+    "codeql": {"run_number": 335, "run_id": 31843872423, "conclusion": "success"},
+    "research_handoff_v2": {"run_number": 27, "run_id": 31843872269, "conclusion": "success"}
+  },
   "second_adversarial_content_pass": {
-    "status": "PENDING_AFTER_FIRST_GREEN",
+    "audit_file": "data/chapter4-second-adversarial-pass-v2.json",
+    "status": "COMPLETE",
     "required_cards": 52,
-    "reviewed_cards": 0,
-    "open_findings": null
+    "reviewed_cards": 52,
+    "finding_cards_before_fix": 16,
+    "finding_category": "ANSWER_LENGTH_OR_OPTION_SHAPE_CUEING",
+    "correct_option_longest_before": 36,
+    "correct_option_longest_after": 29,
+    "severe_correct_length_ratio_gt_1_8_before": 13,
+    "severe_correct_length_ratio_gt_1_8_after": 0,
+    "changed_cards_received_new_review_record_ids": true,
+    "open_findings": 0
   },
   "required_exact_head_workflows": [
     "CI",
