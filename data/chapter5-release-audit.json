@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "authority": "1PETER-CH5-PRODUCTION-RELEASE-AUDIT-2026-08-14",
+  "baseSha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
+  "researchSha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
+  "counts": {
+    "research": 72,
+    "prototypes": 32,
+    "authored": 72,
+    "reviewed": 72,
+    "quarantine": 0,
+    "normalProduct": 72,
+    "rankingReady": 0,
+    "rankingHold": 72,
+    "battle": 0,
+    "challenge": 0,
+    "project": 13,
+    "textualCritical": 16
+  },
+  "correctIndex": {"0": 18, "1": 18, "2": 18, "3": 18},
+  "claimTypeCoverage": {"text": 29, "interpretation": 12, "greek": 13, "application": 13, "history": 5},
+  "gameplay": {"randomAll": 0, "ranking": 0, "battle": 0, "challenge": 0},
+  "textualControls": {
+    "5:2A": "ἐπισκοποῦντες is distinct from κατὰ θεόν; ECM-based commentary route, not direct dECM readback.",
+    "5:2B": "κατὰ θεόν is its own textual unit; published ECM comparison retained separately.",
+    "5:10": "Four verbs are an SBLGNT/MorphGNT edition observation; no manuscript-unanimity claim.",
+    "5:12": "στῆτε preferred via explicit ECM-based published treatment; not direct dECM witness-table readback.",
+    "5:13": "Babylon text statement is separated from historical identification; named-witness ἐκκλησία is not injected into base text."
+  },
+  "safetyInvariants": [
+    "reviewed_is_deep_copy",
+    "project_labels_visible",
+    "all_ch5_competitive_false",
+    "normal_learning_non_scoring",
+    "random_all_excluded",
+    "battle_excluded",
+    "challenge_excluded",
+    "root_source_registry_identity_only",
+    "claim_source_depth_lane_scoped"
+  ]
+}
