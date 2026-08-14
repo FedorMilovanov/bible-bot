@@ -9,6 +9,7 @@ from .chapter2.sources_logikon import SOURCE_CATALOG as LOGIKON
 from .chapter2.sources_temple import SOURCE_CATALOG as TEMPLE
 from .chapter2.sources_visitation import SOURCE_CATALOG as VISITATION
 from .chapter3.product_sources import SOURCE_CATALOG as CHAPTER3_PRODUCT_IDENTITIES
+from .chapter4.product_sources import SOURCE_CATALOG as CHAPTER4_PRODUCT_IDENTITIES
 from .content_truth import SOURCE_CATALOG as LEGACY
 
 
@@ -30,8 +31,6 @@ def _extend_with_identity_only_sources(
     merged = {source_id: dict(metadata) for source_id, metadata in base.items()}
     for source_id, metadata in identity_catalog.items():
         if source_id in merged:
-            # Existing legacy/Chapter-2 canonical metadata wins. Chapter 3 may
-            # reuse the work ID, but cannot upgrade or replace shared authority.
             continue
         merged[source_id] = dict(metadata)
     return merged
@@ -49,6 +48,10 @@ _BASE_SOURCE_CATALOG = _merge_catalogs(
 SOURCE_CATALOG = _extend_with_identity_only_sources(
     _BASE_SOURCE_CATALOG,
     CHAPTER3_PRODUCT_IDENTITIES,
+)
+SOURCE_CATALOG = _extend_with_identity_only_sources(
+    SOURCE_CATALOG,
+    CHAPTER4_PRODUCT_IDENTITIES,
 )
 
 __all__ = ["SOURCE_CATALOG"]
