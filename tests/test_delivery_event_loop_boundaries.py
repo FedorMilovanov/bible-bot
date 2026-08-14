@@ -5,9 +5,9 @@ import threading
 
 os.environ.setdefault("ADMIN_USER_ID", "1")
 
-import legacy_report_delivery_drain as report_drain  # noqa: E402
-import telegram_broadcast_controller as broadcast  # noqa: E402
-import telegram_report_controller as reports  # noqa: E402
+import legacy_report_delivery_drain as report_drain
+import telegram_broadcast_controller as broadcast
+import telegram_report_controller as reports
 
 
 def test_report_queue_lookup_does_not_block_event_loop(monkeypatch):
