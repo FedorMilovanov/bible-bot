@@ -1,32 +1,83 @@
 {
-  "schema_version": 1,
-  "status": "CHAPTER4_RELEASE_AUDIT_READY_FOR_EXACT_HEAD_GATES",
+  "schema_version": 2,
+  "status": "CHAPTER4_V2_READY_FOR_FIRST_EXACT_HEAD_GATE",
   "lineage": {
-    "base": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
-    "research": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
-    "authoring_review_ranking": "ea809112653146874a47ea5b185ac3f646f76b97",
-    "normal_learning_admission": "c21f26131b17b88ff16274687cf70deb8227be6c"
+    "bible_bot_base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
+    "research_repository": "FedorMilovanov/Research",
+    "research_authority_sha": "7e0140129a4aba59a09737701967c3820ff1af57",
+    "research_authority_digest_sha256": "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d",
+    "research_handoff_schema_version": 2
   },
   "counts": {
     "effective_research_claims": 72,
     "research_mcq_prototypes": 32,
     "effective_research_holds": 0,
     "research_competitive_candidates": 0,
-    "authored_cards": 52,
+    "product_cards": 52,
+    "product_review_records_v2": 52,
     "reviewed_cards": 52,
     "review_quarantine": 0,
+    "product_card_dispositions": 52,
+    "retained_research_support_dispositions": 20,
+    "prototype_safe_template": 13,
+    "prototype_needs_rewrite": 10,
+    "prototype_noncompetitive_only": 6,
+    "prototype_rejected_reference_drift": 3,
+    "ranking_discrepancies_reviewed": 1,
     "ranking_ready": 0,
     "battle_admitted": 0,
     "challenge_admitted": 0
+  },
+  "review_contract": {
+    "runtime_private_research_metadata": false,
+    "runtime_review_link_only": true,
+    "exact_research_claim_digest_required": true,
+    "exact_source_edge_pairing_required": true,
+    "project_to_neutral_promotion_allowed": false,
+    "confidence_promotion_allowed": false,
+    "claim_type_promotion_allowed": false,
+    "competitive_flag_allowed": false,
+    "all_cards_independently_read_back": true,
+    "distractor_absolute_certainty_findings": 0
+  },
+  "prototype_reconciliation": {
+    "all_32_reconciled": true,
+    "unsafe_mechanical_copy_validator": true,
+    "w3mcq_003_w3q_005": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED",
+    "w3mcq_037_w3q_014": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED",
+    "w3mcq_047_w3q_038": "INDEPENDENT_PRODUCT_REWRITE_AFTER_REJECTED_TEMPLATE; REFERENCE_DRIFT_NOT_WAIVED"
+  },
+  "w3q_123": {
+    "ranking_review_id": "ch4rankv2_w3q_123_no_admission",
+    "decision": "NO_RANKING_ADMISSION",
+    "competitive_pool": false,
+    "battle": false,
+    "challenge": false
+  },
+  "epistemic_boundaries": {
+    "chapter4_4_6_course_position_visible": true,
+    "chapter4_4_6_neutral_dispute_preserved": true,
+    "morphology_does_not_decide_chronology_location_addressees": true,
+    "malachi_3_serious_proposed_background_not_formal_exclusive_quotation": true,
+    "chapter4_4_14_ecm_decision_not_manuscript_unanimity": true,
+    "sinaiticus_fact_not_ausgangstext_decision": true,
+    "chapter4_4_16_sblgnt_onoma_not_ecm_na28_merei": true,
+    "textual_criticism_noncompetitive": true
   },
   "normal_learning": {
     "pool_key": "chapter4",
     "reviewed_only": true,
     "non_scoring": true,
     "random_all": false,
+    "competitive_pool": false,
+    "battle": false,
+    "challenge": false,
+    "challenge_fallback": false,
     "points": 0,
     "daily_bonus": 0,
     "achievements": false,
+    "ranked_total_counters": false,
+    "perfect_counters": false,
     "progress_keys": [
       "chapter4_attempts",
       "chapter4_correct",
@@ -34,59 +85,41 @@
       "chapter4_best_score"
     ]
   },
-  "epistemic_boundary": {
-    "project_visible_prefix": "[Позиция курса]",
-    "chapter4_4_6_dispute_preserved": true,
-    "malachi_3_formal_or_exclusive_quotation": false,
-    "chapter4_4_14_ecm_decision_not_manuscript_unanimity": true,
-    "chapter4_4_16_edition_difference_named": true,
-    "morphology_substitutes_for_exegesis": false
-  },
   "source_boundary": {
-    "root_registry_role": "identity_only_for_missing_chapter4_sources",
+    "root_registry": "IDENTITY_ONLY",
+    "global_strongest_depth_field": false,
     "existing_root_authority_overwritten": false,
-    "claim_depth_resolution": "chapter4_card_or_research_handoff_lane",
-    "cross_lane_depth_upgrade": false
+    "claim_level_source_ids_and_edge_ids_live_in_private_review_registry": true
   },
-  "ranking_boundary": {
-    "status": "LEARNING_ONLY_FAIL_CLOSED",
-    "ranking_admission": 0,
-    "battle_admission": 0,
-    "challenge_admission": 0,
-    "future_admission_requires_explicit_authority": true
+  "negative_tests": [
+    "forged_research_claim_id",
+    "wrong_effective_claim_digest",
+    "swapped_claim_inspection_edge_id",
+    "source_without_edge",
+    "project_to_neutral",
+    "confidence_promotion",
+    "interpretation_to_text",
+    "competitive_flag",
+    "random_all_injection",
+    "competitive_pool_injection",
+    "battle_injection",
+    "challenge_injection",
+    "challenge_fallback_injection",
+    "public_correct_answer_leak",
+    "public_review_metadata_leak"
+  ],
+  "second_adversarial_content_pass": {
+    "status": "PENDING_AFTER_FIRST_GREEN",
+    "required_cards": 52,
+    "reviewed_cards": 0,
+    "open_findings": null
   },
-  "validation_contract": {
-    "exact_head_required": true,
-    "required_workflows": [
-      "CI",
-      "Security Audit",
-      "CodeQL"
-    ],
-    "ci_includes": [
-      "actionlint",
-      "pip-check",
-      "secret-guard",
-      "ruff",
-      "compileall",
-      "pytest",
-      "miniapp-js-syntax",
-      "miniapp-js-unit-tests",
-      "docker-build",
-      "container-production-import",
-      "container-web-smoke"
-    ],
-    "security_includes": [
-      "pip-audit"
-    ],
-    "codeql_languages": [
-      "python",
-      "javascript-typescript"
-    ]
-  },
+  "required_exact_head_workflows": [
+    "CI",
+    "Security Audit",
+    "CodeQL",
+    "Chapter 4 Research Handoff v2"
+  ],
   "merge_authorized": false,
-  "main_mutated": false,
-  "release_audit_changes_gameplay": false,
-  "remaining_product_holds": 0,
-  "remaining_review_quarantine": 0,
-  "remaining_ranking_admission": 0
+  "main_mutated": false
 }
