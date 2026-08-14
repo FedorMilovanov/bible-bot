@@ -10,6 +10,7 @@ from questions.chapter3 import (
     CHAPTER3_SOURCE_CATALOGS,
     CHAPTER3_STAGING_QUESTIONS,
 )
+from questions.chapter3.challenge_taxonomy import CHAPTER3_CHALLENGE_TAXONOMY
 from questions.chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from questions.chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 
@@ -99,7 +100,7 @@ def test_lane_source_resolution_is_namespaced_and_never_cross_upgrades_metadata(
     assert MANIFEST["source_resolution_policy"] == "LANE_NAMESPACED_NO_CROSS_LANE_METADATA_UPGRADE"
 
 
-def test_product_registry_uses_reviewed_copy_and_only_authority_reaches_battle():
+def test_product_registry_uses_reviewed_copy_and_only_authority_reaches_ranked_modes():
     staging_ids = _ids(CHAPTER3_STAGING_QUESTIONS)
     reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
     root_pool = questions.get_pool_by_key("chapter3")
@@ -118,11 +119,12 @@ def test_product_registry_uses_reviewed_copy_and_only_authority_reaches_battle()
     assert unauthorized.isdisjoint(_ids(questions.COMPETITIVE_POOL))
     assert unauthorized.isdisjoint(_ids(questions.BATTLE_POOL))
     assert staging_ids.isdisjoint(_ids(questions.get_pool_by_key("random_all")))
-    for key, pool in questions.CHALLENGE_POOLS.items():
-        assert staging_ids.isdisjoint(_ids(pool)), key
+    for level, pool in questions.CHALLENGE_POOLS.items():
+        assert staging_ids & _ids(pool) == set(CHAPTER3_CHALLENGE_TAXONOMY[level]), level
+    assert staging_ids.isdisjoint(_ids(questions.CHALLENGE_FALLBACK_POOL))
 
 
-def test_competitive_metadata_is_consumed_only_through_explicit_authority():
+def test_competitive_metadata_is_consumed_only_through_explicit_authority_and_taxonomy():
     candidates = [item for item in CHAPTER3_STAGING_QUESTIONS if item["competitive"] is True]
     candidate_ids = _ids(candidates)
     assert candidate_ids == set(CHAPTER3_RANKING_AUTHORIZED_IDS)
@@ -132,8 +134,10 @@ def test_competitive_metadata_is_consumed_only_through_explicit_authority():
         assert item["position"] == "neutral", item["id"]
     assert candidate_ids == (candidate_ids & _ids(questions.COMPETITIVE_POOL))
     assert candidate_ids == (candidate_ids & _ids(questions.BATTLE_POOL))
-    for key, pool in questions.CHALLENGE_POOLS.items():
-        assert candidate_ids.isdisjoint(_ids(pool)), key
+    challenge_ids = set().union(*(_ids(pool) for pool in questions.CHALLENGE_POOLS.values()))
+    assert candidate_ids & challenge_ids == candidate_ids
+    for level in ("easy", "medium", "hard"):
+        assert candidate_ids & _ids(questions.CHALLENGE_POOLS[level]) == set(CHAPTER3_CHALLENGE_TAXONOMY[level])
 
     # Historical staging manifest remains unchanged: it did not itself authorize
     # ranking; later audit/authority/admission layers did.
