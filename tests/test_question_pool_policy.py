@@ -4,6 +4,7 @@ from questions import (
     BATTLE_POOL,
     CHAPTER1_COMPETITIVE_POOL,
     CHAPTER3_AUTHORIZED_COMPETITIVE_POOL,
+    CHAPTER3_CHALLENGE_POOLS,
     COMPETITIVE_POOL,
     NON_COMPETITIVE_IDS,
     get_pool_by_key,
@@ -22,12 +23,10 @@ def _ids(items):
 def test_general_competitive_is_explicit_while_legacy_random_remains_chapter1_context():
     assert BATTLE_POOL is COMPETITIVE_POOL
     assert get_pool_by_key("competitive_all") is COMPETITIVE_POOL
-
     casual_ids = set(_ids(get_pool_by_key("random_all")))
     chapter1_competitive_ids = set(_ids(CHAPTER1_COMPETITIVE_POOL))
     chapter3_authorized_ids = set(_ids(CHAPTER3_AUTHORIZED_COMPETITIVE_POOL))
     competitive_ids = set(_ids(COMPETITIVE_POOL))
-
     assert chapter1_competitive_ids < casual_ids
     assert chapter3_authorized_ids
     assert chapter3_authorized_ids.isdisjoint(casual_ids)
@@ -50,7 +49,7 @@ def test_source_reviewed_items_are_competitive():
     assert not (SOURCE_REVIEWED_COMPETITIVE_IDS & NON_COMPETITIVE_IDS)
 
 
-def test_casual_random_keeps_noncompetitive_learning_categories():
+def test_casual_random_keeps_noncompetitive_learning_categories_and_excludes_chapter3():
     casual_ids = _ids(get_pool_by_key("random_all"))
     assert any(qid.startswith("prac") for qid in casual_ids)
     assert any(qid.startswith("ling") for qid in casual_ids)
@@ -60,15 +59,16 @@ def test_casual_random_keeps_noncompetitive_learning_categories():
     assert not any(qid.startswith("ch3_") for qid in casual_ids)
 
 
-def test_twenty_question_modes_are_unique_ranking_eligible_and_challenge_taxonomized():
+def test_twenty_question_modes_are_unique_ranking_eligible_and_taxonomy_bounded():
+    allowed_ch3 = set().union(*(set(_ids(pool)) for pool in CHAPTER3_CHALLENGE_POOLS.values()))
+    assert allowed_ch3
     for mode in ("random20", "hardcore20"):
-        selected = pick_competitive_challenge_questions(
-            mode,
-            rng=random.Random(7),
-        )
-        ids = _ids(selected)
-        assert len(ids) == 20
-        assert len(set(ids)) == 20
-        assert not (set(ids) & NON_COMPETITIVE_IDS)
-        assert not any(qid.startswith(EXCLUDED_COMPETITIVE_PREFIXES) for qid in ids)
-        assert not any(qid.startswith("ch3_") for qid in ids)
+        for seed in range(32):
+            selected = pick_competitive_challenge_questions(mode, rng=random.Random(seed))
+            ids = _ids(selected)
+            selected_ch3 = {qid for qid in ids if qid.startswith("ch3_")}
+            assert len(ids) == 20
+            assert len(set(ids)) == 20
+            assert not (set(ids) & NON_COMPETITIVE_IDS)
+            assert not any(qid.startswith(EXCLUDED_COMPETITIVE_PREFIXES) for qid in ids)
+            assert selected_ch3 <= allowed_ch3
