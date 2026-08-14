@@ -11,6 +11,8 @@ Scoring results are additionally serialized by an optimistic CAS on the durable
 ``total_tests`` counter. That counter is shared with the legacy Telegram result
 store, so two distinct Mini App result IDs (or a Mini App and Telegram result)
 cannot both compute daily/Challenge economics from the same stale user snapshot.
+Learning-only results intentionally do not participate in that scoring CAS: they
+atomically update progress counters only and carry strict zero-economics receipts.
 """
 from __future__ import annotations
 
@@ -60,6 +62,37 @@ def _receipt_from(entry: dict | None, result_id: str) -> dict | None:
     return dict(receipt) if isinstance(receipt, dict) else None
 
 
+def _validated_learning_receipt(
+    receipt: object,
+    *,
+    level_key: str,
+    score: int,
+    total: int,
+) -> dict | None:
+    """Validate one learning receipt against its durable attempt identity.
+
+    Legacy safe receipts created before score/total were persisted remain
+    replay-compatible. New receipts bind the result id to course/score/total and
+    fail closed on any mismatched replay or non-zero scoring side effect.
+    """
+    if not isinstance(receipt, dict):
+        return None
+    if receipt.get("kind") != "learning" or receipt.get("level_key") != level_key:
+        return None
+    if receipt.get("points") != 0 or receipt.get("daily_bonus") != 0:
+        return None
+    if receipt.get("new_achievements") != []:
+        return None
+
+    has_score = "score" in receipt
+    has_total = "total" in receipt
+    if has_score != has_total:
+        return None
+    if has_score and (receipt.get("score") != score or receipt.get("total") != total):
+        return None
+    return dict(receipt)
+
+
 def _cas_expected(entry: dict, field: str):
     if field in entry:
         return entry[field]
@@ -105,8 +138,6 @@ def _sync_weekly_challenge_result(
     import database
 
     weekly = getattr(database, "weekly_lb_collection", None)
-    # In normal production configuration this collection is created alongside
-    # database.collection. Allow lightweight unit-test database fakes to omit it.
     if weekly is None:
         return
 
@@ -198,12 +229,13 @@ def _prune_old_receipts(user_id: int) -> None:
                 stale.append(result_id)
 
         if stale:
-            collection.update_one(
+            cleanup = collection.update_one(
                 {"_id": str(user_id)},
                 {"$unset": {_receipt_field(result_id): "" for result_id in stale}},
             )
+            if not _acknowledged(cleanup):
+                logger.warning("Mini App receipt pruning write was not acknowledged")
     except Exception:
-        # Pruning is maintenance only. On any ambiguity, retain the receipt.
         logger.warning("could not safely prune old Mini App result receipts", exc_info=True)
 
 
@@ -255,27 +287,37 @@ def _apply_learning_result_once(
     score: int,
     total: int,
 ) -> dict | None:
-    """Persist learning progress without touching ranking or achievement totals."""
+    """Persist progress-only learning state with a strict idempotency receipt."""
     collection = _user_collection()
     if collection is None:
         return None
 
+    total = max(1, int(total))
+    score = max(0, min(int(score), total))
     uid = str(user_id)
     existing = collection.find_one({"_id": uid})
     if not existing:
         return None
     prior_receipt = _receipt_from(existing, result_id)
-    if prior_receipt:
-        return prior_receipt
+    if prior_receipt is not None:
+        validated = _validated_learning_receipt(
+            prior_receipt,
+            level_key=level_key,
+            score=score,
+            total=total,
+        )
+        if validated is None:
+            logger.warning("Mini App learning receipt %s does not match durable result", result_id)
+        return validated
 
-    total = max(1, int(total))
-    score = max(0, min(int(score), total))
     receipt = {
         "points": 0,
         "daily_bonus": 0,
         "new_achievements": [],
         "kind": "learning",
         "level_key": level_key,
+        "score": score,
+        "total": total,
     }
     update = {
         "$inc": {
@@ -290,7 +332,18 @@ def _apply_learning_result_once(
         },
         "$max": {f"{level_key}_best_score": score},
     }
-    return _persist_once(user_id, result_id, update, receipt)
+    stored = _persist_once(user_id, result_id, update, receipt)
+    if stored is None:
+        return None
+    validated = _validated_learning_receipt(
+        stored,
+        level_key=level_key,
+        score=score,
+        total=total,
+    )
+    if validated is None:
+        logger.warning("Mini App learning receipt %s changed during persistence", result_id)
+    return validated
 
 
 def apply_regular_result_once(
@@ -307,7 +360,7 @@ def apply_regular_result_once(
     is_perfect: bool,
     max_streak: int,
 ) -> dict | None:
-    """Atomically apply a normal Mini App result under the canonical pool policy."""
+    """Atomically apply a normal Mini App result under canonical pool policy."""
     import database
 
     collection = database.collection
@@ -429,7 +482,7 @@ def apply_challenge_result_once(
     total: int,
     time_seconds: float,
 ) -> dict | None:
-    """Atomically apply Challenge 20 aggregates and ensure weekly sync completes."""
+    """Atomically apply Challenge aggregates and ensure monotonic weekly sync."""
     import database
 
     collection = database.collection
