@@ -4,7 +4,7 @@
   "lineage": {
     "bible_bot_base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
     "research_repository": "FedorMilovanov/Research",
-    "research_authority_sha": "7e0140129a4aba59a09737701967c3820ff1af57",
+    "research_authority_sha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
     "research_authority_digest_sha256": "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d",
     "research_handoff_schema_version": 2
   },
