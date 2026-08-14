@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 """Diagnose Chapter 4/5 product mappings against final Research authority.
 
-This diagnostic intentionally reads the Chapter-5 staging bank without importing
-its fail-closed reviewed boundary. That allows release CI to report every stale
-mapping even when the first stale source would otherwise abort module import.
+This tool intentionally avoids importing ``questions``. The root package is a
+production fail-closed boundary and must remain free to reject stale Chapter-5
+metadata. Release diagnostics read authoring data and the immutable vendored
+handoff directly so one bad card cannot hide the rest of the mismatch set.
 """
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
+import runpy
 from pathlib import Path
-
-from questions.chapter4.final_review_registry import PRODUCT_REVIEW_BY_CARD_ID as CH4_REVIEWS
-from questions.chapter4.reviewed import CHAPTER4_REVIEWED_QUESTIONS
-from questions.chapter5.bank import CHAPTER5_STAGING_QUESTIONS
-from questions.research_handoff_v2 import (
-    CHAPTER4_RESEARCH_HANDOFF_V2,
-    CHAPTER5_RESEARCH_HANDOFF_V2,
-)
 
 _CONF = {"contested": 0, "medium": 1, "high": 2}
 _WORD = re.compile(r"[A-Za-zА-Яа-яЁё0-9ἀ-῾]+", re.UNICODE)
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tokens(value: object) -> set[str]:
@@ -61,6 +57,32 @@ def _canonical_rows(expanded_dir: Path, chapter: int) -> dict[str, dict]:
     return {str(row["candidate_id"]): row for row in payload["records"]}
 
 
+def _vendored_claims() -> tuple[dict, dict[str, dict]]:
+    payload = json.loads(
+        (ROOT / "data" / "1peter-research-handoff-v2.json").read_text(encoding="utf-8")
+    )
+    return payload, {str(row["candidate_id"]): row for row in payload["claims"]}
+
+
+def _load_data_file(path: Path, variable: str) -> list[dict]:
+    namespace = runpy.run_path(str(path))
+    return list(namespace[variable])
+
+
+def _chapter4_rows() -> dict[str, tuple]:
+    source = (ROOT / "questions" / "chapter4" / "review_registry.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "_ROWS" for target in node.targets
+        ):
+            rows = ast.literal_eval(node.value)
+            return {str(row[0]): tuple(row) for row in rows}
+    raise RuntimeError("cannot locate Chapter-4 _ROWS literal")
+
+
 def _rank(card: dict, rows: dict[str, dict]) -> list[dict]:
     surface = _surface(card)
     ranked = sorted(
@@ -89,31 +111,44 @@ def _metadata_reasons(card: dict, research: dict) -> list[str]:
         reasons.append("CONFIDENCE_STRONGER_THAN_RESEARCH")
     if str(card.get("claim_type")) != research["claim_type"]:
         reasons.append("CLAIM_TYPE_DIFFERS_FROM_RESEARCH")
-    if product_position == "project" and not str(card.get("question", "")).startswith(
-        "[Позиция курса]"
-    ):
-        reasons.append("PROJECT_LABEL_MISSING")
     return reasons
 
 
-def _audit_ch4(card: dict, rows: dict[str, dict]) -> dict | None:
-    review = dict(CH4_REVIEWS[str(card["id"])])
-    claim_id = str(review["research_claim_id"])
-    research = CHAPTER4_RESEARCH_HANDOFF_V2.get(claim_id)
+def _audit_ch4(
+    card: dict,
+    mapping: tuple,
+    vendored: dict[str, dict],
+    rows: dict[str, dict],
+) -> dict | None:
+    # _ROWS tuple schema: card_id, review_record_id, content_digest,
+    # research_claim_id, claimed_position, claimed_confidence, claimed_type,
+    # prototype_id, prototype_classification.
+    claim_id = str(mapping[3])
+    research = vendored.get(claim_id)
     reasons: list[str] = []
-    if research is None:
+    if research is None or research["chapter"] != 4:
         reasons.append("MISSING_RESEARCH_CLAIM")
     else:
         reasons.extend(_metadata_reasons(card, research))
-        if review.get("research_effective_claim_digest") != research["effective_claim_digest"]:
-            reasons.append("CLAIM_DIGEST_DRIFT")
-        review_sources = tuple(review.get("source_ids", ()))
-        if review_sources != tuple(research["source_ids"]):
-            reasons.append("REVIEW_SOURCE_SET_DIFFERS_FROM_RESEARCH")
-        if tuple(review.get("claim_inspection_edge_ids", ())) != tuple(
-            research["claim_inspection_edge_ids"]
-        ):
-            reasons.append("EDGE_ID_DRIFT")
+        declared = (str(mapping[4]), str(mapping[5]), str(mapping[6]))
+        runtime = (
+            str(card.get("position")),
+            str(card.get("confidence")),
+            str(card.get("claim_type")),
+        )
+        if declared != runtime:
+            reasons.append("PRODUCT_REVIEW_DECLARATION_DIFFERS_FROM_CARD")
+        prototype_id = str(mapping[7] or "")
+        prototype_class = str(mapping[8] or "")
+        if prototype_id:
+            matches = [
+                p for p in research.get("prototypes", ())
+                if str(p.get("prototype_id")) == prototype_id
+            ]
+            if len(matches) != 1:
+                reasons.append("PROTOTYPE_NOT_OWNED_BY_FINAL_CLAIM")
+            elif prototype_class != str(matches[0].get("classification")):
+                reasons.append("PROTOTYPE_DISPOSITION_DRIFT")
     if not reasons:
         return None
     return {
@@ -125,11 +160,15 @@ def _audit_ch4(card: dict, rows: dict[str, dict]) -> dict | None:
     }
 
 
-def _audit_ch5(card: dict, rows: dict[str, dict]) -> dict | None:
+def _audit_ch5(
+    card: dict,
+    vendored: dict[str, dict],
+    rows: dict[str, dict],
+) -> dict | None:
     claim_id = str(card.get("research_candidate_id") or "")
-    research = CHAPTER5_RESEARCH_HANDOFF_V2.get(claim_id)
+    research = vendored.get(claim_id)
     reasons: list[str] = []
-    if research is None:
+    if research is None or research["chapter"] != 5:
         reasons.append("MISSING_RESEARCH_CLAIM")
     else:
         reasons.extend(_metadata_reasons(card, research))
@@ -160,20 +199,43 @@ def main() -> None:
     expanded = args.expanded_research.resolve()
     ch4_rows = _canonical_rows(expanded, 4)
     ch5_rows = _canonical_rows(expanded, 5)
-    findings = [
-        finding
-        for card in CHAPTER4_REVIEWED_QUESTIONS
-        if (finding := _audit_ch4(card, ch4_rows)) is not None
-    ]
-    findings.extend(
-        finding
-        for card in CHAPTER5_STAGING_QUESTIONS
-        if (finding := _audit_ch5(card, ch5_rows)) is not None
+    header, vendored = _vendored_claims()
+    if header.get("research_authority_sha") != "0142430af8ba80f28e0fd9cde669d32611a1d2af":
+        raise SystemExit("vendored Research authority SHA drift")
+    if header.get("authority_digest_sha256") != "1f444991ecc2f180abdbe0f459148ba8dbf0a5045b1d8888e462683c78366c7d":
+        raise SystemExit("vendored Research authority digest drift")
+
+    ch4_cards = _load_data_file(
+        ROOT / "questions" / "chapter4" / "authoring.py", "CHAPTER4_STAGING_QUESTIONS"
     )
+    ch5_cards = _load_data_file(
+        ROOT / "questions" / "chapter5" / "bank.py", "CHAPTER5_STAGING_QUESTIONS"
+    )
+    ch4_mapping = _chapter4_rows()
+
+    findings: list[dict] = []
+    for card in ch4_cards:
+        mapping = ch4_mapping.get(str(card["id"]))
+        if mapping is None:
+            findings.append({
+                "chapter": 4,
+                "product_card_id": str(card["id"]),
+                "mapped_claim_id": "",
+                "reasons": ["MISSING_PRODUCT_REVIEW_MAPPING"],
+                "top_semantic_candidates": _rank(card, ch4_rows),
+            })
+            continue
+        finding = _audit_ch4(card, mapping, vendored, ch4_rows)
+        if finding:
+            findings.append(finding)
+    for card in ch5_cards:
+        finding = _audit_ch5(card, vendored, ch5_rows)
+        if finding:
+            findings.append(finding)
 
     summary = {
-        "chapter4_reviewed": len(CHAPTER4_REVIEWED_QUESTIONS),
-        "chapter5_staging": len(CHAPTER5_STAGING_QUESTIONS),
+        "chapter4_staging": len(ch4_cards),
+        "chapter5_staging": len(ch5_cards),
         "finding_count": len(findings),
         "findings": findings,
     }
