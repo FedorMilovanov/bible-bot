@@ -103,11 +103,24 @@ def test_objective_ranking_candidates_are_internal_only():
         assert CHAPTER3_RANKING_CANDIDATE_IDS.isdisjoint(_ids(pool))
 
 
-def test_reviewed_bank_is_still_outside_root_product_registry():
+def test_root_product_registry_is_exactly_the_reviewed_bank():
+    root_pool = questions.get_pool_by_key("chapter3")
     reviewed_ids = _ids(CHAPTER3_REVIEWED_QUESTIONS)
-    assert "chapter3" not in questions.POOL_REGISTRY
-    for key, pool in questions.POOL_REGISTRY.items():
-        assert reviewed_ids.isdisjoint(_ids(pool)), key
+    assert _ids(root_pool) == reviewed_ids
+    assert len(root_pool) == len(CHAPTER3_REVIEWED_QUESTIONS) == 165
+
+    reviewed_by_id = {item["id"]: item for item in CHAPTER3_REVIEWED_QUESTIONS}
+    for item in root_pool:
+        assert item is reviewed_by_id[item["id"]]
+
+    # The reviewed manifest remains an immutable historical checkpoint: it did
+    # not authorize product/ranking by itself; the stacked product PR does.
     assert MANIFEST["product_wiring"] is False
     assert MANIFEST["normal_learning_authorized"] is False
     assert MANIFEST["ranking_authorized"] is False
+
+    assert reviewed_ids.isdisjoint(_ids(questions.COMPETITIVE_POOL))
+    assert reviewed_ids.isdisjoint(_ids(questions.BATTLE_POOL))
+    assert reviewed_ids.isdisjoint(_ids(questions.get_pool_by_key("random_all")))
+    for pool in questions.CHALLENGE_POOLS.values():
+        assert reviewed_ids.isdisjoint(_ids(pool))
