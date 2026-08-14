@@ -169,6 +169,16 @@ async def _start(update, context):
     await quiz.start(update, context)
 
 
+async def _menu(update, context):
+    """Open the main menu without allowing command args to reach legacy routing."""
+    original_args = list(getattr(context, "args", None) or [])
+    context.args = []
+    try:
+        return await quiz.start(update, context)
+    finally:
+        context.args = original_args
+
+
 async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
     legacy.report_drafts.pop(update.effective_user.id, None)
@@ -294,7 +304,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", _start))
     app.add_handler(CommandHandler("app", _app_command))
-    app.add_handler(CommandHandler("menu", quiz.start))
+    app.add_handler(CommandHandler("menu", _menu))
     app.add_handler(CommandHandler("test", courses.choose_level))
     app.add_handler(CommandHandler("stats", legacy.stats_command))
     app.add_handler(CommandHandler("random", quiz.random_command))
