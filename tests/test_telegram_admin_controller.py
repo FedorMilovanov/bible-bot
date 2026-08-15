@@ -8,6 +8,20 @@ import telegram_admin_controller as admin
 from legacy_battle_cleanup import LegacyBattleCleanupUnavailable
 
 
+class _Message:
+    def __init__(self):
+        self.replies = []
+
+    async def reply_text(self, text, **kwargs):
+        self.replies.append((text, kwargs))
+
+
+class _CommandUpdate:
+    def __init__(self, user_id=1):
+        self.effective_user = type("User", (), {"id": user_id})()
+        self.message = _Message()
+
+
 class _Query:
     def __init__(self, user_id=1, data="admin_back"):
         self.from_user = type("User", (), {"id": user_id})()
@@ -29,6 +43,60 @@ class _Update:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_non_admin_cannot_open_admin_command(monkeypatch):
+    monkeypatch.setattr(
+        admin,
+        "get_admin_stats",
+        lambda: (_ for _ in ()).throw(AssertionError("must not read")),
+    )
+    update = _CommandUpdate(user_id=999)
+
+    _run(admin.admin_command(update, object()))
+
+    assert update.message.replies == [
+        ("❌ У тебя нет доступа к этой команде.", {})  # noqa: RUF001
+    ]
+
+
+def test_admin_command_db_read_runs_off_event_loop_and_preserves_panel(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def read_stats():
+        worker_threads.append(threading.get_ident())
+        return {"total_users": 12, "online_24h": 4, "new_today": 2}
+
+    monkeypatch.setattr(admin, "get_admin_stats", read_stats)
+    monkeypatch.setattr(admin.legacy, "user_data", {10: {}, 11: {}})
+    update = _CommandUpdate()
+
+    _run(admin.admin_command(update, object()))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert len(update.message.replies) == 1
+    text, kwargs = update.message.replies[0]
+    assert "ПАНЕЛЬ АДМИНИСТРАТОРА" in text
+    assert "Всего пользователей: *12*" in text  # noqa: RUF001
+    assert "Онлайн за 24ч: *4*" in text
+    assert "Новых сегодня: *2*" in text
+    assert "Активных сессий в памяти: *2*" in text
+    assert kwargs["parse_mode"] == "Markdown"
+    buttons = [row[0] for row in kwargs["reply_markup"].inline_keyboard]
+    assert [button.callback_data for button in buttons] == [
+        "admin_hard_questions",
+        "admin_active_sessions",
+        "admin_cleanup",
+        "admin_broadcast_prompt",
+    ]
+    assert [button.text for button in buttons] == [
+        "🔍 Сложные вопросы",
+        "👥 Активные сессии",
+        "🧹 Очистка данных",
+        "📢 Рассылка",
+    ]
 
 
 def test_non_admin_cannot_run_cleanup(monkeypatch):
@@ -240,6 +308,7 @@ def test_admin_adapter_never_calls_broad_legacy_or_unsafe_database_cleanup():
     from pathlib import Path
 
     source = Path(admin.__file__).read_text(encoding="utf-8")
+    assert "legacy.admin_command" not in source
     assert "legacy.admin_callback_handler" not in source
     assert "db_cleanup_stale_battles" not in source
     assert "database.cleanup_stale_battles" not in source

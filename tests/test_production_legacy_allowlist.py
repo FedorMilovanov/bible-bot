@@ -14,7 +14,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "GC_INTERVAL",
     "_main_keyboard",
     "_touch",
-    "admin_command",
     "back_to_main",
     "challenge_menu",
     "challenge_rules",
@@ -150,6 +149,7 @@ def test_allowlist_excludes_legacy_learning_menu_and_course_authority():
 def test_allowlist_excludes_known_state_authority_writers_and_broad_dispatchers():
     forbidden = {
         "admin_callback_handler",
+        "admin_command",
         "battle_answer",
         "broadcast_command",
         "button_handler",
@@ -181,6 +181,7 @@ def test_allowlist_excludes_known_state_authority_writers_and_broad_dispatchers(
         "_save_all_sessions",
     }
     assert ALLOWED_LEGACY_ATTRIBUTES.isdisjoint(forbidden)
+    assert "legacy.admin_command" not in SOURCE
     assert "legacy.admin_callback_handler" not in SOURCE
     assert "legacy.button_handler" not in SOURCE
 

@@ -7,6 +7,7 @@ import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import bot as legacy
+from database import get_admin_stats
 from legacy_battle_cleanup import (
     LegacyBattleCleanupUnavailable,
     cleanup_stale_waiting_battles,
@@ -32,9 +33,50 @@ def _admin_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _legacy_admin_menu_keyboard() -> InlineKeyboardMarkup:
+    """Preserve the deployed /admin command labels while owning the routing here."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🔍 Сложные вопросы", callback_data="admin_hard_questions")],
+            [InlineKeyboardButton("👥 Активные сессии", callback_data="admin_active_sessions")],
+            [InlineKeyboardButton("🧹 Очистка данных", callback_data="admin_cleanup")],
+            [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast_prompt")],
+        ]
+    )
+
+
 def _admin_back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("Back", callback_data="admin_back")]]
+    )
+
+
+def _admin_panel_text(stats: object) -> str:
+    """Render the historical /admin summary without granting it data authority."""
+    if not isinstance(stats, dict):
+        stats = {}
+    return (
+        "🛡 *ПАНЕЛЬ АДМИНИСТРАТОРА*\n\n"
+        f"👥 Всего пользователей: *{stats.get('total_users', 0)}*\n"  # noqa: RUF001
+        f"🟢 Онлайн за 24ч: *{stats.get('online_24h', 0)}*\n"
+        f"🆕 Новых сегодня: *{stats.get('new_today', 0)}*\n"
+        f"💬 Активных сессий в памяти: *{len(legacy.user_data)}*\n"
+    )
+
+
+async def admin_command(update, context):
+    """Open the production admin panel without blocking the PTB event loop on Mongo."""
+    del context
+    user_id = update.effective_user.id
+    if user_id != legacy.ADMIN_USER_ID:
+        await update.message.reply_text("❌ У тебя нет доступа к этой команде.")  # noqa: RUF001
+        return
+
+    stats = await asyncio.to_thread(get_admin_stats)
+    await update.message.reply_text(
+        _admin_panel_text(stats),
+        parse_mode="Markdown",
+        reply_markup=_legacy_admin_menu_keyboard(),
     )
 
 

@@ -331,7 +331,7 @@ def main() -> None:
     app.add_handler(CommandHandler("cancel", quiz.cancel))
     app.add_handler(CommandHandler("status", quiz.status_command))
     app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))
-    app.add_handler(CommandHandler("admin", legacy.admin_command))
+    app.add_handler(CommandHandler("admin", admin.admin_command))
     app.add_handler(CommandHandler("broadcast", broadcasts.broadcast_command))
     app.add_handler(CommandHandler("help", legacy.help_command))
 
