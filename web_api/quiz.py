@@ -484,7 +484,10 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         "leaderboard_recorded": False,
     }
     try:
-        sessions.insert_one(document)
+        write = sessions.insert_one(document)
+        if getattr(write, "acknowledged", True) is not True:
+            logger.error("Mini App quiz session insert was not acknowledged")
+            return None, "database did not acknowledge quiz session creation", 503
     except DuplicateKeyError:
         # A concurrent open session won after the pre-read. Never abandon it and
         # never invent a second attempt; the caller can repeat the start request.

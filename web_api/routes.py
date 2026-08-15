@@ -9,8 +9,10 @@ from datetime import UTC, datetime
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
+from course_catalog import COURSE_ENTRIES, SURFACE_MINIAPP, course_for_pool, public_catalog
 from .auth import require_user
 from .quiz import (
+    MODE_CONFIG,
     answer_quiz,
     cancel_quiz,
     get_active_quiz,
@@ -40,14 +42,89 @@ _PUBLIC_USER_FIELDS = frozenset(
     }
 )
 _PUBLIC_LEVEL_SUFFIXES = ("attempts", "correct", "total", "best_score")
+_PUBLIC_MODE_LABELS = {
+    "relaxed": "🧘 Спокойный",
+    "timed": "⏱ На время",
+    "speed": "⚡ Скоростной",
+}
+_PUBLIC_ERROR_MESSAGES = {
+    "miniapp is not installed": "miniapp is not installed",
+    "course catalog unavailable": "course catalog unavailable",
+    "stats unavailable": "stats unavailable",
+    "question pools unavailable": "question pools unavailable",
+    "unknown question pool": "unknown question pool",
+    "questions unavailable": "questions unavailable",
+    "profile unavailable": "profile unavailable",
+    "invalid leaderboard category": "invalid leaderboard category",
+    "leaderboard unavailable": "leaderboard unavailable",
+    "database unavailable": "database unavailable",
+    "database temporarily unavailable": "database temporarily unavailable",
+    "could not resolve active quiz session": "could not resolve active quiz session",
+    "unfinished quiz session is inconsistent": "unfinished quiz session is inconsistent",
+    "unfinished quiz result state is inconsistent": "unfinished quiz result state is inconsistent",
+    "quiz result finalization is incomplete": "quiz result finalization is incomplete",
+    "session_id is required": "session_id is required",
+    "could not resolve quiz session": "could not resolve quiz session",
+    "quiz session not found": "quiz session not found",
+    "completed quiz cannot be cancelled; result is preserved": "completed quiz cannot be cancelled; result is preserved",
+    "quiz session is not active": "quiz session is not active",
+    "quiz session is inconsistent": "quiz session is inconsistent",
+    "could not cancel quiz session": "could not cancel quiz session",
+    "could not confirm quiz cancellation": "could not confirm quiz cancellation",
+    "quiz session changed while cancellation was in progress": "quiz session changed while cancellation was in progress",
+    "invalid quiz mode": "invalid quiz mode",
+    "challenge requires random_all pool": "challenge requires random_all pool",
+    "challenge does not accept course_key": "challenge does not accept course_key",
+    "client cannot override server course policy": "client cannot override server course policy",
+    "invalid challenge mode": "invalid challenge mode",
+    "course unavailable": "course unavailable",
+    "invalid course selection": "invalid course selection",
+    "question pool unavailable": "question pool unavailable",
+    "invalid question count": "invalid question count",
+    "could not resolve open quiz session": "could not resolve open quiz session",
+    "another active quiz is in progress; finish it before starting another": "another active quiz is in progress; finish it before starting another",
+    "previous quiz result finalization is incomplete": "previous quiz result finalization is incomplete",
+    "user profile unavailable": "user profile unavailable",
+    "question selection returned an invalid count": "question selection returned an invalid count",
+    "question data is invalid": "question data is invalid",
+    "another unfinished quiz already exists; retry start": "another unfinished quiz already exists; retry start",
+    "could not create quiz session": "could not create quiz session",
+    "created quiz session is inconsistent": "created quiz session is inconsistent",
+    "quiz session not found or already finished": "quiz session not found or already finished",
+    "invalid answer": "invalid answer",
+    "question_id is required": "question_id is required",
+    "result finalization is incomplete; retry the last answer": "result finalization is incomplete; retry the last answer",
+    "question already processed or out of order": "question already processed or out of order",
+    "answer index out of range": "answer index out of range",
+    "question has not been presented": "question has not been presented",
+    "could not save answer": "could not save answer",
+    "answer could not be committed": "answer could not be committed",
+    "result persistence failed; retry the last answer": "result persistence failed; retry the last answer",
+}
+_PUBLIC_ERROR_FALLBACKS = {
+    400: "invalid request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not found",
+    409: "request conflict",
+    413: "request body too large",
+    415: "unsupported media type",
+    429: "too many requests",
+    500: "internal server error",
+    503: "service unavailable",
+}
 
 
 def _uptime_seconds() -> int:
     return max(0, int((datetime.now(UTC) - STARTED_AT).total_seconds()))
 
 
-def _json_error(message: str, status: int):
-    return jsonify({"error": message}), status
+def _json_error(message: str | None, status: int):
+    """Emit only explicitly public error text; never reflect arbitrary internals."""
+    public_message = _PUBLIC_ERROR_MESSAGES.get(message or "")
+    if public_message is None:
+        public_message = _PUBLIC_ERROR_FALLBACKS.get(int(status), "request failed")
+    return jsonify({"error": public_message}), status
 
 
 def _database_ready() -> bool:
@@ -68,15 +145,17 @@ def _total_users() -> int:
 
 def _public_user_document(document: dict | None) -> dict:
     allowed = set(_PUBLIC_USER_FIELDS)
+    level_keys = {entry.pool_key for entry in COURSE_ENTRIES}
     try:
         from database import ALL_LEVEL_KEYS
-        allowed.update(
-            f"{level_key}_{suffix}"
-            for level_key in ALL_LEVEL_KEYS
-            for suffix in _PUBLIC_LEVEL_SUFFIXES
-        )
+        level_keys.update(ALL_LEVEL_KEYS)
     except Exception:
         pass
+    allowed.update(
+        f"{level_key}_{suffix}"
+        for level_key in level_keys
+        for suffix in _PUBLIC_LEVEL_SUFFIXES
+    )
     return {key: value for key, value in (document or {}).items() if key in allowed}
 
 
@@ -130,6 +209,38 @@ def _hard_leaderboard(limit: int = 20) -> list[dict]:
         return []
 
 
+def _public_mode_catalog() -> dict[str, dict]:
+    modes: dict[str, dict] = {}
+    for mode, config in MODE_CONFIG.items():
+        time_limit = config.get("time_limit")
+        detail = f"{int(time_limit)} сек" if time_limit else "без таймера"
+        modes[mode] = {
+            "id": mode,
+            "label": _PUBLIC_MODE_LABELS.get(mode, mode),
+            "description": detail,
+            "time_limit": time_limit,
+        }
+    return modes
+
+
+def _attach_course_key(body: dict | None) -> dict | None:
+    """Enrich a normal active-session response for old sessions without course_key."""
+    if not isinstance(body, dict) or body.get("challenge"):
+        return body
+    if body.get("course_key"):
+        return body
+    pool_key = str(body.get("pool_key", ""))
+    if not pool_key:
+        return body
+    try:
+        entry = course_for_pool(pool_key, surface=SURFACE_MINIAPP)
+    except Exception:
+        entry = None
+    if entry is not None:
+        body["course_key"] = entry.key
+    return body
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR) if STATIC_DIR.is_dir() else None, static_url_path="")
 
@@ -166,6 +277,21 @@ def create_app() -> Flask:
         if (STATIC_DIR / path).is_file():
             return send_from_directory(str(STATIC_DIR), path)
         return home()
+
+    @app.get("/api/catalog")
+    def catalog():
+        """Public, deployment-fresh learning catalog; no question/source internals."""
+        try:
+            body = public_catalog(surface=SURFACE_MINIAPP)
+            body["modes"] = _public_mode_catalog()
+            response = jsonify(body)
+            # A pool can appear/disappear only with a server deploy. Avoid a
+            # browser/proxy keeping the previous deployment's availability.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        except Exception:
+            logger.exception("course catalog unavailable")
+            return _json_error("course catalog unavailable", 503)
 
     @app.get("/stats")
     @app.get("/api/stats")
@@ -216,6 +342,7 @@ def create_app() -> Flask:
         if error:
             return error
         body, message, status = get_active_quiz(user)
+        body = _attach_course_key(body)
         return jsonify(body) if body is not None else _json_error(message, status)
 
     @app.post("/api/quiz/start")

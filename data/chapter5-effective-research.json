@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "authority": "1PETER-CH5-EFFECTIVE-RESEARCH-V2-2026-08-15",
+  "researchRepository": "FedorMilovanov/Research",
+  "researchSha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
+  "researchAuthorityDigest": "51b935cd819a664ddc6d036c72f38d903c3a1d1c862e283a64b82987dfa7175b",
+  "researchArtifacts": {
+    "finalSnapshotBlob": "8f52026e2338734e1aa723cf9226ffea93ef0519",
+    "candidateShardBlobs": {
+      "031-060": "47833bc583109cbd092a6420ce7a00b8bc22cdc7",
+      "061-090": "0fcf1398f14212ab195afe83c53100882a7f34bf",
+      "091-096": "3ad3a912e745008f679d176198e44454d3866c5a",
+      "097-112": "cb16c59b57040ba0d97069e314d1a5de85c00a7b",
+      "113-120": "7c58ffaf3117767b3a1717cea6d92efbad7b1fa5",
+      "121-128": "b59ce401bd313db1b24c3c292af4094544755c5a",
+      "129-136": "6d4cf5787b0d00574a3accfb1c42841d7c1eae35",
+      "137-144": "7c21120b7fd95c414264140e98fe161a35670e5b"
+    },
+    "wave3nOverrideBlob": "b77ad53a7be80152d4da4a6ceb229b084735883e",
+    "wave3nQuorumBlob": "f84d22c0d36add6ffd36889d5a5fcb3e5e101228"
+  },
+  "effectiveCount": 72,
+  "resolutionOrder": [
+    "base_candidate",
+    "later_candidate_overrides",
+    "source_upgrades_or_quorum",
+    "wave3n_override",
+    "product_review_v2"
+  ],
+  "recordContract": [
+    "candidate_id",
+    "research_authority_sha",
+    "authority_digest",
+    "claim_digest",
+    "claim_locator",
+    "product_review_id",
+    "claim_inspection_edge_ids",
+    "claim_source_edges",
+    "source_subset",
+    "owner_lane",
+    "claim_type",
+    "position",
+    "confidence",
+    "textual_critical_risk",
+    "historical_status",
+    "effective_status",
+    "authoring_disposition",
+    "ranking_disposition",
+    "competitive"
+  ],
+  "materializedRecordSource": "questions/chapter5/authority.py::EFFECTIVE_RESEARCH",
+  "reviewRecordSource": "questions/chapter5/review_contract_v2.py::PRODUCT_REVIEW_RECORDS",
+  "independentMetadataSource": "questions/chapter5/research_metadata_v2.py",
+  "productBankIdentitySource": "questions/chapter5/bank_identity_v2.py",
+  "candidateIds": [
+    "w3q_046","w3q_047","w3q_048","w3q_049","w3q_050","w3q_051","w3q_052","w3q_053","w3q_054","w3q_055",
+    "w3q_056","w3q_057","w3q_058","w3q_059","w3q_060","w3q_061","w3q_062","w3q_063","w3q_064","w3q_065",
+    "w3q_066","w3q_067","w3q_068","w3q_069","w3q_070","w3q_071","w3q_072","w3q_073","w3q_074","w3q_075",
+    "w3q_076","w3q_077","w3q_078","w3q_079","w3q_080","w3q_081","w3q_082","w3q_083","w3q_084","w3q_085",
+    "w3q_086","w3q_087","w3q_088","w3q_089","w3q_090","w3q_094","w3q_095","w3q_096",
+    "w3q_105","w3q_106","w3q_107","w3q_108","w3q_109","w3q_110","w3q_111","w3q_112",
+    "w3q_117","w3q_118","w3q_119","w3q_120","w3q_125","w3q_126","w3q_127","w3q_128",
+    "w3q_133","w3q_134","w3q_135","w3q_136","w3q_141","w3q_142","w3q_143","w3q_144"
+  ],
+  "historicalHoldsOverriddenByLaterAuthority": ["w3q_050", "w3q_051", "w3q_075"],
+  "textualControls": {
+    "5:2A": {
+      "candidateId": "w3q_050",
+      "unit": "ἐπισκοποῦντες",
+      "route": "Williams-Horrell ECM-based published treatment; no direct project dECM witness-table readback",
+      "forbiddenTransfer": "w3n_stanojevic_ecm_2021 belongs to the separate κατὰ θεόν unit"
+    },
+    "5:2B": {
+      "candidateId": "w3q_051",
+      "unit": "κατὰ θεόν",
+      "route": "separate unit; Williams-Horrell plus published Stanojevic ECM comparison; no direct project dECM witness-table readback"
+    },
+    "5:10": {
+      "candidateId": "w3q_068",
+      "unit": "καταρτίσει / στηρίξει / σθενώσει / θεμελιώσει",
+      "route": "SBLGNT/MorphGNT edition/text-base observation; never manuscript unanimity"
+    },
+    "5:12": {
+      "candidateId": "w3q_075",
+      "unit": "στῆτε / ἑστήκατε",
+      "route": "ECM-based published editorial treatment; editorial decision is not a direct full witness census"
+    },
+    "5:13": {
+      "candidateId": "w3q_144",
+      "unit": "Sinaiticus ἐκκλησία",
+      "route": "named-witness fact only; not an original-text or historical-location verdict"
+    }
+  },
+  "defaults": {
+    "owner_lane": "Research/1_PETER_BOT/effective-question-candidate",
+    "authoring_disposition": "ADMIT_NORMAL_LEARNING",
+    "ranking_disposition": "HOLD_NO_COMPETITIVE_AUTHORITY",
+    "competitive": false
+  },
+  "integrity": {
+    "candidateIdsUnique": true,
+    "everyCandidateMaterialized": true,
+    "perClaimDigestRequired": true,
+    "perClaimInspectionEdgeIdsRequired": true,
+    "sourceSubsetRequired": true,
+    "productReviewIdRequired": true,
+    "claimedTypeConfidencePositionRequired": true,
+    "safePhrasingAndBlacklistReviewRequired": true,
+    "historicalHoldArtifactsRemainAuditable": true,
+    "wave3nEffectiveClosuresControlProduction": true,
+    "prototypeIsNeverPublicationAuthority": true,
+    "rankingAuthorityCreated": false
+  }
+}

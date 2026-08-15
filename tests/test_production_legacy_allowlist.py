@@ -19,14 +19,9 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "category_leaderboard_handler",
     "challenge_menu",
     "challenge_rules",
-    "chapter_1_menu",
-    "choose_level",
     "cleanup_stale_userdata_job",
-    "confirm_level_handler",
     "help_command",
-    "historical_menu",
     "intro_hint_handler",
-    "level_selected",
     "noop_handler",
     "on_error",
     "random_fact_handler",
@@ -142,6 +137,20 @@ def _database_writer_functions() -> set[str]:
 
 def test_production_legacy_surface_is_exactly_allowlisted():
     assert _legacy_attributes() == ALLOWED_LEGACY_ATTRIBUTES
+
+
+def test_allowlist_excludes_legacy_learning_menu_and_course_authority():
+    forbidden = {
+        "LEVEL_CONFIG",
+        "chapter_1_menu",
+        "choose_level",
+        "confirm_level_handler",
+        "historical_menu",
+        "level_selected",
+    }
+    assert forbidden.isdisjoint(ALLOWED_LEGACY_ATTRIBUTES)
+    for name in forbidden:
+        assert f"legacy.{name}" not in SOURCE
 
 
 def test_allowlist_excludes_known_state_authority_writers_and_broad_dispatchers():

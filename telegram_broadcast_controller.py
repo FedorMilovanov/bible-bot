@@ -38,6 +38,13 @@ class BroadcastDrainSummary:
     errors: tuple[str, ...] = ()
 
 
+async def _store_call(function, /, *args, **kwargs):
+    """Run one synchronous Mongo boundary outside the PTB event loop."""
+    if kwargs:
+        return await asyncio.to_thread(lambda: function(*args, **kwargs))
+    return await asyncio.to_thread(function, *args)
+
+
 def _recipient_ids_strict() -> list[int]:
     """Read the complete recipient snapshot without legacy empty-on-error fallback."""
     import database
@@ -143,10 +150,10 @@ async def drain_broadcast_outbox(
     affected: set[str] = set()
     try:
         if broadcast_id is not None:
-            parent = get_broadcast(broadcast_id)
+            parent = await _store_call(get_broadcast, broadcast_id)
             parents = [parent] if isinstance(parent, dict) else []
         else:
-            parents = get_pending_broadcasts(limit=20)
+            parents = await _store_call(get_pending_broadcasts, limit=20)
         for parent in parents:
             if not isinstance(parent, dict):
                 continue
@@ -156,7 +163,7 @@ async def drain_broadcast_outbox(
                 continue
             affected.add(parent_id)
             if parent.get("fanout_ready") is not True:
-                ensure_broadcast_fanout(parent)
+                await _store_call(ensure_broadcast_fanout, parent)
     except (BroadcastStoreUnavailable, ValueError) as exc:
         return BroadcastDrainSummary(errors=(f"broadcast-prepare:{type(exc).__name__}:{exc}"[:500],))
 
@@ -167,7 +174,10 @@ async def drain_broadcast_outbox(
 
     for _ in range(limit):
         try:
-            delivery = claim_next_broadcast_delivery(broadcast_id=broadcast_id)
+            delivery = await _store_call(
+                claim_next_broadcast_delivery,
+                broadcast_id=broadcast_id,
+            )
         except BroadcastStoreUnavailable as exc:
             errors.append(f"broadcast-claim:{type(exc).__name__}:{exc}"[:500])
             break
@@ -185,7 +195,8 @@ async def drain_broadcast_outbox(
         affected.add(parent_id)
         try:
             if not isinstance(raw_user_id, str) or not raw_user_id.isdigit():
-                if mark_broadcast_delivery_terminal_failure(
+                if await _store_call(
+                    mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
                     error="broadcast recipient id is invalid",
@@ -194,7 +205,8 @@ async def drain_broadcast_outbox(
                 continue
             user_id = int(raw_user_id)
             if user_id <= 0:
-                if mark_broadcast_delivery_terminal_failure(
+                if await _store_call(
+                    mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
                     error="broadcast recipient id is invalid",
@@ -202,9 +214,10 @@ async def drain_broadcast_outbox(
                     terminal_failed += 1
                 continue
 
-            parent = get_broadcast(parent_id)
+            parent = await _store_call(get_broadcast, parent_id)
             if not isinstance(parent, dict):
-                if mark_broadcast_delivery_terminal_failure(
+                if await _store_call(
+                    mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
                     error="broadcast parent is missing",
@@ -213,7 +226,8 @@ async def drain_broadcast_outbox(
                 continue
             text = parent.get("text")
             if not isinstance(text, str) or not text:
-                if mark_broadcast_delivery_terminal_failure(
+                if await _store_call(
+                    mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
                     error="broadcast text is invalid",
@@ -224,7 +238,8 @@ async def drain_broadcast_outbox(
             try:
                 await bot.send_message(chat_id=user_id, text=_broadcast_text(text))
             except (Forbidden, BadRequest) as exc:
-                if mark_broadcast_delivery_terminal_failure(
+                if await _store_call(
+                    mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
                     error=f"{type(exc).__name__}: {exc}",
@@ -232,7 +247,8 @@ async def drain_broadcast_outbox(
                     terminal_failed += 1
             except RetryAfter as exc:
                 delay = _retry_after_seconds(exc)
-                if not defer_broadcast_delivery(
+                if not await _store_call(
+                    defer_broadcast_delivery,
                     delivery_id,
                     claim_token,
                     delay_seconds=delay,
@@ -242,7 +258,8 @@ async def drain_broadcast_outbox(
                 deferred += 1
                 break
             except (NetworkError, TimedOut) as exc:
-                release_broadcast_delivery(
+                await _store_call(
+                    release_broadcast_delivery,
                     delivery_id,
                     claim_token,
                     error=f"{type(exc).__name__}: {exc}",
@@ -250,7 +267,8 @@ async def drain_broadcast_outbox(
                 deferred += 1
                 break
             except Exception as exc:
-                release_broadcast_delivery(
+                await _store_call(
+                    release_broadcast_delivery,
                     delivery_id,
                     claim_token,
                     error=f"{type(exc).__name__}: {exc}",
@@ -261,7 +279,11 @@ async def drain_broadcast_outbox(
                 )
                 break
             else:
-                if mark_broadcast_delivery_delivered(delivery_id, claim_token):
+                if await _store_call(
+                    mark_broadcast_delivery_delivered,
+                    delivery_id,
+                    claim_token,
+                ):
                     delivered_count += 1
                 else:
                     errors.append(f"broadcast:{parent_id}:{delivery_id}:ack conflict")
@@ -271,7 +293,8 @@ async def drain_broadcast_outbox(
                 f"broadcast:{parent_id}:{delivery_id}:{type(exc).__name__}:{exc}"[:500]
             )
             try:
-                release_broadcast_delivery(
+                await _store_call(
+                    release_broadcast_delivery,
                     delivery_id,
                     claim_token,
                     error=f"{type(exc).__name__}: {exc}",
@@ -283,7 +306,7 @@ async def drain_broadcast_outbox(
 
     for parent_id in sorted(affected):
         try:
-            sync_broadcast_completion(parent_id)
+            await _store_call(sync_broadcast_completion, parent_id)
         except (BroadcastStoreUnavailable, ValueError) as exc:
             errors.append(f"broadcast-sync:{parent_id}:{type(exc).__name__}:{exc}"[:500])
 
@@ -324,7 +347,7 @@ async def broadcast_command(update, context):
 
     try:
         broadcast_id = broadcast_id_for_update(update.update_id)
-        existing = get_broadcast(broadcast_id)
+        existing = await _store_call(get_broadcast, broadcast_id)
         if isinstance(existing, dict):
             stored, recipients = _replay_broadcast(
                 existing,
@@ -334,7 +357,8 @@ async def broadcast_command(update, context):
             )
             created = False
         else:
-            stored, created, recipients = _accept_or_recover_new_broadcast(
+            stored, created, recipients = await _store_call(
+                _accept_or_recover_new_broadcast,
                 broadcast_id=broadcast_id,
                 admin_id=user.id,
                 admin_chat_id=message.chat_id,

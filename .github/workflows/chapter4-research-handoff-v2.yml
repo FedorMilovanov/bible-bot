@@ -1,0 +1,96 @@
+name: Chapter 4 Research Handoff v2
+
+on:
+  pull_request:
+    paths:
+      - 'questions/chapter4/**'
+      - 'questions/research_handoff_v2.py'
+      - 'questions/research_release_authority.py'
+      - 'questions/__init__.py'
+      - 'questions/pool_policy.py'
+      - 'questions/source_registry.py'
+      - 'web_api/**'
+      - 'data/chapter4-**'
+      - 'data/1peter-research-handoff-v2.json.xz'
+      - 'docs/CHAPTER4_RELEASE_AUDIT.md'
+      - 'tests/test_chapter4_**'
+      - 'scripts/reconstruct_research_handoff_release.py'
+      - 'scripts/audit_1peter_product_claims.py'
+      - '.github/workflows/chapter4-research-handoff-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chapter4-handoff-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  research-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout bible-bot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout canonical immutable Research release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: FedorMilovanov/Research
+          ref: 8d6e5bc3f303d0a6a2d1a15969e042907f3387db
+          path: .research-authority
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install release test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Reconstruct canonical Research handoff
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/chapter4-research-v2
+          python scripts/reconstruct_research_handoff_release.py \
+            --research-root .research-authority \
+            --output-dir /tmp/chapter4-research-v2
+
+      - name: Verify Chapter 4 product mappings against final Research authority
+        run: |
+          set -euo pipefail
+          python scripts/audit_1peter_product_claims.py \
+            --expanded-research /tmp/chapter4-research-v2 \
+            --report /tmp/chapter4-product-claim-audit.json \
+            --fail-on-findings
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/chapter4-product-claim-audit.json').read_text())
+          assert report['chapter4_staging'] == 52
+          assert report['finding_count'] == 0
+          print('chapter4-final-research-handoff-v2-ok')
+          PY
+
+      - name: Run Chapter 4 release contract tests
+        run: >-
+          python -m pytest -q
+          tests/test_chapter4_review_contract_v2.py
+          tests/test_chapter4_release_audit.py
+          tests/test_chapter4_learning_policy.py
+          tests/test_chapter4_product_contract.py
+          tests/test_chapter4_api_contract.py
+
+      - name: Upload recomputed handoff and product audit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chapter4-final-research-handoff-v2
+          path: |
+            /tmp/chapter4-research-v2
+            /tmp/chapter4-product-claim-audit.json
+          if-no-files-found: error
+          retention-days: 7

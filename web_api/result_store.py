@@ -6,6 +6,13 @@ finished, a retry sees the receipt and returns the already-applied result.
 Receipts are retained beyond the normal session TTL and are pruned lazily only
 when their source session is gone or terminal, so recoverable finalizations keep
 an exactly-once receipt for as long as they need it.
+
+Scoring results are additionally serialized by an optimistic CAS on the durable
+``total_tests`` counter. That counter is shared with the legacy Telegram result
+store, so two distinct Mini App result IDs (or a Mini App and Telegram result)
+cannot both compute daily/Challenge economics from the same stale user snapshot.
+Learning-only results intentionally do not participate in that scoring CAS: they
+atomically update progress counters only and carry strict zero-economics receipts.
 """
 from __future__ import annotations
 
@@ -13,12 +20,15 @@ import logging
 import re
 from datetime import datetime, timedelta
 
+from pymongo.errors import DuplicateKeyError
+
 from questions.pool_policy import is_non_scoring_learning_pool
 
 logger = logging.getLogger(__name__)
 _RESULT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RECEIPT_RETENTION = timedelta(hours=24)
 _TERMINAL_SESSION_STATUSES = frozenset({"finished", "abandoned"})
+_RESULT_CAS_RETRIES = 8
 
 
 def _today_utc() -> str:
@@ -52,10 +62,60 @@ def _receipt_from(entry: dict | None, result_id: str) -> dict | None:
     return dict(receipt) if isinstance(receipt, dict) else None
 
 
+def _validated_learning_receipt(
+    receipt: object,
+    *,
+    level_key: str,
+    score: int,
+    total: int,
+) -> dict | None:
+    """Validate one learning receipt against its durable attempt identity.
+
+    Legacy safe receipts created before score/total were persisted remain
+    replay-compatible. New receipts bind the result id to course/score/total and
+    fail closed on any mismatched replay or non-zero scoring side effect.
+    """
+    if not isinstance(receipt, dict):
+        return None
+    if receipt.get("kind") != "learning" or receipt.get("level_key") != level_key:
+        return None
+    if receipt.get("points") != 0 or receipt.get("daily_bonus") != 0:
+        return None
+    if receipt.get("new_achievements") != []:
+        return None
+
+    has_score = "score" in receipt
+    has_total = "total" in receipt
+    if has_score != has_total:
+        return None
+    if has_score and (receipt.get("score") != score or receipt.get("total") != total):
+        return None
+    return dict(receipt)
+
+
+def _cas_expected(entry: dict, field: str):
+    if field in entry:
+        return entry[field]
+    return {"$exists": False}
+
+
+def _acknowledged(result) -> bool:
+    """Treat lightweight test doubles as acknowledged, but reject explicit w=0."""
+    return getattr(result, "acknowledged", True) is True
+
+
 def _user_collection():
     import database
 
     return database.collection
+
+
+def _weekly_is_at_least(doc: dict, *, score: int, time_seconds: float) -> bool:
+    current_score = int(doc.get("best_score", -1))
+    current_time = float(doc.get("best_time", float("inf")))
+    return current_score > score or (
+        current_score == score and current_time <= time_seconds
+    )
 
 
 def _sync_weekly_challenge_result(
@@ -68,51 +128,74 @@ def _sync_weekly_challenge_result(
     time_seconds: float,
     week_id: str | None = None,
 ) -> None:
-    """Idempotently sync a Challenge result to its original weekly leaderboard.
+    """Idempotently and monotonically sync a Challenge weekly best.
 
-    Unlike the legacy helper, database errors intentionally propagate. The main
-    user aggregate is already protected by its result receipt, so a failed
-    weekly write leaves the quiz recoverable; replaying the last answer retries
-    this sync without incrementing the user's aggregate a second time. New
-    receipts persist the original week id so a retry after an ISO-week boundary
-    cannot move the result into the next leaderboard.
+    The user aggregate receipt is already durable before this projection is
+    attempted. A failure therefore propagates and the finalizer remains
+    recoverable; replay retries only this monotonic projection without applying
+    aggregate points twice.
     """
     import database
 
     weekly = getattr(database, "weekly_lb_collection", None)
-    # In normal production configuration this collection is created alongside
-    # database.collection. Allow lightweight unit-test database fakes to omit it.
     if weekly is None:
         return
 
     resolved_week_id = str(week_id or _week_id_utc())
     doc_id = f"{resolved_week_id}_{mode}_{user_id}"
-    existing = weekly.find_one({"_id": doc_id})
-    best_score = int((existing or {}).get("best_score", -1))
-    best_time = float((existing or {}).get("best_time", float("inf")))
     score = int(score)
     time_seconds = max(0.0, float(time_seconds))
-    if existing and (score < best_score or (score == best_score and time_seconds >= best_time)):
+    now = datetime.utcnow()
+    replacement = {
+        "week_id": resolved_week_id,
+        "mode": mode,
+        "user_id": str(user_id),
+        "username": username or "",
+        "first_name": first_name or "Пользователь",
+        "best_score": score,
+        "best_time": time_seconds,
+        "updated_at": now.isoformat(),
+        "updated_at_dt": now,
+    }
+
+    existing = weekly.find_one({"_id": doc_id})
+    if existing is None:
+        try:
+            inserted = weekly.insert_one({"_id": doc_id, **replacement})
+            if not _acknowledged(inserted):
+                raise RuntimeError("weekly leaderboard insert was not acknowledged")
+            return
+        except DuplicateKeyError:
+            existing = weekly.find_one({"_id": doc_id})
+
+    if existing is None:
+        raise RuntimeError("weekly leaderboard document disappeared after insert race")
+    if _weekly_is_at_least(existing, score=score, time_seconds=time_seconds):
         return
 
-    now = datetime.utcnow()
-    weekly.update_one(
-        {"_id": doc_id},
+    write = weekly.update_one(
         {
-            "$set": {
-                "week_id": resolved_week_id,
-                "mode": mode,
-                "user_id": str(user_id),
-                "username": username or "",
-                "first_name": first_name or "Пользователь",
-                "best_score": score,
-                "best_time": time_seconds,
-                "updated_at": now.isoformat(),
-                "updated_at_dt": now,
-            }
+            "_id": doc_id,
+            "$or": [
+                {"best_score": {"$lt": score}},
+                {"best_score": score, "best_time": {"$gt": time_seconds}},
+            ],
         },
-        upsert=True,
+        {"$set": replacement},
     )
+    if not _acknowledged(write):
+        raise RuntimeError("weekly leaderboard update was not acknowledged")
+    if getattr(write, "modified_count", 0) == 1:
+        return
+
+    refreshed = weekly.find_one({"_id": doc_id})
+    if refreshed is not None and _weekly_is_at_least(
+        refreshed,
+        score=score,
+        time_seconds=time_seconds,
+    ):
+        return
+    raise RuntimeError("weekly leaderboard best could not be persisted monotonically")
 
 
 def _prune_old_receipts(user_id: int) -> None:
@@ -146,16 +229,24 @@ def _prune_old_receipts(user_id: int) -> None:
                 stale.append(result_id)
 
         if stale:
-            collection.update_one(
+            cleanup = collection.update_one(
                 {"_id": str(user_id)},
                 {"$unset": {_receipt_field(result_id): "" for result_id in stale}},
             )
+            if not _acknowledged(cleanup):
+                logger.warning("Mini App receipt pruning write was not acknowledged")
     except Exception:
-        # Pruning is maintenance only. On any ambiguity, retain the receipt.
         logger.warning("could not safely prune old Mini App result receipts", exc_info=True)
 
 
-def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> dict | None:
+def _persist_once(
+    user_id: int,
+    result_id: str,
+    update: dict,
+    receipt: dict,
+    *,
+    expected: dict | None = None,
+) -> dict | None:
     collection = _user_collection()
     if collection is None:
         return None
@@ -165,12 +256,14 @@ def _persist_once(user_id: int, result_id: str, update: dict, receipt: dict) -> 
     stored_receipt = dict(receipt)
     stored_receipt["applied_at"] = datetime.utcnow()
     update.setdefault("$set", {})[field] = stored_receipt
+    query = {"_id": uid, field: {"$exists": False}}
+    if expected:
+        query.update(expected)
     try:
-        result = collection.update_one(
-            {"_id": uid, field: {"$exists": False}},
-            update,
-            upsert=False,
-        )
+        result = collection.update_one(query, update, upsert=False)
+        if not _acknowledged(result):
+            logger.error("Mini App result write was not acknowledged for %s", result_id)
+            return None
         if getattr(result, "modified_count", 0) == 1:
             _prune_old_receipts(user_id)
             return dict(stored_receipt)
@@ -194,27 +287,37 @@ def _apply_learning_result_once(
     score: int,
     total: int,
 ) -> dict | None:
-    """Persist learning progress without touching ranking or achievement totals."""
+    """Persist progress-only learning state with a strict idempotency receipt."""
     collection = _user_collection()
     if collection is None:
         return None
 
+    total = max(1, int(total))
+    score = max(0, min(int(score), total))
     uid = str(user_id)
     existing = collection.find_one({"_id": uid})
     if not existing:
         return None
     prior_receipt = _receipt_from(existing, result_id)
-    if prior_receipt:
-        return prior_receipt
+    if prior_receipt is not None:
+        validated = _validated_learning_receipt(
+            prior_receipt,
+            level_key=level_key,
+            score=score,
+            total=total,
+        )
+        if validated is None:
+            logger.warning("Mini App learning receipt %s does not match durable result", result_id)
+        return validated
 
-    total = max(1, int(total))
-    score = max(0, min(int(score), total))
     receipt = {
         "points": 0,
         "daily_bonus": 0,
         "new_achievements": [],
         "kind": "learning",
         "level_key": level_key,
+        "score": score,
+        "total": total,
     }
     update = {
         "$inc": {
@@ -229,7 +332,18 @@ def _apply_learning_result_once(
         },
         "$max": {f"{level_key}_best_score": score},
     }
-    return _persist_once(user_id, result_id, update, receipt)
+    stored = _persist_once(user_id, result_id, update, receipt)
+    if stored is None:
+        return None
+    validated = _validated_learning_receipt(
+        stored,
+        level_key=level_key,
+        score=score,
+        total=total,
+    )
+    if validated is None:
+        logger.warning("Mini App learning receipt %s changed during persistence", result_id)
+    return validated
 
 
 def apply_regular_result_once(
@@ -246,7 +360,7 @@ def apply_regular_result_once(
     is_perfect: bool,
     max_streak: int,
 ) -> dict | None:
-    """Atomically apply a normal Mini App result under the canonical pool policy."""
+    """Atomically apply a normal Mini App result under canonical pool policy."""
     import database
 
     collection = database.collection
@@ -265,81 +379,96 @@ def apply_regular_result_once(
     if level_key not in database.ALL_LEVEL_KEYS:
         return None
 
-    uid = str(user_id)
-    existing = collection.find_one({"_id": uid})
-    if not existing:
-        return None
-    prior_receipt = _receipt_from(existing, result_id)
-    if prior_receipt:
-        return prior_receipt
-
     score = max(0, min(int(score), int(total)))
     total = max(1, int(total))
     multiplier = max(0.0, float(score_multiplier))
-    today = _today_utc()
+    uid = str(user_id)
 
-    last_activity = existing.get("daily_activity_last", "")
-    daily_streak = int(existing.get("daily_activity_streak", 0))
-    if last_activity != today:
-        if last_activity:
-            try:
-                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(last_activity, "%Y-%m-%d")).days
-                daily_streak = daily_streak + 1 if delta == 1 else 1
-            except Exception:
+    for _attempt in range(_RESULT_CAS_RETRIES):
+        existing = collection.find_one({"_id": uid})
+        if not existing:
+            return None
+        prior_receipt = _receipt_from(existing, result_id)
+        if prior_receipt:
+            return prior_receipt
+
+        today = _today_utc()
+        last_activity = existing.get("daily_activity_last", "")
+        daily_streak = int(existing.get("daily_activity_streak", 0))
+        if last_activity != today:
+            if last_activity:
+                try:
+                    delta = (
+                        datetime.strptime(today, "%Y-%m-%d")
+                        - datetime.strptime(last_activity, "%Y-%m-%d")
+                    ).days
+                    daily_streak = daily_streak + 1 if delta == 1 else 1
+                except Exception:
+                    daily_streak = 1
+            else:
                 daily_streak = 1
-        else:
-            daily_streak = 1
 
-    bonus = 0
-    if existing.get("last_daily_bonus", "") != today:
-        bonus = 15 if daily_streak >= 7 else 10 if daily_streak >= 3 else 5
+        bonus = 0
+        if existing.get("last_daily_bonus", "") != today:
+            bonus = 15 if daily_streak >= 7 else 10 if daily_streak >= 3 else 5
 
-    ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
-    base_points = round(score * ppq * multiplier)
-    awarded_points = base_points + bonus
-    receipt = {
-        "points": awarded_points,
-        "daily_bonus": bonus,
-        "new_achievements": [],
-        "kind": "regular",
-        "level_key": level_key,
-    }
+        ppq = database.POINTS_PER_QUESTION.get(level_key, 1)
+        base_points = round(score * ppq * multiplier)
+        awarded_points = base_points + bonus
+        receipt = {
+            "points": awarded_points,
+            "daily_bonus": bonus,
+            "new_achievements": [],
+            "kind": "regular",
+            "level_key": level_key,
+        }
 
-    set_fields = {
-        "username": username or "",
-        "first_name": first_name or "Пользователь",
-        "last_activity": datetime.utcnow(),
-    }
-    if last_activity != today:
-        set_fields["daily_activity_streak"] = daily_streak
-        set_fields["daily_activity_last"] = today
-    if bonus:
-        set_fields["last_daily_bonus"] = today
-    if is_perfect:
-        set_fields["last_perfect_date"] = today
+        set_fields = {
+            "username": username or "",
+            "first_name": first_name or "Пользователь",
+            "last_activity": datetime.utcnow(),
+        }
+        if last_activity != today:
+            set_fields["daily_activity_streak"] = daily_streak
+            set_fields["daily_activity_last"] = today
+        if bonus:
+            set_fields["last_daily_bonus"] = today
+        if is_perfect:
+            set_fields["last_perfect_date"] = today
 
-    inc_fields = {
-        "total_tests": 1,
-        "total_questions_answered": total,
-        "total_correct_answers": score,
-        "total_time_spent": max(0.0, float(time_seconds)),
-        "total_points": awarded_points,
-        f"{level_key}_attempts": 1,
-        f"{level_key}_correct": score,
-        f"{level_key}_total": total,
-    }
-    if is_perfect:
-        inc_fields["perfect_count"] = 1
+        inc_fields = {
+            "total_tests": 1,
+            "total_questions_answered": total,
+            "total_correct_answers": score,
+            "total_time_spent": max(0.0, float(time_seconds)),
+            "total_points": awarded_points,
+            f"{level_key}_attempts": 1,
+            f"{level_key}_correct": score,
+            f"{level_key}_total": total,
+        }
+        if is_perfect:
+            inc_fields["perfect_count"] = 1
 
-    update = {
-        "$inc": inc_fields,
-        "$set": set_fields,
-        "$max": {
-            f"{level_key}_best_score": score,
-            "max_streak_ever": max(0, int(max_streak)),
-        },
-    }
-    return _persist_once(user_id, result_id, update, receipt)
+        update = {
+            "$inc": inc_fields,
+            "$set": set_fields,
+            "$max": {
+                f"{level_key}_best_score": score,
+                "max_streak_ever": max(0, int(max_streak)),
+            },
+        }
+        stored = _persist_once(
+            user_id,
+            result_id,
+            update,
+            receipt,
+            expected={"total_tests": _cas_expected(existing, "total_tests")},
+        )
+        if stored is not None:
+            return stored
+
+    logger.error("Mini App regular result CAS retry budget exhausted for %s", result_id)
+    return None
 
 
 def apply_challenge_result_once(
@@ -353,19 +482,115 @@ def apply_challenge_result_once(
     total: int,
     time_seconds: float,
 ) -> dict | None:
-    """Atomically apply Challenge 20 aggregates and ensure weekly sync completes."""
+    """Atomically apply Challenge aggregates and ensure monotonic weekly sync."""
     import database
 
     collection = database.collection
     if collection is None or mode not in {"random20", "hardcore20"}:
         return None
 
+    score = max(0, min(int(score), int(total)))
+    total = max(1, int(total))
     uid = str(user_id)
-    existing = collection.find_one({"_id": uid})
-    if not existing:
-        return None
-    prior_receipt = _receipt_from(existing, result_id)
-    if prior_receipt:
+
+    for _attempt in range(_RESULT_CAS_RETRIES):
+        existing = collection.find_one({"_id": uid})
+        if not existing:
+            return None
+        prior_receipt = _receipt_from(existing, result_id)
+        if prior_receipt:
+            _sync_weekly_challenge_result(
+                user_id=user_id,
+                username=username,
+                first_name=first_name,
+                mode=mode,
+                score=score,
+                time_seconds=time_seconds,
+                week_id=_receipt_week_id(prior_receipt),
+            )
+            return prior_receipt
+
+        today = _today_utc()
+        week_id = _week_id_utc()
+        eligible = existing.get(f"{mode}_last_bonus_date", "") != today
+        bonus = database.compute_bonus(score, mode, eligible)
+        base_points = score * database.POINTS_PER_QUESTION.get(mode, 1)
+        awarded_points = base_points + bonus
+
+        achievements = existing.get("achievements") or {}
+        if not isinstance(achievements, dict):
+            achievements = {}
+        new_achievements: list[str] = []
+        set_fields = {
+            "username": username or "",
+            "first_name": first_name or "Пользователь",
+            "last_activity": datetime.utcnow(),
+        }
+        if eligible:
+            set_fields[f"{mode}_last_bonus_date"] = today
+
+        streak_last = existing.get("challenge_streak_last_date", "")
+        if score >= 18:
+            streak_count = int(existing.get("challenge_streak_count", 0))
+            if not streak_last:
+                streak_count = 1
+            else:
+                try:
+                    delta = (
+                        datetime.strptime(today, "%Y-%m-%d")
+                        - datetime.strptime(streak_last, "%Y-%m-%d")
+                    ).days
+                    if delta == 1:
+                        streak_count += 1
+                    elif delta != 0:
+                        streak_count = 1
+                except Exception:
+                    streak_count = 1
+            set_fields["challenge_streak_count"] = streak_count
+            set_fields["challenge_streak_last_date"] = today
+            if streak_count >= 3 and "streak_3" not in achievements:
+                set_fields["achievements.streak_3"] = today
+                new_achievements.append("🔥 3-дневная серия 18+ — разблокировано!")
+        elif streak_last != today:
+            set_fields["challenge_streak_count"] = 0
+            set_fields["challenge_streak_last_date"] = today
+
+        if score == 20 and "perfect_20" not in achievements:
+            set_fields["achievements.perfect_20"] = today
+            new_achievements.append("⭐ Perfect 20 — разблокировано!")
+
+        receipt = {
+            "points": awarded_points,
+            "daily_bonus": bonus,
+            "new_achievements": new_achievements,
+            "kind": "challenge",
+            "level_key": mode,
+            "week_id": week_id,
+        }
+        update = {
+            "$inc": {
+                "total_tests": 1,
+                "total_questions_answered": total,
+                "total_correct_answers": score,
+                "total_time_spent": max(0.0, float(time_seconds)),
+                "total_points": awarded_points,
+                f"{mode}_attempts": 1,
+                f"{mode}_correct": score,
+                f"{mode}_total": total,
+            },
+            "$set": set_fields,
+            "$max": {f"{mode}_best_score": score},
+        }
+        stored = _persist_once(
+            user_id,
+            result_id,
+            update,
+            receipt,
+            expected={"total_tests": _cas_expected(existing, "total_tests")},
+        )
+        if stored is None:
+            continue
+
         _sync_weekly_challenge_result(
             user_id=user_id,
             username=username,
@@ -373,90 +598,9 @@ def apply_challenge_result_once(
             mode=mode,
             score=score,
             time_seconds=time_seconds,
-            week_id=_receipt_week_id(prior_receipt),
+            week_id=_receipt_week_id(stored),
         )
-        return prior_receipt
+        return stored
 
-    score = max(0, min(int(score), int(total)))
-    total = max(1, int(total))
-    today = _today_utc()
-    week_id = _week_id_utc()
-    eligible = existing.get(f"{mode}_last_bonus_date", "") != today
-    bonus = database.compute_bonus(score, mode, eligible)
-    base_points = score * database.POINTS_PER_QUESTION.get(mode, 1)
-    awarded_points = base_points + bonus
-
-    achievements = dict(existing.get("achievements") or {})
-    new_achievements: list[str] = []
-    set_fields = {
-        "username": username or "",
-        "first_name": first_name or "Пользователь",
-        "last_activity": datetime.utcnow(),
-    }
-    if eligible:
-        set_fields[f"{mode}_last_bonus_date"] = today
-
-    streak_last = existing.get("challenge_streak_last_date", "")
-    if score >= 18:
-        streak_count = int(existing.get("challenge_streak_count", 0))
-        if not streak_last:
-            streak_count = 1
-        else:
-            try:
-                delta = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(streak_last, "%Y-%m-%d")).days
-                if delta == 1:
-                    streak_count += 1
-                elif delta != 0:
-                    streak_count = 1
-            except Exception:
-                streak_count = 1
-        set_fields["challenge_streak_count"] = streak_count
-        set_fields["challenge_streak_last_date"] = today
-        if streak_count >= 3 and "streak_3" not in achievements:
-            achievements["streak_3"] = today
-            new_achievements.append("🔥 3-дневная серия 18+ — разблокировано!")
-    elif streak_last != today:
-        set_fields["challenge_streak_count"] = 0
-        set_fields["challenge_streak_last_date"] = today
-
-    if score == 20 and "perfect_20" not in achievements:
-        achievements["perfect_20"] = today
-        new_achievements.append("⭐ Perfect 20 — разблокировано!")
-    if new_achievements:
-        set_fields["achievements"] = achievements
-
-    receipt = {
-        "points": awarded_points,
-        "daily_bonus": bonus,
-        "new_achievements": new_achievements,
-        "kind": "challenge",
-        "level_key": mode,
-        "week_id": week_id,
-    }
-    update = {
-        "$inc": {
-            "total_tests": 1,
-            "total_questions_answered": total,
-            "total_correct_answers": score,
-            "total_time_spent": max(0.0, float(time_seconds)),
-            "total_points": awarded_points,
-            f"{mode}_attempts": 1,
-            f"{mode}_correct": score,
-            f"{mode}_total": total,
-        },
-        "$set": set_fields,
-        "$max": {f"{mode}_best_score": score},
-    }
-    stored = _persist_once(user_id, result_id, update, receipt)
-    if stored is None:
-        return None
-    _sync_weekly_challenge_result(
-        user_id=user_id,
-        username=username,
-        first_name=first_name,
-        mode=mode,
-        score=score,
-        time_seconds=time_seconds,
-        week_id=_receipt_week_id(stored),
-    )
-    return stored
+    logger.error("Mini App Challenge result CAS retry budget exhausted for %s", result_id)
+    return None

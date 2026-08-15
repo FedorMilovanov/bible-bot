@@ -1,0 +1,140 @@
+name: 1 Peter Chapter 1-5 release integrity
+
+on:
+  push:
+    branches:
+      - release/1peter-ch1-5
+      - main
+  pull_request:
+    paths:
+      - 'questions/**'
+      - 'web_api/**'
+      - 'handlers/**'
+      - 'course_catalog.py'
+      - 'telegram_*.py'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'data/**'
+      - 'docs/**'
+      - 'miniapp/**'
+      - '.github/workflows/1peter-release-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-integrity:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout product release
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout pinned immutable Research release
+        uses: actions/checkout@v4
+        with:
+          repository: FedorMilovanov/Research
+          ref: 8d6e5bc3f303d0a6a2d1a15969e042907f3387db
+          path: .release-research
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install product dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Verify Chapter 1 authority files are unchanged from release base
+        run: |
+          set -euo pipefail
+          git diff --exit-code e4dea87d7348ee940bc628f7f8d53379e05a5a3a -- \
+            questions/chapter1.py questions/intro.py \
+            questions/content_truth.py questions/content_truth_review.py \
+            questions/ranking_policy.py
+
+      - name: Reconstruct and verify immutable Research handoff
+        run: |
+          rm -rf /tmp/1peter-research-handoff
+          python scripts/reconstruct_research_handoff_release.py \
+            --research-root .release-research \
+            --output-dir /tmp/1peter-research-handoff
+
+      - name: Audit product mappings against final Research authority
+        run: |
+          python scripts/audit_1peter_product_claims.py \
+            --expanded-research /tmp/1peter-research-handoff \
+            --report /tmp/1peter-product-claim-audit.json \
+            --fail-on-findings
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/1peter-product-claim-audit.json').read_text())
+          print(f"::notice title=Product/Research semantic audit::findings={report['finding_count']} ch4={report['chapter4_staging']} ch5={report['chapter5_staging']}")
+          PY
+
+      - name: Validate unified Chapter 1-5 release contract
+        run: |
+          python scripts/validate_1peter_release.py --report /tmp/1peter-release-audit.json
+          python -m pytest -q tests/test_1peter_release_cross_layer.py
+
+      - name: Verify lifecycle and concurrency release scenarios explicitly
+        run: |
+          python -m pytest -q \
+            tests/test_miniapp_start_recovery.py \
+            tests/test_miniapp_recovery_control.py \
+            tests/test_miniapp_session_duplicate_preflight.py \
+            tests/test_active_session_duplicate_preflight.py \
+            tests/test_session_integrity_cancel_safety.py \
+            tests/test_session_integrity_replay_boundaries.py \
+            tests/test_legacy_restart_policy.py \
+            tests/test_legacy_session_callback_protocol.py \
+            tests/test_legacy_session_recovery.py \
+            tests/test_telegram_learning_persistence.py \
+            tests/test_miniapp_learning_persistence.py
+          node --test tests/js/lifecycle.test.js tests/js/flow_guard.test.js
+
+      - name: Run second adversarial whole-tree audit
+        env:
+          ADMIN_USER_ID: '1'
+          DISABLE_WEB_SERVER: '1'
+          RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts/audit_1peter_release_adversarial.py \
+            --report /tmp/1peter-second-adversarial-audit.json \
+            --fail-on-findings
+
+      - name: Verify production imports with full course stack
+        env:
+          ADMIN_USER_ID: '1'
+        run: |
+          python - <<'PY'
+          import course_catalog
+          import questions
+          import telegram_course_surface
+          import telegram_production
+          import web_api
+          import web_api.quiz
+          import web_api.result_store
+          assert len(questions.chapter4_questions) == 52
+          assert len(questions.chapter5_questions) == 72
+          assert course_catalog.resolve_course('chapter4').pool_key == 'chapter4'
+          assert course_catalog.resolve_course('chapter5').pool_key == 'chapter5'
+          print('full-release-imports-ok')
+          PY
+
+      - name: Upload verified Research and release audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1peter-release-diagnostics
+          path: |
+            /tmp/1peter-research-handoff
+            /tmp/1peter-product-claim-audit.json
+            /tmp/1peter-release-audit.json
+            /tmp/1peter-second-adversarial-audit.json
+          if-no-files-found: warn
+          retention-days: 7

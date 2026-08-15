@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 2,
+  "authority": "1PETER-CH5-PRODUCTION-RELEASE-AUDIT-V2-2026-08-15",
+  "baseSha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
+  "researchSha": "0142430af8ba80f28e0fd9cde669d32611a1d2af",
+  "researchAuthorityDigest": "51b935cd819a664ddc6d036c72f38d903c3a1d1c862e283a64b82987dfa7175b",
+  "productBankGitBlobSha": "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9",
+  "counts": {
+    "effectiveResearchClaims": 72,
+    "productCards": 72,
+    "productReviewRecords": 72,
+    "independentlyReadBackPass1": 72,
+    "independentlyReadBackPass2": 72,
+    "pass2ResolvedFindings": 2,
+    "pass2UnresolvedFindings": 0,
+    "prototypesReconciled": 32,
+    "rejectedPrototypeTemplates": 2,
+    "independentProductRewritesAccepted": 2,
+    "quarantine": 0,
+    "normalLearning": 72,
+    "rankingReady": 0,
+    "rankingHold": 72,
+    "battle": 0,
+    "challenge": 0,
+    "challengeFallback": 0,
+    "randomAll": 0,
+    "project": 13,
+    "competitive": 0
+  },
+  "correctIndex": {"0": 18, "1": 18, "2": 18, "3": 18},
+  "claimTypeCoverage": {"text": 28, "interpretation": 13, "greek": 13, "application": 13, "history": 5},
+  "traceContract": ["PRODUCT_CARD", "PRODUCT_REVIEW_RECORD", "EFFECTIVE_RESEARCH_CLAIM", "CLAIM_SOURCE_EDGE", "OWNING_LANE"],
+  "reviewFieldsRequired": [
+    "research_authority_sha", "authority_digest", "claim_digest", "claim_inspection_edge_ids",
+    "source_subset", "product_review_id", "safe_phrasing_review", "blacklist_review",
+    "claimed_type", "claimed_confidence", "claimed_position", "ranking_disposition"
+  ],
+  "prototypeAudit": {
+    "materializedFile": "data/chapter5-prototype-audit-v2.json",
+    "recordSource": "questions/chapter5/review_contract_v2.py::PROTOTYPE_AUDIT_RECORDS",
+    "publicationAuthorityAllowed": false,
+    "rankingAuthorityAllowed": false,
+    "explicitRejected": ["w3mcq_020", "w3mcq_027"],
+    "rejectedDisposition": "REJECTED_TEMPLATE_NOT_PUBLICATION_AUTHORITY",
+    "rewriteDisposition": "NEEDS_REWRITE_RESOLVED_BY_INDEPENDENT_PRODUCT_REWRITE",
+    "acceptedProductRewriteRecord": "INDEPENDENT_PRODUCT_REWRITE_ACCEPTED"
+  },
+  "semanticReadbackPass1": {
+    "status": "COMPLETE_WITH_CORRECTIONS",
+    "scope": "72/72 exact Research candidates plus effective Wave3g/Wave3n overrides against product stem/correct/explanation/distractors",
+    "correctedCards": [
+      "w3q_073","w3q_084","w3q_087","w3q_105","w3q_107","w3q_108","w3q_109","w3q_110","w3q_118",
+      "w3q_125","w3q_126","w3q_127","w3q_128"
+    ],
+    "corrections": {
+      "sourceSubsetRepairs": ["w3q_073","w3q_084","w3q_087","w3q_105","w3q_107","w3q_108","w3q_109","w3q_110","w3q_118","w3q_125","w3q_126"],
+      "confidenceRepairs": ["w3q_118","w3q_125","w3q_126","w3q_127"],
+      "claimTypeRepairs": ["w3q_128"]
+    }
+  },
+  "semanticReadbackPass2": {
+    "status": "COMPLETE_WITH_REPAIRS_PASS",
+    "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
+    "recordSource": "questions/chapter5/adversarial_review_v2.py::ADVERSARIAL_REVIEW_RECORDS",
+    "count": 72,
+    "resolvedFindingCount": 2,
+    "unresolvedFindingCount": 0,
+    "resolvedFindings": {
+      "w3q_095": "Added morphgnt_1peter required by the exact Research minimum source set.",
+      "w3q_127": "Added morphgnt_1peter required by the exact Research minimum source set."
+    },
+    "matrix": [
+      "question_matches_claim",
+      "keyed_answer_evidence_bounded",
+      "distractors_do_not_teach_false_authority",
+      "no_fake_consensus",
+      "no_universal_manuscript_claim_on_authoritative_surface",
+      "project_application_visibly_labelled",
+      "no_history_inference_from_toponym_or_text_form",
+      "textual_unit_scope_preserved",
+      "named_witness_not_promoted_to_original_text",
+      "ecm_based_route_not_promoted_to_direct_decm_readback",
+      "research_minimum_source_set_preserved"
+    ]
+  },
+  "textualControls": {
+    "5:2A": "ἐπισκοποῦντες is independent from κατὰ θεόν; Williams-Horrell ECM-based route, no direct project dECM readback; Stanojevic source transfer from 5:2B is rejected.",
+    "5:2B": "κατὰ θεόν is a separate unit; Williams-Horrell plus published Stanojevic ECM comparison; no direct project dECM witness-table claim.",
+    "5:10": "Four forms are explicitly edition/text-base bounded to SBLGNT/MorphGNT; no all-manuscripts or unanimity claim.",
+    "5:12": "στῆτε is supported through published ECM-based editorial treatment; editorial decision is not a full direct witness census.",
+    "5:13": "Textual Babylon is not automatic historical identification; Sinaiticus ἐκκλησία is a named-witness fact, not original-text verdict."
+  },
+  "publicApi": {
+    "preAnswerQuestionFields": ["id", "question", "options"],
+    "correctBeforeAnswer": false,
+    "explanationBeforeAnswer": false,
+    "reviewInternalsExposed": false,
+    "sourceEdgeInternalsExposed": false
+  },
+  "persistence": {
+    "chapter5OnlyProgressState": true,
+    "fields": ["chapter5_attempts", "chapter5_correct", "chapter5_total", "chapter5_best_score"],
+    "rankingTotalsChanged": false,
+    "points": 0,
+    "dailyBonus": 0,
+    "achievements": 0
+  },
+  "mutationCoverage": [
+    "stale_authority_digest", "wrong_claim_digest", "fake_edge", "source_from_wrong_textual_unit",
+    "direct_decm_wording_from_ecm_based_evidence", "manuscript_unanimity", "project_to_neutral",
+    "claim_type_or_confidence_strengthening", "competitive_true", "challenge_leakage",
+    "challenge_fallback_leakage", "whitespace_or_padding", "duplicate_option_surfaces",
+    "wrong_answer_position_metadata", "pre_answer_public_api_leakage", "research_minimum_source_set_regression"
+  ],
+  "safetyInvariants": [
+    "exact_product_bank_blob_pinned", "independent_research_metadata_pinned",
+    "second_adversarial_readback_required_by_admission", "reviewed_is_deep_copy",
+    "project_labels_visible", "all_ch5_competitive_false", "normal_learning_non_scoring",
+    "random_all_excluded", "battle_excluded", "challenge_excluded", "challenge_fallback_excluded",
+    "canonical_strings_have_no_outer_whitespace", "canonical_options_not_padded_for_layout",
+    "claim_source_depth_lane_scoped", "research_minimum_source_sets_preserved",
+    "historical_holds_audit_visible", "wave3n_effective_closures_control_production"
+  ],
+  "releaseGates": {
+    "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
+    "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},
+    "trackedReleaseContentComplete": true,
+    "finalGateEvidenceLocation": "PR #29 metadata plus GitHub Actions checks on the exact PR head",
+    "finalGatePolicy": "Exact final SHA and CI/Security/CodeQL run evidence intentionally live outside this tracked file because embedding the SHA here would mutate the head being attested. Agent 5 must verify PR #29 metadata and checks on that exact head.",
+    "status": "TRACKED_RELEASE_COMPLETE_EXACT_HEAD_EVIDENCE_IN_PR_METADATA"
+  }
+}
