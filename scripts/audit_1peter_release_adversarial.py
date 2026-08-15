@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Second-pass adversarial audit for the unified 1 Peter Chapter 1-5 release.
 
-This audit is intentionally repository-wide.  It records every tracked-tree
+This audit is intentionally repository-wide. It records every tracked-tree
 occurrence of the release-sensitive terms requested by the release owner, then
 runs fail-closed structural checks for policy ownership, legacy allowlists,
 Mini App assets, Telegram callbacks, public JSON boundaries, source identity
 separation, and production imports.
 """
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -102,11 +103,15 @@ def _check_required_owner_files(findings: list[dict]) -> None:
 
 def _check_miniapp(findings: list[dict], tracked: list[str]) -> None:
     forbidden_assets = [
-        path for path in tracked
-        if Path(path).name.casefold() in {"chapter4.js", "chapter5.js"}
+        path for path in tracked if Path(path).name.casefold() in {"chapter4.js", "chapter5.js"}
     ]
     if forbidden_assets:
-        _add(findings, "MINIAPP_HARDCODED_CHAPTER_ASSET", "hard-coded chapter assets exist", paths=forbidden_assets)
+        _add(
+            findings,
+            "MINIAPP_HARDCODED_CHAPTER_ASSET",
+            "hard-coded chapter assets exist",
+            paths=forbidden_assets,
+        )
     expected = {"miniapp/app.js", "miniapp/course_catalog.js", "miniapp/index.html"}
     missing = sorted(expected - set(tracked))
     if missing:
@@ -115,7 +120,11 @@ def _check_miniapp(findings: list[dict], tracked: list[str]) -> None:
     if "course_key: course.key" not in catalog_js or "scoring_mode" not in catalog_js:
         _add(findings, "MINIAPP_CATALOG_POLICY", "Mini App course helper is not server-catalog driven")
     if re.search(r"chapter[45]", catalog_js, flags=re.IGNORECASE):
-        _add(findings, "MINIAPP_CATALOG_HARDCODE", "Mini App canonical helper contains chapter4/5-specific logic")
+        _add(
+            findings,
+            "MINIAPP_CATALOG_HARDCODE",
+            "Mini App canonical helper contains chapter4/5-specific logic",
+        )
 
 
 def _check_telegram(findings: list[dict]) -> None:
@@ -128,9 +137,17 @@ def _check_telegram(findings: list[dict]) -> None:
     )
     for marker in required:
         if marker not in surface:
-            _add(findings, "TELEGRAM_CALLBACK_CATALOG", f"missing generic Telegram catalog marker: {marker}")
+            _add(
+                findings,
+                "TELEGRAM_CALLBACK_CATALOG",
+                f"missing generic Telegram catalog marker: {marker}",
+            )
     if re.search(r"chapter[45]", surface, flags=re.IGNORECASE):
-        _add(findings, "TELEGRAM_CHAPTER_HARDCODE", "Telegram course surface contains chapter4/5-specific branching")
+        _add(
+            findings,
+            "TELEGRAM_CHAPTER_HARDCODE",
+            "Telegram course surface contains chapter4/5-specific branching",
+        )
 
 
 def _check_source_registry(findings: list[dict]) -> None:
@@ -188,14 +205,29 @@ def _check_runtime_policy(findings: list[dict]) -> None:
     ):
         overlap = sorted(ch45.intersection(ids(pool)))
         if overlap:
-            _add(findings, "CH45_GAMEPLAY_LEAKAGE", f"Chapter4/5 leak into {name}", ids=overlap)
+            _add(
+                findings,
+                "CH45_GAMEPLAY_LEAKAGE",
+                f"Chapter4/5 leak into {name}",
+                ids=overlap,
+            )
     for key, pool in questions.CHALLENGE_POOLS.items():
         overlap = sorted(ch45.intersection(ids(pool)))
         if overlap:
-            _add(findings, "CH45_CHALLENGE_LEAKAGE", f"Chapter4/5 leak into challenge {key}", ids=overlap)
+            _add(
+                findings,
+                "CH45_CHALLENGE_LEAKAGE",
+                f"Chapter4/5 leak into challenge {key}",
+                ids=overlap,
+            )
 
     if len(questions.chapter3_questions) != 165:
-        _add(findings, "CH3_COUNT", "Chapter 3 learning count is not 165", actual=len(questions.chapter3_questions))
+        _add(
+            findings,
+            "CH3_COUNT",
+            "Chapter 3 learning count is not 165",
+            actual=len(questions.chapter3_questions),
+        )
     if len(questions.CHAPTER3_AUTHORIZED_COMPETITIVE_POOL) != 12:
         _add(
             findings,
@@ -204,30 +236,43 @@ def _check_runtime_policy(findings: list[dict]) -> None:
             actual=len(questions.CHAPTER3_AUTHORIZED_COMPETITIVE_POOL),
         )
     if len(questions.chapter4_questions) != 52:
-        _add(findings, "CH4_COUNT", "Chapter 4 reviewed count is not 52", actual=len(questions.chapter4_questions))
+        _add(
+            findings,
+            "CH4_COUNT",
+            "Chapter 4 reviewed count is not 52",
+            actual=len(questions.chapter4_questions),
+        )
     if len(questions.chapter5_questions) != 72:
-        _add(findings, "CH5_COUNT", "Chapter 5 reviewed count is not 72", actual=len(questions.chapter5_questions))
+        _add(
+            findings,
+            "CH5_COUNT",
+            "Chapter 5 reviewed count is not 72",
+            actual=len(questions.chapter5_questions),
+        )
 
     telegram = {entry.key for entry in list_courses(surface=SURFACE_TELEGRAM)}
     miniapp = {entry.key for entry in list_courses(surface=SURFACE_MINIAPP)}
     for chapter in ("chapter2", "chapter3", "chapter4", "chapter5"):
         if chapter not in telegram or chapter not in miniapp:
-            _add(findings, "SURFACE_CATALOG_MISMATCH", f"{chapter} missing from Telegram or Mini App catalog")
+            _add(
+                findings,
+                "SURFACE_CATALOG_MISMATCH",
+                f"{chapter} missing from Telegram or Mini App catalog",
+            )
 
     for chapter in ("chapter4", "chapter5"):
         prepared = prepare_question(dict(questions.POOL_REGISTRY[chapter][0]))
         payload = public_question(prepared)
         if set(payload) != {"id", "question", "options"}:
-            _add(findings, "PUBLIC_JSON_LEAK", f"{chapter} public question contains private fields", keys=sorted(payload))
+            _add(
+                findings,
+                "PUBLIC_JSON_LEAK",
+                f"{chapter} public question contains private fields",
+                keys=sorted(payload),
+            )
 
 
 def _check_legacy_allowlists(findings: list[dict], tracked: list[str]) -> list[dict]:
-    """Find suspicious maintained runtime allowlists that stopped at chapter2/3.
-
-    We deliberately report only code files, excluding tests/docs/audit scripts and
-    known chapter-specific authoring/review modules.  The full grep corpus is
-    still emitted separately, so every occurrence remains inspectable.
-    """
     suspects: list[dict] = []
     skip_prefixes = (
         "tests/",
@@ -251,22 +296,36 @@ def _check_legacy_allowlists(findings: list[dict], tracked: list[str]) -> list[d
         if Path(path).suffix not in RUNTIME_SUFFIXES:
             continue
         text = _read(path)
-        # Literal collections/conditions mentioning chapter2 or chapter3 but
-        # not the newly registered chapter4/5 are suspicious at release time.
-        if ("chapter2" in text or "chapter3" in text) and "chapter4" not in text and "chapter5" not in text:
+        if (
+            ("chapter2" in text or "chapter3" in text)
+            and "chapter4" not in text
+            and "chapter5" not in text
+        ):
             for lineno, line in enumerate(text.splitlines(), 1):
                 if "chapter2" in line or "chapter3" in line:
                     if any(token in line for token in (" in {", " in (", "==", "!=", "[", "{")):
-                        suspects.append({"path": path, "line": lineno, "text": line.strip()})
-    # No automatic failure solely for historical/legitimate chapter-specific
-    # references.  Flag only allowlist-shaped lines in runtime routing/scoring.
+                        suspects.append(
+                            {"path": path, "line": lineno, "text": line.strip()}
+                        )
     critical = [
-        row for row in suspects
-        if any(token in row["path"] for token in ("web_api", "telegram", "bot.py", "legacy_", "course"))
-        and any(token in row["text"] for token in (" in {", " in (", "==", "!=", "allowed", "ALLOWED"))
+        row
+        for row in suspects
+        if any(
+            token in row["path"]
+            for token in ("web_api", "telegram", "bot.py", "legacy_", "course")
+        )
+        and any(
+            token in row["text"]
+            for token in (" in {", " in (", "==", "!=", "allowed", "ALLOWED")
+        )
     ]
     for row in critical:
-        _add(findings, "LEGACY_CHAPTER_ALLOWLIST", "possible pre-Ch4/5 runtime allowlist", **row)
+        _add(
+            findings,
+            "LEGACY_CHAPTER_ALLOWLIST",
+            "possible pre-Ch4/5 runtime allowlist",
+            **row,
+        )
     return suspects
 
 
@@ -282,11 +341,16 @@ def _check_production_imports(findings: list[dict]) -> None:
         import web_api.quiz  # noqa: F401
         import web_api.result_store  # noqa: F401
     except Exception as exc:  # pragma: no cover - CI diagnostic boundary
-        _add(findings, "PRODUCTION_IMPORT", f"full production import failed: {type(exc).__name__}: {exc}")
+        _add(
+            findings,
+            "PRODUCTION_IMPORT",
+            f"full production import failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def audit() -> dict:
-    head = _git("rev-parse", "HEAD")
+    checkout_head = _git("rev-parse", "HEAD")
+    release_head = os.getenv("RELEASE_HEAD_SHA", "").strip() or checkout_head
     tracked = _tracked_files()
     occurrences = {term: _grep_term(term) for term in SEARCH_TERMS}
     findings: list[dict] = []
@@ -303,7 +367,8 @@ def audit() -> dict:
         "schema_version": 1,
         "audit": "1PETER_CH1_5_SECOND_ADVERSARIAL_RELEASE_AUDIT",
         "first_green_sha": FIRST_GREEN_SHA,
-        "audited_head_sha": head,
+        "audited_release_head_sha": release_head,
+        "checkout_tree_sha": checkout_head,
         "searched_terms": list(SEARCH_TERMS),
         "tracked_file_count": len(tracked),
         "occurrence_counts": {term: len(rows) for term, rows in occurrences.items()},
@@ -319,7 +384,9 @@ def audit() -> dict:
             "public_json_private_metadata_guard": True,
             "source_identity_no_depth_upgrade": True,
             "production_imports": True,
-        } if not findings else {},
+        }
+        if not findings
+        else {},
     }
 
 
@@ -333,13 +400,33 @@ def main() -> None:
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    print(json.dumps({
-        "audited_head_sha": report["audited_head_sha"],
-        "finding_count": report["finding_count"],
-        "occurrence_counts": report["occurrence_counts"],
-    }, ensure_ascii=False, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "audited_release_head_sha": report["audited_release_head_sha"],
+                "checkout_tree_sha": report["checkout_tree_sha"],
+                "finding_count": report["finding_count"],
+                "occurrence_counts": report["occurrence_counts"],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    for finding in report["findings"]:
+        location = ""
+        if finding.get("path"):
+            location = str(finding["path"])
+            if finding.get("line"):
+                location += f":{finding['line']}"
+            location += " "
+        print(
+            f"::error title=Second adversarial {finding['rule']}::"
+            f"{location}{finding['message']}"
+        )
     if args.fail_on_findings and report["finding_count"]:
-        raise SystemExit(f"second adversarial audit found {report['finding_count']} release findings")
+        raise SystemExit(
+            f"second adversarial audit found {report['finding_count']} release findings"
+        )
 
 
 if __name__ == "__main__":
