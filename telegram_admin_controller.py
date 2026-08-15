@@ -1,6 +1,7 @@
 """Production-only admin actions that must respect durable state authority."""
 from __future__ import annotations
 
+import asyncio
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -104,8 +105,9 @@ async def admin_read_callback(update, context):
 
     await query.answer()
     if action == "admin_hard_questions":
+        text = await asyncio.to_thread(_hard_questions_text)
         await query.edit_message_text(
-            _hard_questions_text(),
+            text,
             reply_markup=_admin_back_keyboard(),
         )
         return
@@ -140,7 +142,10 @@ async def admin_cleanup(update, context):
         return
 
     try:
-        deleted_battles = cleanup_stale_waiting_battles(max_age_minutes=10)
+        deleted_battles = await asyncio.to_thread(
+            cleanup_stale_waiting_battles,
+            max_age_minutes=10,
+        )
     except LegacyBattleCleanupUnavailable:
         await query.answer("Battle storage is temporarily unavailable.", show_alert=True)
         return
