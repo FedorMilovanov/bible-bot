@@ -42,6 +42,7 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
+import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
@@ -257,6 +258,7 @@ def main() -> None:
     if ensure_miniapp_indexes() is not True:
         raise MiniAppIndexSafetyUnavailable("Mini App index safety is unavailable")
     ensure_broadcast_indexes()
+    result_delivery.install_result_card_renderer(quiz)
 
     app = (
         Application.builder()
@@ -447,6 +449,11 @@ def main() -> None:
     )
     app.job_queue.run_repeating(
         reports.report_delivery_job,
+        interval=60,
+        first=10,
+    )
+    app.job_queue.run_repeating(
+        result_delivery.result_card_delivery_job,
         interval=60,
         first=10,
     )
