@@ -96,8 +96,10 @@ def mark_live_question_sent(
             session_id=session_id,
             target=target,
         )
-    else:
+    elif session_id is None:
         canonical = sent_value
+    else:
+        raise LegacyLiveQuestionStateInvalid("session_id is invalid")
     if capture_live_question_target(data) != target:
         raise LegacyLiveAnswerStale("question delivery target changed before timer sync")
     data["question_sent_at"] = canonical
