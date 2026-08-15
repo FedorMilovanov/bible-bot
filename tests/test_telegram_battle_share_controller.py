@@ -1,5 +1,6 @@
 import asyncio
 import os
+import threading
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -141,6 +142,33 @@ def test_handle_start_deep_link_claims_exact_battle_and_routes_creator_notice(mo
     assert bot.sent == []
 
 
+def test_deep_link_claim_runs_off_event_loop_thread(monkeypatch):
+    battle_id = "battle_0123456789abcdef"
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def claim(*args, **kwargs):
+        assert args == (battle_id, 99, "Opponent")
+        assert kwargs == {}
+        worker_threads.append(threading.get_ident())
+        return _battle(battle_id)
+
+    async def deliver(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(share, "claim_durable_battle_opponent", claim)
+    monkeypatch.setattr(share.ready_delivery, "deliver_creator_ready_once", deliver)
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=99, first_name="Opponent"),
+        effective_message=_Message(),
+    )
+    context = SimpleNamespace(args=[f"duel_{battle_id}"], bot=_Bot())
+
+    assert _run(share.handle_start_deep_link(update, context)) is True
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+
+
 def test_handle_start_deep_link_fails_closed_for_stale_or_unavailable_battle(monkeypatch):
     battle_id = "battle_0123456789abcdef"
     message = _Message()
@@ -211,6 +239,33 @@ def test_create_battle_exposes_share_picker_for_exact_created_id(monkeypatch):
     params = parse_qs(urlparse(share_button.url).query)
     assert params["url"] == [share.build_battle_deep_link("BibleQuizBot", battle_id)]
     assert markup.inline_keyboard[1][0].callback_data == f"cancel_battle_{battle_id}"
+
+
+def test_create_battle_mongo_write_runs_off_event_loop_thread(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+    question = {
+        "id": "q1",
+        "question": "Question?",
+        "options": ["A", "B"],
+        "correct": "A",
+    }
+    monkeypatch.setattr(share.battles, "_battle_pool", lambda: [question])
+
+    def create(**kwargs):
+        assert kwargs["creator_id"] == 42
+        worker_threads.append(threading.get_ident())
+        return dict(kwargs)
+
+    monkeypatch.setattr(share, "create_durable_battle", create)
+    query = _Query()
+    update = SimpleNamespace(callback_query=query)
+
+    _run(share.create_battle(update, SimpleNamespace(bot=_Bot())))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert query.answers == [(None, False)]
 
 
 def test_create_battle_still_works_when_bot_username_is_unavailable(monkeypatch):
