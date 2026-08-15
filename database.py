@@ -6,7 +6,7 @@ import time
 import uuid
 import logging
 import functools
-from datetime import UTC, datetime, date, timedelta
+from datetime import UTC, datetime, timedelta
 from pymongo import MongoClient, ASCENDING, DESCENDING
 
 logger = logging.getLogger(__name__)
@@ -931,7 +931,7 @@ def get_context_leaderboard(limit=10):
 # ═══════════════════════════════════════════════
 
 def get_current_week_id():
-    d = date.today()
+    d = _now_utc().date()
     iso_year, iso_week, _ = d.isocalendar()
     return f"{iso_year}-W{iso_week:02d}"
 
