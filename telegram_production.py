@@ -405,10 +405,10 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(legacy.random_fact_handler, pattern="^random_fact_intro$"))
     app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
-    app.add_handler(CallbackQueryHandler(legacy.show_weekly_leaderboard, pattern="^weekly_lb_"))
+    app.add_handler(CallbackQueryHandler(stats.show_weekly_leaderboard, pattern="^weekly_lb_"))
     app.add_handler(
         CallbackQueryHandler(
-            legacy.category_leaderboard_handler,
+            stats.category_leaderboard_handler,
             pattern="^cat_lb_",
         )
     )
@@ -425,7 +425,7 @@ def main() -> None:
             pattern="^toggle_typewriter$",
         )
     )
-    app.add_handler(CallbackQueryHandler(legacy.show_history, pattern="^my_history$"))
+    app.add_handler(CallbackQueryHandler(stats.show_history, pattern="^my_history$"))
     app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_errors_"))
     app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_nav_"))
     app.add_handler(CallbackQueryHandler(legacy.review_test_handler, pattern=r"^review_test_\d+$"))

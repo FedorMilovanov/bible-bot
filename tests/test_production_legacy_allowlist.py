@@ -16,7 +16,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "_touch",
     "admin_command",
     "back_to_main",
-    "category_leaderboard_handler",
     "challenge_menu",
     "challenge_rules",
     "cleanup_stale_userdata_job",
@@ -30,8 +29,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "review_errors_handler",
     "review_test_handler",
     "show_achievements",
-    "show_history",
-    "show_weekly_leaderboard",
 }
 
 _NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}

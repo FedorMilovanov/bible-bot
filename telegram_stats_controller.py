@@ -12,10 +12,16 @@ from database import (
     calculate_accuracy,
     calculate_days_playing,
     format_time,
+    get_category_leaderboard,
+    get_context_leaderboard,
+    get_current_week_id,
     get_leaderboard_page,
     get_total_users,
+    get_user_history,
     get_user_position,
+    get_weekly_leaderboard,
 )
+from utils import safe_edit
 
 
 async def stats_command(update, context, *, main_keyboard_factory: Callable[[], InlineKeyboardMarkup]):
@@ -177,5 +183,127 @@ async def show_general_leaderboard(query, page: int = 0):
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
+    )
+
+
+async def show_history(update, context):
+    """Render recent quiz history while keeping the durable read off-loop."""
+    del context
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    try:
+        sessions = await asyncio.to_thread(get_user_history, user_id, limit=10)
+    except Exception:
+        sessions = []
+
+    if sessions:
+        text = "📜 *ИСТОРИЯ ПРОХОЖДЕНИЙ*\n\n"
+        for session in sessions:
+            end_time = session.get("end_time")
+            dt = end_time.strftime("%d.%m %H:%M") if hasattr(end_time, "strftime") else "—"
+            score = session.get("correct_count", 0)
+            total = session.get("total_questions", len(session.get("questions_data", [])))
+            name = session.get("level_name", "?")
+            pct = round(score / max(total, 1) * 100)
+            text += f"• {dt} — _{name}_: *{score}/{total}* ({pct}%)\n"
+    else:
+        text = "📜 *ИСТОРИЯ*\n\nПока пусто — пройди первый тест!"
+
+    await safe_edit(
+        query,
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Назад", callback_data="my_stats")]]
+        ),
+    )
+
+
+async def show_category_leaderboard(query, category_key: str):
+    """Render one category leaderboard with the blocking database read off-loop."""
+    category_names = {
+        "easy": "🟢 Основы",
+        "medium": "🟡 Контекст",
+        "hard": "🔴 Богословие",
+        "nero": "👑 Нерон",
+        "geography": "🌍 География",
+        "context": "🏛 Знатоки контекста",
+    }
+    cat_name = category_names.get(category_key, category_key)
+    if category_key == "context":
+        users = await asyncio.to_thread(get_context_leaderboard)
+    else:
+        users = await asyncio.to_thread(get_category_leaderboard, category_key)
+
+    if not users:
+        text = f"{cat_name}\n\nПока никто не проходил этот тест."
+    else:
+        text = f"🏆 *РЕЙТИНГ: {cat_name}*\n\n"
+        for i, entry in enumerate(users, 1):
+            name = entry.get("first_name", "?")[:15]
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+            if category_key == "context":
+                text += f"{medal} *{name}* — {entry.get('_context_correct', 0)} верных\n"
+            else:
+                text += f"{medal} *{name}* — {entry.get(f'{category_key}_correct', 0)} верных\n"
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("⬅️ Общий рейтинг", callback_data="leaderboard")],
+                [InlineKeyboardButton("⬅️ В меню", callback_data="back_to_main")],
+            ]
+        ),
+        parse_mode="Markdown",
+    )
+
+
+async def category_leaderboard_handler(update, context):
+    """Dispatch category leaderboard presentation without legacy bot.py routing."""
+    del context
+    query = update.callback_query
+    await query.answer()
+    await show_category_leaderboard(query, query.data.replace("cat_lb_", ""))
+
+
+async def show_weekly_leaderboard(update, context):
+    """Render weekly challenge leaderboard with its durable read off-loop."""
+    del context
+    query = update.callback_query
+    await query.answer()
+    mode = query.data.replace("weekly_lb_", "")
+    users = await asyncio.to_thread(get_weekly_leaderboard, mode)
+    mode_name = "🎲 Random Challenge" if mode == "random20" else "💀 Hardcore Random"
+    week_id = get_current_week_id()
+
+    if not users:
+        text = f"🏆 *{mode_name}*\nНеделя {week_id}\n\nПока нет результатов."
+    else:
+        text = f"🏆 *{mode_name}*\nНеделя {week_id}\n\n"
+        for i, entry in enumerate(users, 1):
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+            name = entry.get("first_name", "?")[:15]
+            score = entry.get("best_score", 0)
+            elapsed = format_time(entry.get("best_time", 0))
+            text += f"{medal} *{name}* — {score}/20 • ⏱ {elapsed}\n"
+
+    other_mode = "hardcore20" if mode == "random20" else "random20"
+    other_mode_name = "💀 Hardcore" if mode == "random20" else "🎲 Normal"
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        f"→ {other_mode_name}", callback_data=f"weekly_lb_{other_mode}"
+                    )
+                ],
+                [InlineKeyboardButton("🎲 Сыграть", callback_data=f"challenge_rules_{mode}")],
+                [InlineKeyboardButton("⬅️ Назад", callback_data="challenge_menu")],
+            ]
+        ),
         parse_mode="Markdown",
     )
