@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "authority": "BIBLE-BOT-HISTORICAL-BRANCH-DISPOSITION-2026-08-15",
+  "reviewed_against_main_sha": "ae0058e795d7d2de56bf965bd5a87e75a7cc7268",
+  "policy": {
+    "semantic_deletion_requires_exact_branch_sha": true,
+    "reviewed_main_must_remain_ancestor": true,
+    "open_pr_blocks_cleanup": true,
+    "branch_ref_rechecked_before_delete": true,
+    "main_ref_rechecked_before_delete": true,
+    "merge_required_branches_may_not_be_deleted": true
+  },
+  "records": [
+    {
+      "branch": "agent/battle-safe-cleanup",
+      "branch_sha": "add562e22cce3fe292640f97ee0e99e8bc9f639b",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Early stale-battle cleanup protected waiting battles with evidence; current main retains that boundary and additionally handles in-progress joined battles with recovery-safe grace and durable-progress/result exclusions.",
+      "replacement_evidence": ["legacy_battle_cleanup.py", "tests/test_legacy_battle_cleanup.py"]
+    },
+    {
+      "branch": "agent/bible-bot-action-exception-audit",
+      "branch_sha": "75b7513caedde41681891cdf5432b5e406194060",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Typed session-access failures and contradictory/stale action rejection remain in main; main additionally rejects any resolved lifecycle decision that is no longer resumable.",
+      "replacement_evidence": ["legacy_session_action.py", "tests/test_legacy_session_action.py"]
+    },
+    {
+      "branch": "agent/bible-bot-active-session-preflight-cli",
+      "branch_sha": "4c005b20b437493f512cfafd7499f81fb312977d",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Duplicate-session preflight remains, while main replaced application-bootstrap reuse with a stricter read-only direct Mongo client that only pings and aggregates and always closes the client.",
+      "replacement_evidence": ["scripts/check_active_session_duplicates.py", "tests/test_active_session_preflight_cli.py"]
+    },
+    {
+      "branch": "agent/bible-bot-answer-ledger-precondition",
+      "branch_sha": "17658d28dece5b12d43b71a39a4055c926586b4a",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Answer-ledger length precondition and CAS are preserved in session_integrity; later main adds stricter owner/resumable-state and cancellation protections around the same authority.",
+      "replacement_evidence": ["session_integrity.py", "tests/test_session_integrity.py"]
+    },
+    {
+      "branch": "agent/bible-bot-battle-delivery-audit",
+      "branch_sha": "e7db8d8c2437ff234eb4e5f31ca0b1da3281f2f3",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Per-recipient durable delivery lease/ack flow is retained; main additionally requires the explicit battle outbox protocol before using that delivery path.",
+      "replacement_evidence": ["legacy_battle_delivery_flow.py", "tests/test_legacy_battle_delivery_flow.py"]
+    },
+    {
+      "branch": "agent/bible-bot-battle-migration-guard",
+      "branch_sha": "f655eaa8a6e196a604314b777eadf83a01aa7f09",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "The original outbox migration fence is now a larger migration-boundary test covering durable question progress, semantic callback binding, timer authority, answer CAS, result reconstruction and recovery-safe cleanup.",
+      "replacement_evidence": ["tests/test_legacy_battle_migration_boundary.py"]
+    },
+    {
+      "branch": "agent/bible-bot-block-generic-progress-overwrite",
+      "branch_sha": "0b1374349d31214f4eeb521d73f6841dd965aaa3",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "The branch blocked three dangerous progress fields in generic updates; main uses a stricter allowlist permitting only question_sent_at/status/end_time and therefore blocks all other durable/spec fields.",
+      "replacement_evidence": ["database.py", "tests/test_database_quiz_update_authority.py"]
+    },
+    {
+      "branch": "agent/bible-bot-delivery-drain-audit",
+      "branch_sha": "f4ae0ad23c7e7d734109d3941aaa5acc5923d4c9",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Sequential durable outbox draining and per-item failure isolation remain; main isolates only typed store outages between queues while preserving explicit error evidence and still fails closed on malformed listings.",
+      "replacement_evidence": ["legacy_delivery_drain.py", "tests/test_legacy_delivery_drain.py"]
+    },
+    {
+      "branch": "agent/bible-bot-inaccuracy-report-foundation",
+      "branch_sha": "683f69a2277e7175ad1b8154ed68ebc6386db1bc",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Deterministic attempt/question report identity and durable outbox acceptance remain; main additionally keeps this ingress from consuming the normal user report cooldown.",
+      "replacement_evidence": ["legacy_inaccuracy_report.py", "tests/test_legacy_inaccuracy_report.py"]
+    },
+    {
+      "branch": "agent/bible-bot-live-migration-guard",
+      "branch_sha": "07e59cba6162988435fa75fb744da1c54b57245e",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Conditional all-or-nothing live-answer migration guard was replaced by a mandatory production-controller boundary that forbids blind writes and RAM answer mutations and enforces durable acceptance before side effects.",
+      "replacement_evidence": ["tests/test_legacy_live_migration_boundary.py", "telegram_controller.py"]
+    },
+    {
+      "branch": "agent/bible-bot-live-migration-guard-v2",
+      "branch_sha": "08398047843643082bf1ac76e08a70e5fac6aa68",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "The v2 shutdown no-write requirement is retained and strengthened by the current mandatory production migration boundary and side-effect ordering checks.",
+      "replacement_evidence": ["tests/test_legacy_live_migration_boundary.py", "telegram_controller.py"]
+    },
+    {
+      "branch": "agent/bible-bot-live-question-atomicity",
+      "branch_sha": "4df0b6af77d79a53619ce83055bdaf34809e2e73",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Attempt/question target recapture and durable timer CAS remain; main adds strict validation of returned session id, attempt id, question index, applied flag and timer value before RAM synchronization.",
+      "replacement_evidence": ["legacy_live_question.py", "tests/test_legacy_live_question_target_atomicity.py"]
+    },
+    {
+      "branch": "agent/bible-bot-option-binding",
+      "branch_sha": "bdc6da0ae71f2295dddc8aa36ea9116935a7b6f8",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Attempt/question/option callback binding remains; main increases option fingerprint from 48 to 72 bits, validates shuffled options against canonical options, rejects ambiguous option fingerprints, and validates durable store transitions before RAM sync.",
+      "replacement_evidence": ["legacy_callback_protocol.py", "legacy_live_answer.py", "tests/test_legacy_callback_protocol.py", "tests/test_legacy_live_answer.py"]
+    },
+    {
+      "branch": "agent/bible-bot-owner-cancel-cas",
+      "branch_sha": "09a81f74715e8fa0783716972bba91d3bb75d471",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Completion-safe owner cancellation CAS is preserved: restart classification, attempt identity, counters, question ids and ledger are all bound before cancellation; later session-integrity hardening surrounds the same invariant.",
+      "replacement_evidence": ["session_integrity.py", "tests/test_session_integrity_cancel_safety.py"]
+    },
+    {
+      "branch": "agent/bible-bot-report-migration-guard",
+      "branch_sha": "3e88488ff9c76800d56080780abc6c162ca7f861",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Durable report migration guard is retained and strengthened: normal reports use stable drafts/outbox, direct admin sends are absent, and inaccuracy reports must use their dedicated deterministic-id acceptance helper.",
+      "replacement_evidence": ["tests/test_legacy_report_migration_boundary.py", "legacy_inaccuracy_report.py"]
+    },
+    {
+      "branch": "agent/bible-bot-report-retry-metadata",
+      "branch_sha": "e7ee92fef300196133277dd33900347258e44d77",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Retry identity no longer binds mutable context/profile metadata; main keeps the reduced immutable snapshot and adds an explicit update_cooldown switch for independent durable ingress paths.",
+      "replacement_evidence": ["report_integrity.py", "tests/test_report_retry_profile_metadata.py"]
+    },
+    {
+      "branch": "agent/bible-bot-report-submit-audit",
+      "branch_sha": "a0d35ddc8ba789e9e5877e85829e2c5f81a1a510",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Stable report draft identity, immutable snapshot, durable acceptance before send, and independent pending outbox delivery all remain in current report submission flow.",
+      "replacement_evidence": ["legacy_report_submit.py", "legacy_report_flow.py", "report_integrity.py"]
+    },
+    {
+      "branch": "agent/bible-bot-restart-winner-regression",
+      "branch_sha": "487df388263691474d14210d6b0355eb77d052d3",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Lost-response restart replay still returns the durable winner without resetting it; main adds regressions rejecting a non-advanced old attempt and contradictory durable winner state.",
+      "replacement_evidence": ["tests/test_legacy_session_restart_durable_winner.py", "legacy_session_lifecycle.py"]
+    },
+    {
+      "branch": "agent/bible-bot-retention-preflight-readonly-v2",
+      "branch_sha": "d07120b71fb96626e5361aeb58e07c46a9486b2d",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Read-only direct-Mongo retention preflight remains and is expanded to Mini App and broadcast retention, with explicit bootstrap_pending only for known broadcast TTLs and fail-closed handling of unrecognized TTLs.",
+      "replacement_evidence": ["scripts/check_retention_indexes.py", "tests/test_retention_preflight_readonly.py"]
+    },
+    {
+      "branch": "agent/bible-bot-session-lifecycle-audit",
+      "branch_sha": "39bbee18d8198c45b2b333e3c86d0abf9d5b948b",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Durable live finalization from owned Mongo evidence remains; current main also carries the later stricter timer/store and lifecycle migration contracts.",
+      "replacement_evidence": ["legacy_live_finalize.py", "legacy_live_question.py", "tests/test_legacy_session_lifecycle.py"]
+    },
+    {
+      "branch": "agent/bible-bot-session-migration-guard",
+      "branch_sha": "21342240556035b631d25db8597d3378a90bdc57",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Conditional lifecycle migration fence is replaced by a mandatory production-controller contract with attempt-bound lifecycle callbacks, centralized strict status classification, and complete removal of old destructive session APIs.",
+      "replacement_evidence": ["tests/test_legacy_session_migration_boundary.py", "telegram_controller.py"]
+    },
+    {
+      "branch": "agent/legacy-report-outbox-backfill",
+      "branch_sha": "b267a290e3596aab582ca99c27bb419b5bc258f8",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Historical report delivery-state compatibility bridge is byte-identical in main; the delivery worker is later strengthened with off-event-loop Mongo calls, durable deferral and permanent-failure settlement while retaining acknowledgement safety.",
+      "replacement_evidence": ["legacy_report_delivery_migration.py", "legacy_delivery_worker.py"]
+    },
+    {
+      "branch": "agent/wave10-failclosed-launch-candidate",
+      "branch_sha": "f66c17ab177c487e2cb871d0c0558886c5233c4e",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Fail-closed durable quiz-session creation is retained with a typed persistence error; main additionally rejects unacknowledged inserts rather than treating them as durable success.",
+      "replacement_evidence": ["database.py", "tests/test_runtime_security_reconciliation.py"]
+    },
+    {
+      "branch": "arena/019fe791-bible-bot",
+      "branch_sha": "1b91b7902c5112b8bfa0a7c079c0c7e425c9360d",
+      "disposition": "SUPERSEDED_BY_STRONGER_MAIN",
+      "review_summary": "Two-commit August 9 prototype predates the current architecture: it used PTB 20.7, Gunicorn keep_alive entrypoint, wildcard CORS, debug user_id fallback, always-200 degraded health and offline demo Mini App data. Current main intentionally replaces each of those surfaces with authenticated server-authoritative APIs, fail-closed production readiness, a single production entrypoint, current runtime and reviewed course authority.",
+      "replacement_evidence": ["production_entrypoint.py", "web_api", "miniapp", "render.yaml", "requirements.txt"]
+    },
+    {
+      "branch": "qualitymarathon-temp",
+      "branch_sha": "01b09f528dfbf4ccf0cd4ac910433f1dd15d3d64",
+      "disposition": "ALREADY_MERGED_ANCESTOR",
+      "review_summary": "GitHub commit graph proves this ref has no commits ahead of reviewed main; its SHA is the merge base and reviewed main is 506 commits ahead.",
+      "replacement_evidence": []
+    }
+  ]
+}
