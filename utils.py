@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from telegram import Update
 from telegram.error import BadRequest, RetryAfter, TimedOut
 
+from telegram_delivery_retry import retry_after_seconds
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════
@@ -146,8 +148,9 @@ async def safe_send(target, text: str, **kwargs):
                 text, parse_mode="Markdown", **kwargs
             )
         except RetryAfter as e:
-            logger.warning("RetryAfter in safe_send: %ss", e.retry_after)
-            await asyncio.sleep(e.retry_after + 0.5)
+            delay = retry_after_seconds(e)
+            logger.warning("RetryAfter in safe_send: %ss", delay)
+            await asyncio.sleep(delay + 0.5)
         except BadRequest as e:
             if "can't parse" in str(e).lower():
                 # Markdown битый — отправляем без форматирования
@@ -183,8 +186,9 @@ async def safe_edit(query, text: str, **kwargs):
                 text, parse_mode="Markdown", **kwargs
             )
         except RetryAfter as e:
-            logger.warning("RetryAfter in safe_edit: %ss", e.retry_after)
-            await asyncio.sleep(e.retry_after + 0.5)
+            delay = retry_after_seconds(e)
+            logger.warning("RetryAfter in safe_edit: %ss", delay)
+            await asyncio.sleep(delay + 0.5)
         except BadRequest as e:
             err_str = str(e).lower()
             if "not modified" in err_str:
