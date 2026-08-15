@@ -85,6 +85,7 @@ jobs:
         env:
           ADMIN_USER_ID: '1'
           DISABLE_WEB_SERVER: '1'
+          RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python scripts/audit_1peter_release_adversarial.py \
             --report /tmp/1peter-second-adversarial-audit.json \
@@ -110,6 +111,7 @@ jobs:
           PY
 
       - name: Upload verified Research and release audit artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: 1peter-release-diagnostics
@@ -118,5 +120,5 @@ jobs:
             /tmp/1peter-product-claim-audit.json
             /tmp/1peter-release-audit.json
             /tmp/1peter-second-adversarial-audit.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
