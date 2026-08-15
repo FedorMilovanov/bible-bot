@@ -337,7 +337,7 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
         if main_dependent:
             confirmed_default_sha = api.ref_sha(default_branch)
             if confirmed_default_sha != default_sha:
-                skipped.append(f"{ref}: {default_branch} moved during cleanup proof")
+                skipped.append(f"{ref}: {default_branch} moved during content proof")
                 continue
 
         api.delete_ref(ref)
