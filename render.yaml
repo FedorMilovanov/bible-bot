@@ -27,6 +27,8 @@ services:
         value: "1"
       - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
         value: "86400"
+      - key: PTB_TIMEDELTA
+        value: "1"
       - key: WEB_THREADS
         value: "4"
       - key: MAX_REQUEST_BODY_BYTES
