@@ -12,6 +12,11 @@ import logging
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from legacy_result_card_delivery import (
+    ResultCardDeliveryConflict,
+    build_result_card_delivery_marker,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,6 +113,19 @@ def _completion_snapshot(session: dict) -> tuple[int, list[str], list[dict]]:
     return current, question_ids, answered
 
 
+def _result_card_marker(session: dict) -> dict | None:
+    """Stage UI recovery evidence without making UI metadata scoring authority."""
+    try:
+        return build_result_card_delivery_marker(session)
+    except ResultCardDeliveryConflict:
+        logger.warning(
+            "completed session %s has no safe result-card destination marker",
+            session.get("_id"),
+            exc_info=True,
+        )
+        return None
+
+
 def validate_completed_owned_quiz_session(
     session_id: str,
     user_id: int | str,
@@ -166,7 +184,17 @@ def finish_completed_owned_quiz_session(
 
         current, question_ids, answered = _completion_snapshot(existing)
         correct_count = existing["correct_count"]
+        result_card_marker = _result_card_marker(existing)
         now = database._now_utc()
+        terminal_fields = {
+            "status": "finished",
+            "end_time": now,
+            "updated_at": now.isoformat(),
+            "updated_at_dt": now,
+        }
+        if result_card_marker is not None:
+            terminal_fields["result_card_delivery"] = result_card_marker
+
         finished = collection.find_one_and_update(
             {
                 **owner_filter,
@@ -176,14 +204,7 @@ def finish_completed_owned_quiz_session(
                 "question_ids": question_ids,
                 "answered_questions": answered,
             },
-            {
-                "$set": {
-                    "status": "finished",
-                    "end_time": now,
-                    "updated_at": now.isoformat(),
-                    "updated_at_dt": now,
-                }
-            },
+            {"$set": terminal_fields},
             return_document=ReturnDocument.AFTER,
         )
         if finished is not None:
