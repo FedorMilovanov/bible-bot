@@ -2,6 +2,7 @@
 """Durable PvP sharing and Telegram start-deep-link adapter."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
@@ -122,7 +123,8 @@ async def create_battle(update, context):
 
     battle_id = f"battle_{uuid.uuid4().hex[:16]}"
     try:
-        create_durable_battle(
+        await asyncio.to_thread(
+            create_durable_battle,
             battle_id=battle_id,
             creator_id=user.id,
             creator_name=user.first_name or "Игрок",
@@ -185,7 +187,8 @@ async def handle_start_deep_link(update, context) -> bool:
         return True
     opponent_name = user.first_name or "Игрок"
     try:
-        battle = claim_durable_battle_opponent(
+        battle = await asyncio.to_thread(
+            claim_durable_battle_opponent,
             battle_id,
             user.id,
             opponent_name,
