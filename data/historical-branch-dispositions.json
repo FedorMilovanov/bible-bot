@@ -1,14 +1,19 @@
 {
-  "schema_version": 1,
-  "authority": "BIBLE-BOT-HISTORICAL-BRANCH-DISPOSITION-2026-08-15",
+  "schema_version": 2,
+  "authority": "BIBLE-BOT-HISTORICAL-BRANCH-DISPOSITION-ARCHIVE-2026-08-15",
+  "status": "ARCHIVED_AFTER_SUCCESSFUL_SWEEP",
+  "cleanup_authority": false,
   "reviewed_against_main_sha": "ae0058e795d7d2de56bf965bd5a87e75a7cc7268",
+  "completed_cleanup": {
+    "workflow": "Branch Hygiene",
+    "run_id": 31859527454,
+    "deleted": 26,
+    "skipped": 0
+  },
   "policy": {
-    "semantic_deletion_requires_exact_branch_sha": true,
-    "reviewed_main_must_remain_ancestor": true,
-    "open_pr_blocks_cleanup": true,
-    "branch_ref_rechecked_before_delete": true,
-    "main_ref_rechecked_before_delete": true,
-    "merge_required_branches_may_not_be_deleted": true
+    "records_are_audit_evidence_only": true,
+    "records_must_not_authorize_future_ref_deletion": true,
+    "future_cleanup_requires_current_github_graph_or_tree_proof": true
   },
   "records": [
     {"branch":"agent/battle-safe-cleanup","branch_sha":"add562e22cce3fe292640f97ee0e99e8bc9f639b","disposition":"SUPERSEDED_BY_STRONGER_MAIN","review_summary":"Early stale-battle cleanup protected waiting battles with evidence; current main retains that boundary and additionally handles in-progress joined battles with recovery-safe grace and durable-progress/result exclusions.","replacement_evidence":["legacy_battle_cleanup.py","tests/test_legacy_battle_cleanup.py"]},

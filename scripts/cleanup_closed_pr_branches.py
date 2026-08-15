@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""Delete stale repository work branches without losing unique history.
+"""Delete stale service-owned work branches without losing unique history.
 
-Automatic cleanup uses progressively stronger, independently checkable proofs:
+Automatic cleanup uses only reproducible GitHub facts:
 
-1. current ref SHA exactly matches a closed same-repository PR head;
-2. GitHub proves the current ref SHA is already an ancestor of captured main;
-3. every branch-side changed path is byte-for-byte represented in captured main;
-4. an exact-SHA branch has an explicitly reviewed
-   ``SUPERSEDED_BY_STRONGER_MAIN`` disposition in the tracked audit manifest,
-   and the manifest's reviewed main is still an ancestor of captured main.
+1. the current ref SHA exactly matches the head of a same-repository PR that was
+   merged into the current default branch;
+2. GitHub proves the current ref SHA is already an ancestor of the captured
+   default-branch SHA;
+3. every branch-side changed path is byte-for-byte represented in the captured
+   default-branch tree.
 
-A tracked ``MERGE_REQUIRED`` disposition always blocks deletion. Non-service
-branch names are considered only when explicitly present in that manifest.
-Every mutable ref used by a main-dependent proof is re-read immediately before
-DELETE. The script never force-updates a ref.
+A merely closed PR is never deletion authority. A PR merged into another branch
+is not deletion authority for the default branch. Historical semantic review
+manifests are audit evidence only and are deliberately not read by this script.
+
+Only ``agent/``, ``release/`` and ``dependabot/`` refs are eligible. Open PRs
+always block cleanup. Every mutable ref used by a default-branch-dependent proof
+is re-read immediately before DELETE. The script never force-updates a ref.
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections import defaultdict
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -32,36 +33,36 @@ API_VERSION = "2022-11-28"
 ELIGIBLE_PREFIXES = ("agent/", "release/", "dependabot/")
 PAGE_SIZE = 100
 _MAX_COMPARE_FILES = 300
-_DISPOSITION_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "historical-branch-dispositions.json"
-)
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_ALLOWED_DISPOSITIONS = frozenset(
-    {
-        "SUPERSEDED_BY_STRONGER_MAIN",
-        "ALREADY_MERGED_ANCESTOR",
-        "MERGE_REQUIRED",
-    }
-)
 
 
 def _eligible_ref(ref: str, *, default_branch: str) -> bool:
     return bool(ref) and ref != default_branch and ref.startswith(ELIGIBLE_PREFIXES)
 
 
-def _closed_head_shas(
+def _merged_default_head_shas(
     closed_pulls: list[dict],
     *,
     repository: str,
     default_branch: str,
 ) -> dict[str, set[str]]:
+    """Return exact heads of PRs proven merged into this repo's default branch."""
     result: dict[str, set[str]] = defaultdict(set)
     for pull in closed_pulls:
+        if not pull.get("merged_at"):
+            continue
+
         head = pull.get("head") or {}
         head_repo = head.get("repo") or {}
+        base = pull.get("base") or {}
+        base_repo = base.get("repo") or {}
         ref = str(head.get("ref") or "")
         sha = str(head.get("sha") or "")
+
         if head_repo.get("full_name") != repository:
+            continue
+        if base_repo.get("full_name") != repository:
+            continue
+        if base.get("ref") != default_branch:
             continue
         if not _eligible_ref(ref, default_branch=default_branch) or not sha:
             continue
@@ -78,47 +79,6 @@ def _open_head_refs(open_pulls: list[dict], *, repository: str) -> set[str]:
         if head_repo.get("full_name") == repository and ref:
             refs.add(ref)
     return refs
-
-
-def _load_dispositions(path: Path = _DISPOSITION_PATH) -> tuple[str, dict[str, dict]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("historical branch disposition manifest cannot be loaded") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-        raise RuntimeError("historical branch disposition schema is invalid")
-
-    reviewed_main = payload.get("reviewed_against_main_sha")
-    if not isinstance(reviewed_main, str) or _SHA_RE.fullmatch(reviewed_main) is None:
-        raise RuntimeError("historical branch disposition reviewed main SHA is invalid")
-
-    records = payload.get("records")
-    if not isinstance(records, list):
-        raise RuntimeError("historical branch disposition records are invalid")
-
-    result: dict[str, dict] = {}
-    for record in records:
-        if not isinstance(record, dict):
-            raise RuntimeError("historical branch disposition record is invalid")
-        branch = record.get("branch")
-        branch_sha = record.get("branch_sha")
-        disposition = record.get("disposition")
-        if not isinstance(branch, str) or not branch or branch.startswith("refs/"):
-            raise RuntimeError("historical branch disposition branch is invalid")
-        if branch in result:
-            raise RuntimeError("historical branch disposition branch is duplicated")
-        if not isinstance(branch_sha, str) or _SHA_RE.fullmatch(branch_sha) is None:
-            raise RuntimeError("historical branch disposition SHA is invalid")
-        if disposition not in _ALLOWED_DISPOSITIONS:
-            raise RuntimeError("historical branch disposition value is invalid")
-        summary = record.get("review_summary")
-        evidence = record.get("replacement_evidence")
-        if not isinstance(summary, str) or not summary.strip():
-            raise RuntimeError("historical branch disposition review summary is missing")
-        if not isinstance(evidence, list) or any(not isinstance(item, str) for item in evidence):
-            raise RuntimeError("historical branch disposition evidence is invalid")
-        result[branch] = record
-    return reviewed_main, result
 
 
 class GitHubApi:
@@ -218,6 +178,7 @@ class GitHubApi:
         return str(sha) if sha else None
 
     def patch_exactly_present_in(self, branch_sha: str, default_sha: str) -> bool:
+        """Prove the branch-side patch tree is already represented in main."""
         value = self._compare(default_sha, branch_sha)
         files = value.get("files")
         if not isinstance(files, list) or len(files) >= _MAX_COMPARE_FILES:
@@ -264,27 +225,25 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
     if not default_sha:
         raise RuntimeError("default branch ref is unavailable")
 
-    reviewed_main, dispositions = _load_dispositions()
-    if default_branch in dispositions:
-        raise RuntimeError("default branch must not be a cleanup disposition")
-
     closed = api.pulls("closed")
     opened = api.pulls("open")
     branches = api.branches()
 
-    closed_shas = _closed_head_shas(
+    merged_default_shas = _merged_default_head_shas(
         closed,
         repository=api.repository,
         default_branch=default_branch,
     )
     open_refs = _open_head_refs(opened, repository=api.repository)
-    current_branch_names = {
-        str(branch.get("name") or "") for branch in branches if branch.get("name")
-    }
     candidate_refs = sorted(
-        ref
-        for ref in current_branch_names
-        if _eligible_ref(ref, default_branch=default_branch) or ref in dispositions
+        {
+            str(branch.get("name") or "")
+            for branch in branches
+            if _eligible_ref(
+                str(branch.get("name") or ""),
+                default_branch=default_branch,
+            )
+        }
     )
 
     deleted: list[str] = []
@@ -297,47 +256,34 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
         current_sha = api.ref_sha(ref)
         if current_sha is None:
             continue
-        disposition = dispositions.get(ref)
-        exact_disposition = (
-            disposition
-            if disposition is not None and disposition.get("branch_sha") == current_sha
-            else None
-        )
-        if exact_disposition and exact_disposition.get("disposition") == "MERGE_REQUIRED":
-            skipped.append(f"{ref}: manifest requires integration")
-            continue
 
-        closed_match = current_sha in closed_shas.get(ref, set())
+        merged_default_match = current_sha in merged_default_shas.get(ref, set())
         ancestry_match = False
         exact_content_match = False
-        semantic_match = False
-        if not closed_match:
+        if not merged_default_match:
             ancestry_match = api.is_ancestor(current_sha, default_sha)
             if not ancestry_match:
-                exact_content_match = api.patch_exactly_present_in(current_sha, default_sha)
-                if not exact_content_match and exact_disposition is not None:
-                    if exact_disposition.get("disposition") == "SUPERSEDED_BY_STRONGER_MAIN":
-                        semantic_match = api.is_ancestor(reviewed_main, default_sha)
-                    elif exact_disposition.get("disposition") == "ALREADY_MERGED_ANCESTOR":
-                        skipped.append(f"{ref}: manifest ancestor proof no longer holds")
-                        continue
-                if not exact_content_match and not semantic_match:
-                    suffix = " (manifest SHA mismatch)" if disposition and not exact_disposition else ""
+                exact_content_match = api.patch_exactly_present_in(
+                    current_sha, default_sha
+                )
+                if not exact_content_match:
                     skipped.append(
-                        f"{ref}: unique content not proven in {default_branch}{suffix}"
+                        f"{ref}: unique content not proven in {default_branch}"
                     )
                     continue
 
+        # Re-read immediately before deletion. Never force-update a moved ref.
         confirmed_sha = api.ref_sha(ref)
         if confirmed_sha != current_sha:
             skipped.append(f"{ref}: ref moved during cleanup")
             continue
 
-        main_dependent = ancestry_match or exact_content_match or semantic_match
-        if main_dependent:
+        if ancestry_match or exact_content_match:
             confirmed_default_sha = api.ref_sha(default_branch)
             if confirmed_default_sha != default_sha:
-                skipped.append(f"{ref}: {default_branch} moved during content proof")
+                skipped.append(
+                    f"{ref}: {default_branch} moved during content proof"
+                )
                 continue
 
         api.delete_ref(ref)

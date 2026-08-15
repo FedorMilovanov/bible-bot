@@ -1,14 +1,12 @@
 import json
+import re
 from pathlib import Path
-
-import pytest
-
-import scripts.cleanup_closed_pr_branches as hygiene
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "data" / "historical-branch-dispositions.json"
 REVIEWED_MAIN = "ae0058e795d7d2de56bf965bd5a87e75a7cc7268"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_BRANCHES = {
     "agent/battle-safe-cleanup",
     "agent/bible-bot-action-exception-audit",
@@ -36,218 +34,75 @@ EXPECTED_BRANCHES = {
     "arena/019fe791-bible-bot",
     "qualitymarathon-temp",
 }
+ALLOWED_ARCHIVAL_DISPOSITIONS = {
+    "SUPERSEDED_BY_STRONGER_MAIN",
+    "ALREADY_MERGED_ANCESTOR",
+}
 
 
-def test_tracked_manifest_is_complete_and_evidence_paths_exist():
-    reviewed_main, records = hygiene._load_dispositions(MANIFEST)
+def _payload() -> dict:
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
-    assert reviewed_main == REVIEWED_MAIN
-    assert set(records) == EXPECTED_BRANCHES
+
+def test_tracked_manifest_is_complete_archival_evidence():
+    payload = _payload()
+
+    assert payload["schema_version"] == 2
+    assert payload["status"] == "ARCHIVED_AFTER_SUCCESSFUL_SWEEP"
+    assert payload["cleanup_authority"] is False
+    assert payload["reviewed_against_main_sha"] == REVIEWED_MAIN
+    assert payload["completed_cleanup"] == {
+        "workflow": "Branch Hygiene",
+        "run_id": 31859527454,
+        "deleted": 26,
+        "skipped": 0,
+    }
+    assert payload["policy"] == {
+        "records_are_audit_evidence_only": True,
+        "records_must_not_authorize_future_ref_deletion": True,
+        "future_cleanup_requires_current_github_graph_or_tree_proof": True,
+    }
+
+    records = payload["records"]
+    assert isinstance(records, list)
+    assert {record["branch"] for record in records} == EXPECTED_BRANCHES
+    assert len(records) == len(EXPECTED_BRANCHES)
     assert sum(
         record["disposition"] == "SUPERSEDED_BY_STRONGER_MAIN"
-        for record in records.values()
+        for record in records
     ) == 24
     assert sum(
         record["disposition"] == "ALREADY_MERGED_ANCESTOR"
-        for record in records.values()
+        for record in records
     ) == 1
-    assert all(record["disposition"] != "MERGE_REQUIRED" for record in records.values())
-
-    for record in records.values():
-        for evidence in record["replacement_evidence"]:
-            assert (ROOT / evidence).exists(), f"missing replacement evidence: {evidence}"
 
 
-def _manifest(tmp_path, *, records, reviewed_main="a" * 40):
-    path = tmp_path / "dispositions.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "reviewed_against_main_sha": reviewed_main,
-                "records": records,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return path
+def test_archival_records_keep_exact_identity_and_replacement_evidence():
+    records = _payload()["records"]
+    seen: set[str] = set()
+
+    for record in records:
+        branch = record["branch"]
+        assert isinstance(branch, str) and branch and not branch.startswith("refs/")
+        assert branch not in seen
+        seen.add(branch)
+
+        branch_sha = record["branch_sha"]
+        assert isinstance(branch_sha, str) and SHA_RE.fullmatch(branch_sha)
+        assert record["disposition"] in ALLOWED_ARCHIVAL_DISPOSITIONS
+        assert isinstance(record["review_summary"], str)
+        assert record["review_summary"].strip()
+
+        evidence = record["replacement_evidence"]
+        assert isinstance(evidence, list)
+        assert all(isinstance(item, str) and item for item in evidence)
+        for path in evidence:
+            assert (ROOT / path).exists(), f"missing replacement evidence: {path}"
 
 
-def _record(branch="agent/example", sha="b" * 40, disposition="SUPERSEDED_BY_STRONGER_MAIN"):
-    return {
-        "branch": branch,
-        "branch_sha": sha,
-        "disposition": disposition,
-        "review_summary": "reviewed invariant is present in stronger main authority",
-        "replacement_evidence": ["database.py"],
-    }
+def test_archive_contains_no_future_merge_or_delete_instruction():
+    payload = _payload()
 
-
-def test_manifest_rejects_duplicate_branch(tmp_path):
-    path = _manifest(tmp_path, records=[_record(), _record()])
-    with pytest.raises(RuntimeError, match="duplicated"):
-        hygiene._load_dispositions(path)
-
-
-def test_manifest_rejects_invalid_exact_sha(tmp_path):
-    path = _manifest(tmp_path, records=[_record(sha="short")])
-    with pytest.raises(RuntimeError, match="SHA"):
-        hygiene._load_dispositions(path)
-
-
-def test_manifest_rejects_unknown_disposition(tmp_path):
-    path = _manifest(tmp_path, records=[_record(disposition="DELETE_IT")])
-    with pytest.raises(RuntimeError, match="value"):
-        hygiene._load_dispositions(path)
-
-
-class FakeApi:
-    repository = "FedorMilovanov/bible-bot"
-
-    def __init__(self, branch, sha, *, open_branch=False, reviewed_main_is_ancestor=True, move_branch=False, move_main=False):
-        self.branch = branch
-        self.sha = sha
-        self.open_branch = open_branch
-        self.reviewed_main_is_ancestor = reviewed_main_is_ancestor
-        self.move_branch = move_branch
-        self.move_main = move_main
-        self.deleted = []
-        self.branch_reads = 0
-        self.main_reads = 0
-
-    def repository_metadata(self):
-        return {"default_branch": "main"}
-
-    def ref_sha(self, ref):
-        if ref == "main":
-            self.main_reads += 1
-            if self.move_main and self.main_reads > 1:
-                return "f" * 40
-            return "c" * 40
-        if ref == self.branch:
-            self.branch_reads += 1
-            if self.move_branch and self.branch_reads > 1:
-                return "e" * 40
-            return self.sha
-        return None
-
-    def pulls(self, state):
-        if state == "open" and self.open_branch:
-            return [{"head": {"ref": self.branch, "sha": self.sha, "repo": {"full_name": self.repository}}}]
-        return []
-
-    def branches(self):
-        return [{"name": "main"}, {"name": self.branch}]
-
-    def is_ancestor(self, base_sha, head_sha):
-        assert head_sha == "c" * 40
-        if base_sha == REVIEWED_MAIN:
-            return self.reviewed_main_is_ancestor
-        return False
-
-    def patch_exactly_present_in(self, branch_sha, default_sha):
-        assert branch_sha == self.sha
-        assert default_sha == "c" * 40
-        return False
-
-    def delete_ref(self, ref):
-        self.deleted.append(ref)
-
-
-def _semantic_manifest(branch, sha, disposition="SUPERSEDED_BY_STRONGER_MAIN"):
-    return REVIEWED_MAIN, {
-        branch: _record(branch=branch, sha=sha, disposition=disposition)
-    }
-
-
-def test_semantic_disposition_deletes_exact_sha_even_for_explicit_non_service_branch(monkeypatch):
-    branch = "arena/reviewed-old-prototype"
-    sha = "b" * 40
-    monkeypatch.setattr(hygiene, "_load_dispositions", lambda: _semantic_manifest(branch, sha))
-    api = FakeApi(branch, sha)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == [branch]
-    assert skipped == []
-    assert api.deleted == [branch]
-
-
-def test_manifest_sha_mismatch_never_authorizes_semantic_delete(monkeypatch):
-    branch = "arena/reviewed-old-prototype"
-    current_sha = "b" * 40
-    monkeypatch.setattr(
-        hygiene,
-        "_load_dispositions",
-        lambda: _semantic_manifest(branch, "d" * 40),
-    )
-    api = FakeApi(branch, current_sha)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: unique content not proven in main (manifest SHA mismatch)"]
-
-
-def test_merge_required_disposition_always_blocks_delete(monkeypatch):
-    branch = "agent/needs-integration"
-    sha = "b" * 40
-    monkeypatch.setattr(
-        hygiene,
-        "_load_dispositions",
-        lambda: _semantic_manifest(branch, sha, "MERGE_REQUIRED"),
-    )
-    api = FakeApi(branch, sha, reviewed_main_is_ancestor=True)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: manifest requires integration"]
-
-
-def test_semantic_delete_requires_reviewed_main_to_remain_ancestor(monkeypatch):
-    branch = "agent/reviewed"
-    sha = "b" * 40
-    monkeypatch.setattr(hygiene, "_load_dispositions", lambda: _semantic_manifest(branch, sha))
-    api = FakeApi(branch, sha, reviewed_main_is_ancestor=False)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: unique content not proven in main"]
-
-
-def test_open_pr_blocks_manifest_cleanup(monkeypatch):
-    branch = "agent/reviewed"
-    sha = "b" * 40
-    monkeypatch.setattr(hygiene, "_load_dispositions", lambda: _semantic_manifest(branch, sha))
-    api = FakeApi(branch, sha, open_branch=True)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: open PR exists"]
-
-
-def test_branch_move_blocks_manifest_cleanup(monkeypatch):
-    branch = "agent/reviewed"
-    sha = "b" * 40
-    monkeypatch.setattr(hygiene, "_load_dispositions", lambda: _semantic_manifest(branch, sha))
-    api = FakeApi(branch, sha, move_branch=True)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: ref moved during cleanup"]
-
-
-def test_main_move_blocks_manifest_cleanup(monkeypatch):
-    branch = "agent/reviewed"
-    sha = "b" * 40
-    monkeypatch.setattr(hygiene, "_load_dispositions", lambda: _semantic_manifest(branch, sha))
-    api = FakeApi(branch, sha, move_main=True)
-
-    deleted, skipped = hygiene.cleanup(api)
-
-    assert deleted == []
-    assert skipped == [f"{branch}: main moved during content proof"]
+    assert payload["cleanup_authority"] is False
+    assert all(record["disposition"] != "MERGE_REQUIRED" for record in payload["records"])
+    assert all("delete" not in record["review_summary"].lower() for record in payload["records"])
