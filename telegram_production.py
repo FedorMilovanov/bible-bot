@@ -33,6 +33,7 @@ def _import_legacy_presentation():
 
 legacy = _import_legacy_presentation()
 
+import telegram_activity_controller as activity  # noqa: E402
 import telegram_course_surface as courses  # noqa: E402
 import telegram_admin_controller as admin  # noqa: E402
 import telegram_battle_controller as battles  # noqa: E402
@@ -211,7 +212,7 @@ def _touch_presentation_callback(update):
 
 async def _about_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer()
     await query.edit_message_text(
         "Bible quiz bot: 1 Peter\n"
@@ -225,21 +226,21 @@ async def _about_callback(update, context):
 
 
 async def _start_test_callback(update, context):
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer()
     await courses.choose_level(update, context, is_callback=True)
 
 
 async def _leaderboard_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer()
     await stats.show_general_leaderboard(query, 0)
 
 
 async def _leaderboard_page_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer()
     try:
         page = int((query.data or "").removeprefix("leaderboard_page_"))
@@ -250,7 +251,7 @@ async def _leaderboard_page_callback(update, context):
 
 async def _my_stats_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer()
     await stats.show_my_stats(query)
 
@@ -262,7 +263,7 @@ async def _achievements_callback(update, context):
 
 async def _coming_soon_callback(update, context):
     """Old deployed Chapter-2 button: redirect to the fresh catalog menu."""
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update, legacy_module=legacy)
     await query.answer("Меню курсов обновлено.")
     await courses.choose_level(update, context, is_callback=True)
 
