@@ -1,4 +1,5 @@
 from scripts.cleanup_closed_pr_branches import (
+    GitHubApi,
     _closed_head_shas,
     _eligible_ref,
     _open_head_refs,
@@ -63,12 +64,14 @@ class FakeApi:
         open_pulls=None,
         closed_pulls=None,
         ancestors=None,
+        exact_content=None,
         second_reads=None,
     ):
         self.current = {"main": "main-sha", **dict(current)}
         self.open_pulls = list(open_pulls or [])
         self.closed_pulls = list(closed_pulls or [])
         self.ancestors = set(ancestors or [])
+        self.exact_content = set(exact_content or [])
         self.second_reads = {
             key: list(values) for key, values in (second_reads or {}).items()
         }
@@ -95,9 +98,84 @@ class FakeApi:
         assert head_sha == "main-sha"
         return base_sha in self.ancestors
 
+    def patch_exactly_present_in(self, branch_sha, default_sha):
+        assert default_sha == "main-sha"
+        return branch_sha in self.exact_content
+
     def delete_ref(self, ref):
         self.deleted.append(ref)
         self.current.pop(ref, None)
+
+
+class PatchProofApi:
+    def __init__(self, files, contents):
+        self.files = files
+        self.contents = contents
+
+    def _compare(self, base_sha, head_sha):
+        assert base_sha == "main-sha"
+        assert head_sha == "branch-sha"
+        return {"files": self.files}
+
+    def content_sha(self, path, ref_sha):
+        assert ref_sha == "main-sha"
+        return self.contents.get(path)
+
+
+def _patch_proof(files, contents):
+    api = PatchProofApi(files, contents)
+    return GitHubApi.patch_exactly_present_in(api, "branch-sha", "main-sha")
+
+
+def test_exact_patch_proof_accepts_matching_modified_added_and_copied_blobs():
+    files = [
+        {"filename": "a.py", "status": "modified", "sha": "a1"},
+        {"filename": "b.py", "status": "added", "sha": "b1"},
+        {"filename": "c.py", "status": "copied", "sha": "c1"},
+    ]
+    assert _patch_proof(files, {"a.py": "a1", "b.py": "b1", "c.py": "c1"})
+
+
+def test_exact_patch_proof_rejects_one_mismatched_blob():
+    files = [{"filename": "a.py", "status": "modified", "sha": "branch"}]
+    assert not _patch_proof(files, {"a.py": "main"})
+
+
+def test_exact_patch_proof_accepts_removal_only_when_path_is_absent_in_main():
+    files = [{"filename": "old.py", "status": "removed", "sha": "old"}]
+    assert _patch_proof(files, {})
+    assert not _patch_proof(files, {"old.py": "still-present"})
+
+
+def test_exact_patch_proof_requires_both_sides_of_rename():
+    files = [
+        {
+            "filename": "new.py",
+            "previous_filename": "old.py",
+            "status": "renamed",
+            "sha": "new-blob",
+        }
+    ]
+    assert _patch_proof(files, {"new.py": "new-blob"})
+    assert not _patch_proof(
+        files,
+        {"new.py": "new-blob", "old.py": "old-still-present"},
+    )
+    assert not _patch_proof(files, {"new.py": "different"})
+
+
+def test_exact_patch_proof_fails_closed_at_compare_file_cap():
+    files = [
+        {"filename": f"f{i}.py", "status": "modified", "sha": f"s{i}"}
+        for i in range(300)
+    ]
+    contents = {f"f{i}.py": f"s{i}" for i in range(300)}
+    assert not _patch_proof(files, contents)
+
+
+def test_exact_patch_proof_rejects_unknown_status():
+    files = [{"filename": "a.py", "status": "mystery", "sha": "a1"}]
+    assert not _patch_proof(files, {"a.py": "a1"})
 
 
 def test_cleanup_deletes_ref_still_pinned_to_closed_pr_head():
@@ -132,6 +210,19 @@ def test_cleanup_deletes_service_branch_without_pr_when_commit_is_in_main():
     assert skipped == []
 
 
+def test_cleanup_deletes_divergent_branch_when_patch_is_byte_identical_in_main():
+    api = FakeApi(
+        current={"agent/cherry-picked": "aaa"},
+        exact_content={"aaa"},
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == ["agent/cherry-picked"]
+    assert api.deleted == ["agent/cherry-picked"]
+    assert skipped == []
+
+
 def test_cleanup_deletes_moved_closed_pr_branch_only_when_new_head_is_in_main():
     api = FakeApi(
         current={"agent/moved": "new"},
@@ -146,14 +237,14 @@ def test_cleanup_deletes_moved_closed_pr_branch_only_when_new_head_is_in_main():
     assert skipped == []
 
 
-def test_cleanup_retains_unique_unmerged_service_history():
+def test_cleanup_retains_unique_unmatched_service_content():
     api = FakeApi(current={"agent/unique": "aaa"})
 
     deleted, skipped = cleanup(api)
 
     assert deleted == []
     assert api.deleted == []
-    assert skipped == ["agent/unique: unique history not proven in main"]
+    assert skipped == ["agent/unique: unique content not proven in main"]
 
 
 def test_cleanup_never_deletes_branch_with_open_pr():
@@ -162,6 +253,7 @@ def test_cleanup_never_deletes_branch_with_open_pr():
         closed_pulls=[_pull("release/work", "aaa")],
         open_pulls=[_pull("release/work", "aaa")],
         ancestors={"aaa"},
+        exact_content={"aaa"},
     )
 
     deleted, skipped = cleanup(api)
@@ -199,6 +291,20 @@ def test_cleanup_rechecks_sha_immediately_before_ancestor_delete():
     assert skipped == ["agent/race: ref moved during cleanup"]
 
 
+def test_cleanup_rechecks_sha_immediately_before_exact_content_delete():
+    api = FakeApi(
+        current={"agent/race": "aaa"},
+        exact_content={"aaa"},
+        second_reads={"agent/race": ["aaa", "new"]},
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/race: ref moved during cleanup"]
+
+
 def test_cleanup_refuses_ancestor_delete_if_main_moves_after_proof():
     api = FakeApi(
         current={"agent/merged": "aaa"},
@@ -213,4 +319,21 @@ def test_cleanup_refuses_ancestor_delete_if_main_moves_after_proof():
 
     assert deleted == []
     assert api.deleted == []
-    assert skipped == ["agent/merged: main moved during ancestry check"]
+    assert skipped == ["agent/merged: main moved during content proof"]
+
+
+def test_cleanup_refuses_exact_content_delete_if_main_moves_after_proof():
+    api = FakeApi(
+        current={"agent/cherry-picked": "aaa"},
+        exact_content={"aaa"},
+        second_reads={
+            "main": ["main-sha", "new-main"],
+            "agent/cherry-picked": ["aaa", "aaa"],
+        },
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/cherry-picked: main moved during content proof"]

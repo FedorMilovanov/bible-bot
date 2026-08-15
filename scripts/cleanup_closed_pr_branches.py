@@ -4,14 +4,17 @@
 Safety rules:
 - only service-owned prefixes are eligible;
 - branches used by any open PR are never touched;
-- a branch is deletable when either:
+- a branch is deletable when one of three independent proofs succeeds:
   1. its current ref SHA still equals a SHA recorded on a closed PR for that
-     same ref, or
+     same ref;
   2. GitHub's commit graph proves its current SHA is already an ancestor of
-     the captured default-branch SHA;
-- moved/diverged/unmerged branches are retained;
+     the captured default-branch SHA; or
+  3. every path changed by the branch relative to its merge-base is already
+     byte-for-byte represented in the captured default-branch tree (including
+     removals and both sides of renames).
+- branches with any unmatched content remain untouched;
 - branch SHA is re-read immediately before DELETE;
-- for ancestry-based deletion, the default-branch SHA is also re-read before
+- for graph/content proofs, the default-branch SHA is also re-read before
   DELETE and the deletion is refused if main moved during the check;
 - main/default branches and fork heads are never touched.
 
@@ -31,6 +34,7 @@ API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
 ELIGIBLE_PREFIXES = ("agent/", "release/", "dependabot/")
 PAGE_SIZE = 100
+_MAX_COMPARE_FILES = 300
 
 
 def _eligible_ref(ref: str, *, default_branch: str) -> bool:
@@ -132,16 +136,90 @@ class GitHubApi:
         sha = obj.get("sha")
         return str(sha) if sha else None
 
-    def is_ancestor(self, base_sha: str, head_sha: str) -> bool:
+    def _compare(self, base_sha: str, head_sha: str) -> dict:
         value = self.request(
             "GET",
             f"/repos/{self.repository}/compare/{quote(base_sha, safe='')}...{quote(head_sha, safe='')}",
         )
         if not isinstance(value, dict):
             raise RuntimeError("GitHub compare response is malformed")
+        return value
+
+    def is_ancestor(self, base_sha: str, head_sha: str) -> bool:
+        value = self._compare(base_sha, head_sha)
         status = str(value.get("status") or "")
         behind_by = value.get("behind_by")
         return status in {"ahead", "identical"} and behind_by == 0
+
+    def content_sha(self, path: str, ref_sha: str) -> str | None:
+        encoded_path = quote(path, safe="/")
+        encoded_ref = quote(ref_sha, safe="")
+        try:
+            value = self.request(
+                "GET",
+                f"/repos/{self.repository}/contents/{encoded_path}?ref={encoded_ref}",
+            )
+        except HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise
+        if not isinstance(value, dict):
+            raise RuntimeError("GitHub content response is malformed")
+        sha = value.get("sha")
+        return str(sha) if sha else None
+
+    def patch_exactly_present_in(self, branch_sha: str, default_sha: str) -> bool:
+        """Prove the branch-side patch tree is already represented in main.
+
+        GitHub's three-dot compare reports files changed by ``branch_sha`` from
+        the merge-base with ``default_sha``. We compare each resulting Git blob
+        (or deletion) against the captured default tree. This is intentionally
+        stronger than semantic similarity: one unmatched byte keeps the branch.
+        """
+        value = self._compare(default_sha, branch_sha)
+        files = value.get("files")
+        if not isinstance(files, list):
+            return False
+        # GitHub caps compare file results at 300. Exactly hitting the cap is
+        # ambiguous, so fail closed instead of proving an incomplete footprint.
+        if len(files) >= _MAX_COMPARE_FILES:
+            return False
+
+        for item in files:
+            if not isinstance(item, dict):
+                return False
+            filename = str(item.get("filename") or "")
+            status = str(item.get("status") or "")
+            branch_blob = str(item.get("sha") or "")
+            if not filename:
+                return False
+
+            if status == "removed":
+                if self.content_sha(filename, default_sha) is not None:
+                    return False
+                continue
+
+            if status == "renamed":
+                previous = str(item.get("previous_filename") or "")
+                if not previous or not branch_blob:
+                    return False
+                if self.content_sha(filename, default_sha) != branch_blob:
+                    return False
+                if self.content_sha(previous, default_sha) is not None:
+                    return False
+                continue
+
+            if status in {"added", "modified", "changed", "copied"}:
+                if not branch_blob:
+                    return False
+                if self.content_sha(filename, default_sha) != branch_blob:
+                    return False
+                continue
+
+            # Unknown/new GitHub statuses are not cleanup authority.
+            return False
+
+        return True
 
     def delete_ref(self, ref: str) -> None:
         encoded = quote(ref, safe="")
@@ -189,11 +267,18 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
 
         closed_match = current_sha in closed_shas.get(ref, set())
         ancestry_match = False
+        exact_content_match = False
         if not closed_match:
             ancestry_match = api.is_ancestor(current_sha, default_sha)
             if not ancestry_match:
-                skipped.append(f"{ref}: unique history not proven in {default_branch}")
-                continue
+                exact_content_match = api.patch_exactly_present_in(
+                    current_sha, default_sha
+                )
+                if not exact_content_match:
+                    skipped.append(
+                        f"{ref}: unique content not proven in {default_branch}"
+                    )
+                    continue
 
         # Re-read immediately before deletion. We never force-update a ref and
         # refuse to delete if the branch has moved since the proof was made.
@@ -202,10 +287,10 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
             skipped.append(f"{ref}: ref moved during cleanup")
             continue
 
-        if ancestry_match:
+        if ancestry_match or exact_content_match:
             confirmed_default_sha = api.ref_sha(default_branch)
             if confirmed_default_sha != default_sha:
-                skipped.append(f"{ref}: {default_branch} moved during ancestry check")
+                skipped.append(f"{ref}: {default_branch} moved during content proof")
                 continue
 
         api.delete_ref(ref)
