@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_VERSION = "3.11.15"
+PYTHON_VERSION = "3.14.6"
 PRODUCTION_ENTRYPOINT = "production_entrypoint.py"
 PRODUCTION_CONTROLLER = "telegram_production.py"
 
