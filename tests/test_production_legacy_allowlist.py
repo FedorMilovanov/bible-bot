@@ -30,11 +30,8 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "review_errors_handler",
     "review_test_handler",
     "show_achievements",
-    "show_general_leaderboard",
     "show_history",
-    "show_my_stats",
     "show_weekly_leaderboard",
-    "stats_command",
 }
 
 _NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}

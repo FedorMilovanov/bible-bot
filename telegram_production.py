@@ -46,6 +46,7 @@ import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
+import telegram_stats_controller as stats  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
 from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
 from web_api.db_hardening import (  # noqa: E402
@@ -188,6 +189,14 @@ async def _menu(update, context):
         context.args = original_args
 
 
+async def _stats_command(update, context):
+    return await stats.stats_command(
+        update,
+        context,
+        main_keyboard_factory=legacy._main_keyboard,
+    )
+
+
 async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
     legacy.report_drafts.pop(update.effective_user.id, None)
@@ -225,7 +234,7 @@ async def _leaderboard_callback(update, context):
     del context
     query = _touch_presentation_callback(update)
     await query.answer()
-    await legacy.show_general_leaderboard(query, 0)
+    await stats.show_general_leaderboard(query, 0)
 
 
 async def _leaderboard_page_callback(update, context):
@@ -236,14 +245,14 @@ async def _leaderboard_page_callback(update, context):
         page = int((query.data or "").removeprefix("leaderboard_page_"))
     except (TypeError, ValueError):
         return
-    await legacy.show_general_leaderboard(query, page)
+    await stats.show_general_leaderboard(query, page)
 
 
 async def _my_stats_callback(update, context):
     del context
     query = _touch_presentation_callback(update)
     await query.answer()
-    await legacy.show_my_stats(query)
+    await stats.show_my_stats(query)
 
 
 async def _achievements_callback(update, context):
@@ -316,7 +325,7 @@ def main() -> None:
     app.add_handler(CommandHandler("app", _app_command))
     app.add_handler(CommandHandler("menu", _menu))
     app.add_handler(CommandHandler("test", courses.choose_level))
-    app.add_handler(CommandHandler("stats", legacy.stats_command))
+    app.add_handler(CommandHandler("stats", _stats_command))
     app.add_handler(CommandHandler("random", quiz.random_command))
     app.add_handler(CommandHandler("reset", quiz.reset_command))
     app.add_handler(CommandHandler("cancel", quiz.cancel))
