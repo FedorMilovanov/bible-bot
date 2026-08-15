@@ -28,7 +28,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "report_menu",
     "review_errors_handler",
     "review_test_handler",
-    "show_achievements",
 }
 
 _NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}

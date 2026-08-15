@@ -33,6 +33,7 @@ def _import_legacy_presentation():
 
 legacy = _import_legacy_presentation()
 
+import telegram_achievement_controller as achievements  # noqa: E402
 import telegram_course_surface as courses  # noqa: E402
 import telegram_admin_controller as admin  # noqa: E402
 import telegram_battle_controller as battles  # noqa: E402
@@ -256,8 +257,11 @@ async def _my_stats_callback(update, context):
 
 
 async def _achievements_callback(update, context):
-    _touch_presentation_callback(update)
-    await legacy.show_achievements(update, context)
+    return await achievements.show_achievements(
+        update,
+        context,
+        legacy_module=legacy,
+    )
 
 
 async def _coming_soon_callback(update, context):
