@@ -40,6 +40,7 @@ import telegram_battle_create_controller as battle_create  # noqa: E402
 import telegram_battle_share_controller as battle_share  # noqa: E402
 import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
+import telegram_command_menu_retry as command_menu  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
@@ -135,7 +136,14 @@ async def _app_command(update, context):
 
 async def _sync_public_command_menu_job(context):
     try:
-        await context.bot.set_my_commands(_PUBLIC_BOT_COMMANDS)
+        synchronized = await command_menu.sync_public_commands_once(
+            context,
+            _PUBLIC_BOT_COMMANDS,
+            _sync_public_command_menu_job,
+        )
+        if not synchronized:
+            logger.warning("Telegram public command menu rate-limited; retry scheduled")
+            return
         logger.info(
             "Telegram public command menu synchronized (%d commands)",
             len(_PUBLIC_BOT_COMMANDS),
