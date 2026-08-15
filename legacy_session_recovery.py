@@ -137,7 +137,7 @@ def _persisted_answer_timeline(session: dict) -> tuple[datetime, list[datetime]]
     if not math.isfinite(started_epoch) or started_epoch < 0:
         return None
     try:
-        started = datetime.utcfromtimestamp(started_epoch)
+        started = datetime.fromtimestamp(started_epoch, UTC).replace(tzinfo=None)
     except (OSError, OverflowError, ValueError):
         return None
 
