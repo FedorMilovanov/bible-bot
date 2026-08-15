@@ -1,7 +1,7 @@
 from scripts.cleanup_closed_pr_branches import (
     GitHubApi,
-    _closed_head_shas,
     _eligible_ref,
+    _merged_default_head_shas,
     _open_head_refs,
     cleanup,
 )
@@ -10,13 +10,26 @@ from scripts.cleanup_closed_pr_branches import (
 REPO = "FedorMilovanov/bible-bot"
 
 
-def _pull(ref, sha, *, repo=REPO):
+def _pull(
+    ref,
+    sha,
+    *,
+    head_repo=REPO,
+    base_repo=REPO,
+    base_ref="main",
+    merged=True,
+):
     return {
+        "merged_at": "2026-08-15T00:00:00Z" if merged else None,
         "head": {
             "ref": ref,
             "sha": sha,
-            "repo": {"full_name": repo} if repo else None,
-        }
+            "repo": {"full_name": head_repo} if head_repo else None,
+        },
+        "base": {
+            "ref": base_ref,
+            "repo": {"full_name": base_repo} if base_repo else None,
+        },
     }
 
 
@@ -25,30 +38,33 @@ def test_only_service_owned_work_prefixes_are_eligible():
     assert _eligible_ref("release/runtime", default_branch="main") is True
     assert _eligible_ref("dependabot/pip/pytest", default_branch="main") is True
     assert _eligible_ref("feature/user-work", default_branch="main") is False
+    assert _eligible_ref("arena/old", default_branch="main") is False
     assert _eligible_ref("main", default_branch="main") is False
 
 
-def test_closed_head_map_ignores_forks_and_non_service_branches():
+def test_merged_head_map_requires_same_repo_default_branch_merge():
     pulls = [
-        _pull("agent/a", "aaa"),
-        _pull("agent/a", "bbb"),
-        _pull("feature/manual", "ccc"),
-        _pull("release/fork", "ddd", repo="someone/fork"),
+        _pull("agent/good", "aaa"),
+        _pull("agent/closed-only", "bbb", merged=False),
+        _pull("agent/staging", "ccc", base_ref="staging"),
+        _pull("agent/fork-head", "ddd", head_repo="someone/fork"),
+        _pull("agent/fork-base", "eee", base_repo="someone/fork"),
+        _pull("feature/manual", "fff"),
     ]
 
-    result = _closed_head_shas(
+    result = _merged_default_head_shas(
         pulls,
         repository=REPO,
         default_branch="main",
     )
 
-    assert result == {"agent/a": {"aaa", "bbb"}}
+    assert result == {"agent/good": {"aaa"}}
 
 
 def test_open_refs_only_include_same_repository_heads():
     pulls = [
         _pull("agent/open", "aaa"),
-        _pull("agent/fork", "bbb", repo="someone/fork"),
+        _pull("agent/fork", "bbb", head_repo="someone/fork"),
     ]
 
     assert _open_head_refs(pulls, repository=REPO) == {"agent/open"}
@@ -178,23 +194,82 @@ def test_exact_patch_proof_rejects_unknown_status():
     assert not _patch_proof(files, {"a.py": "a1"})
 
 
-def test_cleanup_deletes_ref_still_pinned_to_closed_pr_head():
+def test_cleanup_deletes_exact_head_of_pr_merged_into_main():
     api = FakeApi(
-        current={
-            "agent/stale": "aaa",
-            "feature/manual": "ccc",
-        },
-        closed_pulls=[
-            _pull("agent/stale", "aaa"),
-            _pull("feature/manual", "ccc"),
-        ],
+        current={"agent/merged": "aaa"},
+        closed_pulls=[_pull("agent/merged", "aaa")],
     )
 
     deleted, skipped = cleanup(api)
 
-    assert deleted == ["agent/stale"]
-    assert api.deleted == ["agent/stale"]
+    assert deleted == ["agent/merged"]
     assert skipped == []
+
+
+def test_closed_but_unmerged_pr_is_not_deletion_authority():
+    api = FakeApi(
+        current={"agent/closed-only": "aaa"},
+        closed_pulls=[_pull("agent/closed-only", "aaa", merged=False)],
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/closed-only: unique content not proven in main"]
+
+
+def test_pr_merged_into_non_default_branch_is_not_deletion_authority():
+    api = FakeApi(
+        current={"agent/staging": "aaa"},
+        closed_pulls=[_pull("agent/staging", "aaa", base_ref="staging")],
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/staging: unique content not proven in main"]
+
+
+def test_closed_unmerged_branch_can_still_delete_when_ancestor_of_main():
+    api = FakeApi(
+        current={"agent/closed-ancestor": "aaa"},
+        closed_pulls=[_pull("agent/closed-ancestor", "aaa", merged=False)],
+        ancestors={"aaa"},
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == ["agent/closed-ancestor"]
+    assert skipped == []
+
+
+def test_closed_unmerged_branch_can_still_delete_when_patch_is_exactly_in_main():
+    api = FakeApi(
+        current={"agent/closed-cherry-pick": "aaa"},
+        closed_pulls=[_pull("agent/closed-cherry-pick", "aaa", merged=False)],
+        exact_content={"aaa"},
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == ["agent/closed-cherry-pick"]
+    assert skipped == []
+
+
+def test_cleanup_ignores_non_service_historical_refs():
+    api = FakeApi(
+        current={"arena/old-audit-ref": "aaa", "feature/manual": "bbb"},
+        ancestors={"aaa", "bbb"},
+        exact_content={"aaa", "bbb"},
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert skipped == []
+    assert api.deleted == []
 
 
 def test_cleanup_deletes_service_branch_without_pr_when_commit_is_in_main():
@@ -206,7 +281,6 @@ def test_cleanup_deletes_service_branch_without_pr_when_commit_is_in_main():
     deleted, skipped = cleanup(api)
 
     assert deleted == ["agent/already-merged"]
-    assert api.deleted == ["agent/already-merged"]
     assert skipped == []
 
 
@@ -219,11 +293,10 @@ def test_cleanup_deletes_divergent_branch_when_patch_is_byte_identical_in_main()
     deleted, skipped = cleanup(api)
 
     assert deleted == ["agent/cherry-picked"]
-    assert api.deleted == ["agent/cherry-picked"]
     assert skipped == []
 
 
-def test_cleanup_deletes_moved_closed_pr_branch_only_when_new_head_is_in_main():
+def test_cleanup_deletes_moved_merged_pr_branch_only_when_new_head_is_in_main():
     api = FakeApi(
         current={"agent/moved": "new"},
         closed_pulls=[_pull("agent/moved", "old")],
@@ -233,7 +306,6 @@ def test_cleanup_deletes_moved_closed_pr_branch_only_when_new_head_is_in_main():
     deleted, skipped = cleanup(api)
 
     assert deleted == ["agent/moved"]
-    assert api.deleted == ["agent/moved"]
     assert skipped == []
 
 
@@ -251,7 +323,7 @@ def test_cleanup_never_deletes_branch_with_open_pr():
     api = FakeApi(
         current={"release/work": "aaa"},
         closed_pulls=[_pull("release/work", "aaa")],
-        open_pulls=[_pull("release/work", "aaa")],
+        open_pulls=[_pull("release/work", "aaa", merged=False)],
         ancestors={"aaa"},
         exact_content={"aaa"},
     )
@@ -263,7 +335,7 @@ def test_cleanup_never_deletes_branch_with_open_pr():
     assert skipped == ["release/work: open PR exists"]
 
 
-def test_cleanup_rechecks_sha_immediately_before_closed_pr_delete():
+def test_cleanup_rechecks_sha_immediately_before_merged_pr_delete():
     api = FakeApi(
         current={"agent/race": "aaa"},
         closed_pulls=[_pull("agent/race", "aaa")],
