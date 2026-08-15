@@ -7,6 +7,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 import legacy_battle_session as session
 from legacy_battle_protocols import BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE
+from legacy_battle_ready_delivery import BATTLE_READY_DELIVERY_PROTOCOL
 
 
 QUESTION = {"question": "Кто?", "options": ["Пётр", "Павел"], "correct": 0}
@@ -141,6 +142,11 @@ def test_opponent_claim_is_protocol_bound_owner_safe_and_records_join_time(monke
     assert update["$set"]["status"] == "in_progress"
     assert update["$set"]["joined_at_dt"] == now
     assert update["$set"]["updated_at"] == now.isoformat()
+    assert update["$set"]["creator_ready_delivery"] == {
+        "protocol": BATTLE_READY_DELIVERY_PROTOCOL,
+        "delivered": False,
+        "attempts": 0,
+    }
 
 
 @pytest.mark.parametrize("creator_id", [True, 0, -1, "101"])

@@ -69,3 +69,22 @@ def test_cancel_never_uses_legacy_destructive_delete():
     assert "cancel_unstarted_battle" in cancel
     assert "asyncio.to_thread(" in cancel
     assert "delete_battle_for_participant(" not in cancel
+
+
+def test_join_routes_creator_ready_notice_through_durable_adapter():
+    join = async_function("join_battle")
+    assert "claim_durable_battle_opponent" in join
+    assert "ready_delivery.deliver_creator_ready_once" in join
+    assert "context.bot.send_message(" not in join
+    assert join.index("claim_durable_battle_opponent") < join.index(
+        "ready_delivery.deliver_creator_ready_once"
+    )
+
+
+def test_maintenance_drains_ready_outbox_before_shared_finalization():
+    maintenance = async_function("battle_maintenance_job")
+    assert "ready_delivery.drain_creator_ready_outbox" in maintenance
+    assert "finalize_ready_battles" in maintenance
+    assert maintenance.index("ready_delivery.drain_creator_ready_outbox") < maintenance.index(
+        "finalize_ready_battles"
+    )

@@ -106,15 +106,21 @@ def test_handle_start_deep_link_returns_false_for_ordinary_start(monkeypatch):
     assert update.effective_message.replies == []
 
 
-def test_handle_start_deep_link_claims_exact_battle_and_notifies_creator(monkeypatch):
+def test_handle_start_deep_link_claims_exact_battle_and_routes_creator_notice(monkeypatch):
     battle_id = "battle_0123456789abcdef"
     claims = []
+    ready_calls = []
 
     def claim(*args, **kwargs):
         claims.append((args, kwargs))
         return _battle(battle_id)
 
+    async def deliver(bot, battle_id_arg, *, start_payload_builder):
+        ready_calls.append((bot, battle_id_arg, start_payload_builder))
+        return True
+
     monkeypatch.setattr(share, "claim_durable_battle_opponent", claim)
+    monkeypatch.setattr(share.ready_delivery, "deliver_creator_ready_once", deliver)
     message = _Message()
     bot = _Bot()
     update = SimpleNamespace(
@@ -131,10 +137,8 @@ def test_handle_start_deep_link_claims_exact_battle_and_notifies_creator(monkeyp
     assert reply_markup.inline_keyboard[0][0].callback_data == (
         f"start_battle_{battle_id}_opponent"
     )
-    assert bot.sent[0]["chat_id"] == 42
-    assert bot.sent[0]["reply_markup"].inline_keyboard[0][0].callback_data == (
-        f"start_battle_{battle_id}_creator"
-    )
+    assert ready_calls == [(bot, battle_id, share.battles._start_payload)]
+    assert bot.sent == []
 
 
 def test_handle_start_deep_link_fails_closed_for_stale_or_unavailable_battle(monkeypatch):
