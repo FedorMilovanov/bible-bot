@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import telegram_battle_controller as battles
+import telegram_battle_ready_delivery as ready_delivery
 from legacy_battle_session import (
     LegacyBattleSessionConflict,
     LegacyBattleSessionUnavailable,
@@ -93,27 +94,21 @@ def _opponent_start_markup(battle_id: str) -> InlineKeyboardMarkup:
 
 
 async def _notify_creator_ready(bot, battle: dict, opponent_name: str) -> None:
+    del opponent_name
+    battle_id = battle.get("_id") if isinstance(battle, dict) else None
+    if not isinstance(battle_id, str) or not battle_id:
+        logger.warning("creator durable-share notification has no battle id")
+        return
     try:
-        await bot.send_message(
-            chat_id=int(battle["creator_id"]),
-            text=f"⚔️ *Соперник найден:* {opponent_name}\nМожно начинать битву.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "▶️ Начать",
-                            callback_data=battles._start_payload(
-                                battle["_id"],
-                                "creator",
-                            ),
-                        )
-                    ]
-                ]
-            ),
-            parse_mode="Markdown",
+        await ready_delivery.deliver_creator_ready_once(
+            bot,
+            battle_id,
+            start_payload_builder=battles._start_payload,
         )
     except Exception:
-        logger.info("creator durable-share notification was not delivered", exc_info=True)
+        # The opponent claim already staged the durable marker. A transient
+        # failure remains recoverable by battle_maintenance_job.
+        logger.warning("creator durable-share notification remains pending", exc_info=True)
 
 
 async def create_battle(update, context):

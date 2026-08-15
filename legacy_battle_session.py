@@ -9,6 +9,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from legacy_battle_callback_protocol import callback_matches_battle
 from legacy_battle_progress import battle_question_id
 from legacy_battle_protocols import BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE
+from legacy_battle_ready_delivery import battle_ready_delivery_marker
 
 
 class LegacyBattleSessionUnavailable(RuntimeError):
@@ -217,6 +218,7 @@ def claim_durable_battle_opponent(
                     "status": "in_progress",
                     "joined_at_dt": now,
                     "updated_at": now.isoformat(),
+                    "creator_ready_delivery": battle_ready_delivery_marker(),
                 }
             },
             return_document=ReturnDocument.AFTER,

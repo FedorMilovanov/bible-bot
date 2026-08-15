@@ -11,6 +11,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 
 import bot as legacy
+import telegram_battle_ready_delivery as ready_delivery
 from battle_integrity import (
     BATTLE_DELIVERY_PROTOCOL_OUTBOX,
     BattleStoreUnavailable,
@@ -208,16 +209,15 @@ async def join_battle(update, context):
         parse_mode="Markdown",
     )
     try:
-        await context.bot.send_message(
-            chat_id=int(battle["creator_id"]),
-            text=f"⚔️ *Соперник найден:* {user.first_name or 'Игрок'}\nМожно начинать битву.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("▶️ Начать", callback_data=_start_payload(battle_id, "creator"))]
-            ]),
-            parse_mode="Markdown",
+        await ready_delivery.deliver_creator_ready_once(
+            context.bot,
+            battle_id,
+            start_payload_builder=_start_payload,
         )
     except Exception:
-        logger.info("creator battle-ready notification was not delivered", exc_info=True)
+        # Opponent claim and pending marker are already durable. Maintenance
+        # will retry transient delivery failures without rolling back the join.
+        logger.warning("creator battle-ready notification remains pending", exc_info=True)
 
 
 def _parse_start(payload: str | None) -> tuple[str, str]:
@@ -524,6 +524,16 @@ async def cancel_battle(update, context):
 
 
 async def battle_maintenance_job(context):
+    try:
+        ready_summary = await ready_delivery.drain_creator_ready_outbox(
+            context.bot,
+            start_payload_builder=_start_payload,
+            limit=50,
+        )
+        if ready_summary.errors:
+            logger.warning("battle-ready outbox sweep errors: %s", ready_summary.errors)
+    except Exception:
+        logger.exception("battle-ready outbox maintenance failed")
     finalization = await asyncio.to_thread(finalize_ready_battles, limit=50)
     if finalization.errors:
         logger.warning("battle finalization sweep errors: %s", finalization.errors)
