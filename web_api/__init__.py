@@ -83,6 +83,37 @@ def create_app():
             200 if ready else 503,
         )
 
+    @app.get("/production/ready")
+    def _production_ready():
+        """Render readiness gate: database and Telegram ingress must both be usable."""
+        try:
+            from database import check_db_connection
+
+            database_ready = bool(check_db_connection())
+        except Exception:
+            database_ready = False
+
+        try:
+            mode = telegram_transport_mode()
+        except TransportConfigurationError:
+            mode = "invalid"
+            telegram_ready = False
+        else:
+            telegram_ready = mode == "polling" or TELEGRAM_WEBHOOK_BRIDGE.ready()
+
+        ready = database_ready and telegram_ready
+        return (
+            jsonify(
+                {
+                    "status": "ready" if ready else "not_ready",
+                    "database": database_ready,
+                    "telegram": telegram_ready,
+                    "transport": mode,
+                }
+            ),
+            200 if ready else 503,
+        )
+
     @app.post(WEBHOOK_PATH)
     def _telegram_webhook():
         try:
@@ -204,7 +235,11 @@ def create_app():
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
-        if request.path.startswith("/api/") or request.path.startswith("/telegram/"):
+        if (
+            request.path.startswith("/api/")
+            or request.path.startswith("/telegram/")
+            or request.path.startswith("/production/")
+        ):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         else:
