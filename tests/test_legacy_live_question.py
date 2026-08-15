@@ -82,6 +82,20 @@ def test_memory_only_review_uses_same_target_but_no_mongo(monkeypatch):
     assert data["callback_scope_id"] == target.attempt_id
 
 
+@pytest.mark.parametrize("session_id", ["", 0, False])
+def test_malformed_session_id_fails_closed_before_ram_timer(monkeypatch, session_id):
+    data = _data(session_id=session_id)
+    target = question.capture_live_question_target(data)
+    monkeypatch.setattr(
+        question,
+        "mark_question_sent_once",
+        lambda *_args, **_kwargs: pytest.fail("malformed session id must not reach timer store"),
+    )
+    with pytest.raises(question.LegacyLiveQuestionStateInvalid, match="session_id"):
+        question.mark_live_question_sent(42, data, target, sent_at=12.5)
+    assert "question_sent_at" not in data
+
+
 def test_invalid_current_question_or_sent_at_fails_before_store(monkeypatch):
     with pytest.raises(question.LegacyLiveQuestionStateInvalid, match="current_question"):
         question.capture_live_question_target(_data(index=-1))
