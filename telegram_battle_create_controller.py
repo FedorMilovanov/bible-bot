@@ -2,6 +2,7 @@
 """Replay-safe production adapter for creating durable shared PvP battles."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 
@@ -87,7 +88,7 @@ async def create_battle(update, context):
     query = update.callback_query
     user = query.from_user
     try:
-        battle, _created = create_or_recover_battle(update, user)
+        battle, _created = await asyncio.to_thread(create_or_recover_battle, update, user)
     except ValueError as exc:
         if "questions" in str(exc):
             await query.answer("⚠️ Вопросы для битвы не найдены.", show_alert=True)

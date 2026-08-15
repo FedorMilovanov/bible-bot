@@ -1,5 +1,6 @@
 import asyncio
 import os
+import threading
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -133,15 +134,36 @@ def test_existing_deterministic_id_must_be_creator_owned(monkeypatch):
         )
 
 
-def test_rendered_share_link_uses_deterministic_created_id(monkeypatch):
+def test_create_battle_runs_create_or_recover_off_event_loop_thread(monkeypatch):
     battle_id = create.battle_id_for_update(101)
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def create_or_recover(_update, _user):
+        worker_threads.append(threading.get_ident())
+        return battle(battle_id), True
+
+    monkeypatch.setattr(create, "create_or_recover_battle", create_or_recover)
+    query = Query()
+    update = SimpleNamespace(update_id=101, callback_query=query)
+
+    run(create.create_battle(update, SimpleNamespace(bot=Bot())))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert query.answers == [(None, False)]
+    assert len(query.edits) == 1
+
+
+def test_rendered_share_link_uses_deterministic_created_id(monkeypatch):
+    battle_id = create.battle_id_for_update(102)
     monkeypatch.setattr(
         create,
         "create_or_recover_battle",
         lambda _update, _user: (battle(battle_id), True),
     )
     query = Query()
-    update = SimpleNamespace(update_id=101, callback_query=query)
+    update = SimpleNamespace(update_id=102, callback_query=query)
 
     run(create.create_battle(update, SimpleNamespace(bot=Bot())))
 
