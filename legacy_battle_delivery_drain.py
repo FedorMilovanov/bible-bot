@@ -1,6 +1,7 @@
 """Battle-only durable outbox drain for production Telegram PvP results."""
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -42,7 +43,7 @@ async def drain_pending_battles(
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
         raise ValueError("limit must be a positive integer")
     try:
-        battles = get_pending_final_battles(limit)
+        battles = await asyncio.to_thread(get_pending_final_battles, limit)
     except BattleStoreUnavailable as exc:
         return BattleDeliveryDrainSummary(
             errors=(f"battle-list:<queue>:{type(exc).__name__}:{exc}"[:500],)

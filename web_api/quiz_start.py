@@ -23,7 +23,14 @@ from .db_hardening import OPEN_STATUSES
 
 logger = logging.getLogger(__name__)
 _CLIENT_POLICY_FIELDS = frozenset(
-    {"ranked", "scoring_mode", "points_per_question", "score_multiplier"}
+    {
+        "ranked",
+        "scoring_mode",
+        "points_per_question",
+        "score_multiplier",
+        "pool",
+        "multiplier",
+    }
 )
 
 
@@ -252,7 +259,10 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         "leaderboard_recorded": False,
     }
     try:
-        sessions.insert_one(document)
+        inserted = sessions.insert_one(document)
+        if getattr(inserted, "acknowledged", True) is not True:
+            logger.error("Mini App quiz session insert was not acknowledged")
+            return None, "database temporarily unavailable", 503
     except DuplicateKeyError:
         logger.info("open Mini App session already exists for user %s", user["id"])
         return None, "another unfinished quiz already exists; retry start", 409

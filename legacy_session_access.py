@@ -153,7 +153,11 @@ def create_quiz_session_strict(
         "updated_at_dt": now,
     }
     try:
-        collection.insert_one(doc)
+        write = collection.insert_one(doc)
+        if getattr(write, "acknowledged", True) is not True:
+            raise QuizSessionAccessUnavailable(
+                "quiz session insert was not acknowledged"
+            )
         return doc
     except DuplicateKeyError as exc:
         try:
@@ -171,6 +175,8 @@ def create_quiz_session_strict(
         raise QuizSessionAccessSchemaInvalid(
             "quiz session insert hit an unexplained duplicate key"
         ) from exc
+    except QuizSessionAccessUnavailable:
+        raise
     except PyMongoError as exc:
         raise QuizSessionAccessUnavailable("quiz session creation failed") from exc
 

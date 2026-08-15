@@ -15,6 +15,7 @@ Nothing starts a background task on import.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -101,8 +102,8 @@ async def report_start(update, context):
         return ConversationHandler.END
 
     user_id = query.from_user.id
-    if not legacy.can_submit_report(user_id):
-        remaining = legacy.seconds_until_next_report(user_id)
+    if not await asyncio.to_thread(legacy.can_submit_report, user_id):
+        remaining = await asyncio.to_thread(legacy.seconds_until_next_report, user_id)
         await query.answer(
             f"⏳ Слишком часто. Попробуй через {remaining} сек.",
             show_alert=True,
@@ -280,12 +281,14 @@ async def report_confirm(update, context):
 
     report_id = draft.get("report_id")
     try:
-        accepted = accept_report_draft_once(
-            user_id=user_id,
-            username=user.username,
-            first_name=user.first_name,
-            draft=draft,
-            context=_draft_context(user_id),
+        accepted = await asyncio.to_thread(
+            lambda: accept_report_draft_once(
+                user_id=user_id,
+                username=user.username,
+                first_name=user.first_name,
+                draft=draft,
+                context=_draft_context(user_id),
+            )
         )
     except (LegacyReportDraftInvalid, ReportStoreUnavailable, ValueError):
         logger.warning("durable report acceptance failed for user %s", user_id, exc_info=True)
@@ -376,14 +379,16 @@ async def report_inaccuracy_handler(update, context):
         return
 
     try:
-        accept_inaccuracy_report_once(
-            user_id=user_id,
-            username=user.username,
-            first_name=user.first_name,
-            attempt_id=attempt_id,
-            question_index=question_index,
-            question=questions[question_index],
-            level_name=data.get("level_name"),
+        await asyncio.to_thread(
+            lambda: accept_inaccuracy_report_once(
+                user_id=user_id,
+                username=user.username,
+                first_name=user.first_name,
+                attempt_id=attempt_id,
+                question_index=question_index,
+                question=questions[question_index],
+                level_name=data.get("level_name"),
+            )
         )
     except (LegacyInaccuracyReportInvalid, ReportStoreUnavailable, ValueError):
         logger.warning("inaccuracy report acceptance failed for user %s", user_id, exc_info=True)
