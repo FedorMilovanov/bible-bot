@@ -1,7 +1,7 @@
 import copy
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -109,7 +109,7 @@ def _receipt():
         "kind": "challenge",
         "level_key": "random20",
         "week_id": "2026-W32",
-        "applied_at": datetime.utcnow(),
+        "applied_at": datetime.now(UTC).replace(tzinfo=None),
     }
 
 
