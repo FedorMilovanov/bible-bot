@@ -1,5 +1,6 @@
 import asyncio
 import os
+import threading
 
 os.environ.setdefault("ADMIN_USER_ID", "1")
 
@@ -96,6 +97,25 @@ def test_admin_hard_questions_is_read_only_presentation(monkeypatch):
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "admin_back"
 
 
+def test_admin_hard_questions_db_read_runs_off_event_loop_thread(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def read_hardest(limit=10):
+        assert limit == 10
+        worker_threads.append(threading.get_ident())
+        return []
+
+    monkeypatch.setattr(admin.legacy, "get_hardest_questions", read_hardest)
+    query = _Query(data="admin_hard_questions")
+
+    _run(admin.admin_read_callback(_Update(query), object()))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert "No statistics yet." in query.edits[0][0]
+
+
 def test_admin_active_sessions_reads_process_local_projection(monkeypatch):
     monkeypatch.setattr(
         admin.legacy,
@@ -161,6 +181,27 @@ def test_cleanup_uses_recovery_safe_battle_policy_then_prunes_stale_ram(monkeypa
     assert "Safely deleted pre-progress battles: 3" in text
     assert "Removed user_data records: 2" in text
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "admin_back"
+
+
+def test_cleanup_db_delete_runs_off_event_loop_thread(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def safe_cleanup(**kwargs):
+        assert kwargs == {"max_age_minutes": 10}
+        worker_threads.append(threading.get_ident())
+        return 0
+
+    monkeypatch.setattr(admin, "cleanup_stale_waiting_battles", safe_cleanup)
+    monkeypatch.setattr(admin.legacy, "user_data", {})
+    query = _Query()
+
+    _run(admin.admin_cleanup(_Update(query), object()))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert query.answers == [(None, False)]
+    assert "Safely deleted pre-progress battles: 0" in query.edits[0][0]
 
 
 def test_cleanup_fails_closed_before_ram_prune_on_mongo_outage(monkeypatch):
