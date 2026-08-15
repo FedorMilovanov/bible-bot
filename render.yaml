@@ -7,9 +7,9 @@ services:
     numInstances: 1
     buildCommand: pip install -r requirements.txt
     startCommand: python production_entrypoint.py
-    healthCheckPath: /live
+    healthCheckPath: /production/ready
     maxShutdownDelaySeconds: 30
-    autoDeploy: false
+    autoDeployTrigger: checksPass
     envVars:
       - key: BOT_TOKEN
         sync: false
