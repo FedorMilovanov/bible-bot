@@ -47,14 +47,84 @@ _PUBLIC_MODE_LABELS = {
     "timed": "⏱ На время",
     "speed": "⚡ Скоростной",
 }
+_PUBLIC_ERROR_MESSAGES = {
+    "miniapp is not installed": "miniapp is not installed",
+    "course catalog unavailable": "course catalog unavailable",
+    "stats unavailable": "stats unavailable",
+    "question pools unavailable": "question pools unavailable",
+    "unknown question pool": "unknown question pool",
+    "questions unavailable": "questions unavailable",
+    "profile unavailable": "profile unavailable",
+    "invalid leaderboard category": "invalid leaderboard category",
+    "leaderboard unavailable": "leaderboard unavailable",
+    "database unavailable": "database unavailable",
+    "database temporarily unavailable": "database temporarily unavailable",
+    "could not resolve active quiz session": "could not resolve active quiz session",
+    "unfinished quiz session is inconsistent": "unfinished quiz session is inconsistent",
+    "unfinished quiz result state is inconsistent": "unfinished quiz result state is inconsistent",
+    "quiz result finalization is incomplete": "quiz result finalization is incomplete",
+    "session_id is required": "session_id is required",
+    "could not resolve quiz session": "could not resolve quiz session",
+    "quiz session not found": "quiz session not found",
+    "completed quiz cannot be cancelled; result is preserved": "completed quiz cannot be cancelled; result is preserved",
+    "quiz session is not active": "quiz session is not active",
+    "quiz session is inconsistent": "quiz session is inconsistent",
+    "could not cancel quiz session": "could not cancel quiz session",
+    "could not confirm quiz cancellation": "could not confirm quiz cancellation",
+    "quiz session changed while cancellation was in progress": "quiz session changed while cancellation was in progress",
+    "invalid quiz mode": "invalid quiz mode",
+    "challenge requires random_all pool": "challenge requires random_all pool",
+    "challenge does not accept course_key": "challenge does not accept course_key",
+    "client cannot override server course policy": "client cannot override server course policy",
+    "invalid challenge mode": "invalid challenge mode",
+    "course unavailable": "course unavailable",
+    "invalid course selection": "invalid course selection",
+    "question pool unavailable": "question pool unavailable",
+    "invalid question count": "invalid question count",
+    "could not resolve open quiz session": "could not resolve open quiz session",
+    "another active quiz is in progress; finish it before starting another": "another active quiz is in progress; finish it before starting another",
+    "previous quiz result finalization is incomplete": "previous quiz result finalization is incomplete",
+    "user profile unavailable": "user profile unavailable",
+    "question selection returned an invalid count": "question selection returned an invalid count",
+    "question data is invalid": "question data is invalid",
+    "another unfinished quiz already exists; retry start": "another unfinished quiz already exists; retry start",
+    "could not create quiz session": "could not create quiz session",
+    "created quiz session is inconsistent": "created quiz session is inconsistent",
+    "quiz session not found or already finished": "quiz session not found or already finished",
+    "invalid answer": "invalid answer",
+    "question_id is required": "question_id is required",
+    "result finalization is incomplete; retry the last answer": "result finalization is incomplete; retry the last answer",
+    "question already processed or out of order": "question already processed or out of order",
+    "answer index out of range": "answer index out of range",
+    "question has not been presented": "question has not been presented",
+    "could not save answer": "could not save answer",
+    "answer could not be committed": "answer could not be committed",
+    "result persistence failed; retry the last answer": "result persistence failed; retry the last answer",
+}
+_PUBLIC_ERROR_FALLBACKS = {
+    400: "invalid request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not found",
+    409: "request conflict",
+    413: "request body too large",
+    415: "unsupported media type",
+    429: "too many requests",
+    500: "internal server error",
+    503: "service unavailable",
+}
 
 
 def _uptime_seconds() -> int:
     return max(0, int((datetime.now(UTC) - STARTED_AT).total_seconds()))
 
 
-def _json_error(message: str, status: int):
-    return jsonify({"error": message}), status
+def _json_error(message: str | None, status: int):
+    """Emit only explicitly public error text; never reflect arbitrary internals."""
+    public_message = _PUBLIC_ERROR_MESSAGES.get(message or "")
+    if public_message is None:
+        public_message = _PUBLIC_ERROR_FALLBACKS.get(int(status), "request failed")
+    return jsonify({"error": public_message}), status
 
 
 def _database_ready() -> bool:
