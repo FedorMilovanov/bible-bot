@@ -5,7 +5,6 @@ The audit records every tracked-tree occurrence of the release-sensitive terms
 requested by the release owner and then validates the actual runtime/AST
 contracts. It intentionally avoids formatting-sensitive source assertions.
 """
-# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -116,8 +115,8 @@ def _check_pool_policy_and_registry(findings: list[dict]) -> None:
         if chapter in questions.POOL_REGISTRY
     }
     random_ids = _ids(questions.POOL_REGISTRY["random_all"])
-    for chapter, ids in learning_ids.items():
-        if random_ids.intersection(ids):
+    for chapter, pool_ids in learning_ids.items():
+        if random_ids.intersection(pool_ids):
             _add(findings, "RANDOM_ALL_LEAKAGE", f"{chapter} leaks into random_all")
 
     ch45 = learning_ids.get("chapter4", set()) | learning_ids.get("chapter5", set())
@@ -145,8 +144,8 @@ def _check_pool_policy_and_registry(findings: list[dict]) -> None:
 
 def _check_catalog_registration_gate(findings: list[dict]) -> None:
     import course_catalog
-    from course_catalog import SURFACE_MINIAPP, SURFACE_TELEGRAM, list_courses
     import questions
+    from course_catalog import SURFACE_MINIAPP, SURFACE_TELEGRAM, list_courses
 
     telegram = {entry.key for entry in list_courses(surface=SURFACE_TELEGRAM)}
     miniapp = {entry.key for entry in list_courses(surface=SURFACE_MINIAPP)}
@@ -371,13 +370,16 @@ def _check_production_imports(findings: list[dict]) -> None:
     os.environ.setdefault("ADMIN_USER_ID", "1")
     os.environ.setdefault("DISABLE_WEB_SERVER", "1")
     try:
-        import course_catalog  # noqa: F401
-        import questions  # noqa: F401
-        import telegram_course_surface  # noqa: F401
-        import telegram_production  # noqa: F401
-        import web_api  # noqa: F401
-        import web_api.quiz  # noqa: F401
-        import web_api.result_store  # noqa: F401
+        for module_name in (
+            "course_catalog",
+            "questions",
+            "telegram_course_surface",
+            "telegram_production",
+            "web_api",
+            "web_api.quiz",
+            "web_api.result_store",
+        ):
+            __import__(module_name)
     except Exception as exc:  # pragma: no cover - CI diagnostic boundary
         _add(
             findings,
