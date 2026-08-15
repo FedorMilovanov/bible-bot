@@ -6,7 +6,7 @@ import time
 import uuid
 import logging
 import functools
-from datetime import datetime, date, timedelta
+from datetime import UTC, datetime, date, timedelta
 from pymongo import MongoClient, ASCENDING, DESCENDING
 
 logger = logging.getLogger(__name__)
@@ -79,11 +79,11 @@ def _uid(user_id) -> str:
 
 
 def _now_utc() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _today_utc() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d")
+    return _now_utc().strftime("%Y-%m-%d")
 
 
 def _safe_level_key(key: str) -> str:
@@ -1140,7 +1140,7 @@ def format_time(seconds: float) -> str:
 def calculate_days_playing(first_date_str: str) -> int:
     try:
         first = datetime.strptime(first_date_str, "%Y-%m-%d")
-        return max(1, (datetime.utcnow() - first).days + 1)
+        return max(1, (_now_utc() - first).days + 1)
     except Exception:
         return 1
 
