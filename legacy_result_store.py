@@ -157,7 +157,7 @@ def _parse_completed_at(value: str | datetime | float | int) -> datetime:
         except ValueError as exc:
             raise ValueError("result completion timestamp is invalid") from exc
     try:
-        return datetime.utcfromtimestamp(float(value))
+        return datetime.fromtimestamp(float(value), UTC).replace(tzinfo=None)
     except (TypeError, ValueError, OSError, OverflowError) as exc:
         raise ValueError("result completion timestamp is invalid") from exc
 
