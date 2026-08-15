@@ -11,14 +11,12 @@ DATABASE_SOURCE = (ROOT / "database.py").read_text(encoding="utf-8")
 # or process-local. Any new legacy attribute must be reviewed explicitly before
 # it can enter the production composition root.
 ALLOWED_LEGACY_ATTRIBUTES = {
-    "GC_INTERVAL",
     "_main_keyboard",
     "_touch",
     "admin_command",
     "back_to_main",
     "challenge_menu",
     "challenge_rules",
-    "cleanup_stale_userdata_job",
     "help_command",
     "intro_hint_handler",
     "noop_handler",
@@ -31,7 +29,7 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "show_achievements",
 }
 
-_NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}
+_NON_CALLABLE_LEGACY_ATTRIBUTES = {"report_drafts"}
 
 # Non-database authority writers still need an explicit fence because they live
 # in legacy/integrity/controller helpers rather than database.py.

@@ -45,6 +45,7 @@ import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
+import telegram_runtime_maintenance as maintenance  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
 import telegram_stats_controller as stats  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
@@ -201,6 +202,13 @@ async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
     legacy.report_drafts.pop(update.effective_user.id, None)
     return await quiz.reset_command(update, context)
+
+
+async def _cleanup_stale_userdata_job(context):
+    return await maintenance.cleanup_stale_userdata_job(
+        context,
+        user_data=quiz.user_data,
+    )
 
 
 def _touch_presentation_callback(update):
@@ -455,9 +463,9 @@ def main() -> None:
         when=0,
     )
     app.job_queue.run_repeating(
-        legacy.cleanup_stale_userdata_job,
-        interval=legacy.GC_INTERVAL,
-        first=legacy.GC_INTERVAL,
+        _cleanup_stale_userdata_job,
+        interval=maintenance.GC_INTERVAL,
+        first=maintenance.GC_INTERVAL,
     )
     app.job_queue.run_repeating(
         quiz.remind_unfinished_tests_job,
