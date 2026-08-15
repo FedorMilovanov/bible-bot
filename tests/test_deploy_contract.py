@@ -27,7 +27,7 @@ def test_single_process_start_contract_is_consistent():
     assert 'CMD ["python", "bot.py"]' not in docker
     assert "startCommand: python telegram_controller.py" not in render
     assert 'CMD ["python", "telegram_controller.py"]' not in docker
-    assert "healthCheckPath: /live" in render
+    assert "healthCheckPath: /production/ready" in render
     assert "numInstances: 1" in render
 
 
@@ -58,10 +58,12 @@ def test_deployment_runbook_includes_executable_telegram_webhook_check():
     assert "bootstrap_pending" in runbook
 
 
-def test_render_uses_webhook_transport_and_separate_body_limits():
+def test_render_uses_checks_pass_autodeploy_and_fail_closed_readiness():
     render = read("render.yaml")
     assert "runtime: python" in render
-    assert "healthCheckPath: /live" in render
+    assert "healthCheckPath: /production/ready" in render
+    assert "autoDeployTrigger: checksPass" in render
+    assert "autoDeploy:" not in render
     assert "- key: TELEGRAM_TRANSPORT\n        value: webhook" in render
     assert '- key: TELEGRAM_WEBHOOK_MAX_CONNECTIONS\n        value: "1"' in render
     assert '- key: MAX_REQUEST_BODY_BYTES\n        value: "1048576"' in render
