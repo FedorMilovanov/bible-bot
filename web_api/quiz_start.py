@@ -82,6 +82,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         except CourseUnavailableError:
             return None, "course unavailable", 409
         except CourseCatalogError:
+            if _CLIENT_POLICY_FIELDS.intersection(payload):
+                return None, "client cannot override server course policy", 400
             return None, "invalid course selection", 400
         course_key = entry.key
         pool_key = entry.pool_key
