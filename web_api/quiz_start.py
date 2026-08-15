@@ -35,19 +35,23 @@ _CLIENT_POLICY_FIELDS = frozenset(
 
 
 class _ClientPolicyOverrideError(CourseCatalogError):
-    pass
+    def __init__(self) -> None:
+        super().__init__("client cannot override server course policy")
 
 
 class _CoursePoolMismatchError(CourseCatalogError):
-    pass
+    def __init__(self) -> None:
+        super().__init__("course_key and pool_key do not match")
 
 
 class _UnexposedPoolError(CourseCatalogError):
-    pass
+    def __init__(self) -> None:
+        super().__init__("pool is not an exposed Mini App course")
 
 
 class _CourseKeyRequiredError(CourseCatalogError):
-    pass
+    def __init__(self) -> None:
+        super().__init__("course_key is required")
 
 
 def _resolve_normal_course(payload: dict, mode: str):
