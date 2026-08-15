@@ -394,7 +394,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^chapter_1_menu$"))
     app.add_handler(CallbackQueryHandler(quiz.random_all_start_handler, pattern="^random_all_start$"))
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^historical_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.challenge_menu, pattern="^challenge_menu$"))
+    app.add_handler(CallbackQueryHandler(challenge.challenge_menu, pattern="^challenge_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.intro_hint_handler, pattern=r"^intro_hint_"))
     app.add_handler(
         CallbackQueryHandler(
@@ -404,7 +404,7 @@ def main() -> None:
     )
     app.add_handler(CallbackQueryHandler(legacy.random_fact_handler, pattern="^random_fact_intro$"))
     app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
+    app.add_handler(CallbackQueryHandler(challenge.challenge_rules, pattern="^challenge_rules_"))
     app.add_handler(CallbackQueryHandler(stats.show_weekly_leaderboard, pattern="^weekly_lb_"))
     app.add_handler(
         CallbackQueryHandler(

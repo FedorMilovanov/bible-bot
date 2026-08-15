@@ -16,8 +16,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "_touch",
     "admin_command",
     "back_to_main",
-    "challenge_menu",
-    "challenge_rules",
     "cleanup_stale_userdata_job",
     "help_command",
     "intro_hint_handler",
