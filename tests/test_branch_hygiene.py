@@ -1,4 +1,5 @@
 from scripts.cleanup_closed_pr_branches import (
+    GitHubApi,
     _closed_head_shas,
     _eligible_ref,
     _open_head_refs,
@@ -104,6 +105,77 @@ class FakeApi:
     def delete_ref(self, ref):
         self.deleted.append(ref)
         self.current.pop(ref, None)
+
+
+class PatchProofApi:
+    def __init__(self, files, contents):
+        self.files = files
+        self.contents = contents
+
+    def _compare(self, base_sha, head_sha):
+        assert base_sha == "main-sha"
+        assert head_sha == "branch-sha"
+        return {"files": self.files}
+
+    def content_sha(self, path, ref_sha):
+        assert ref_sha == "main-sha"
+        return self.contents.get(path)
+
+
+def _patch_proof(files, contents):
+    api = PatchProofApi(files, contents)
+    return GitHubApi.patch_exactly_present_in(api, "branch-sha", "main-sha")
+
+
+def test_exact_patch_proof_accepts_matching_modified_added_and_copied_blobs():
+    files = [
+        {"filename": "a.py", "status": "modified", "sha": "a1"},
+        {"filename": "b.py", "status": "added", "sha": "b1"},
+        {"filename": "c.py", "status": "copied", "sha": "c1"},
+    ]
+    assert _patch_proof(files, {"a.py": "a1", "b.py": "b1", "c.py": "c1"})
+
+
+def test_exact_patch_proof_rejects_one_mismatched_blob():
+    files = [{"filename": "a.py", "status": "modified", "sha": "branch"}]
+    assert not _patch_proof(files, {"a.py": "main"})
+
+
+def test_exact_patch_proof_accepts_removal_only_when_path_is_absent_in_main():
+    files = [{"filename": "old.py", "status": "removed", "sha": "old"}]
+    assert _patch_proof(files, {})
+    assert not _patch_proof(files, {"old.py": "still-present"})
+
+
+def test_exact_patch_proof_requires_both_sides_of_rename():
+    files = [
+        {
+            "filename": "new.py",
+            "previous_filename": "old.py",
+            "status": "renamed",
+            "sha": "new-blob",
+        }
+    ]
+    assert _patch_proof(files, {"new.py": "new-blob"})
+    assert not _patch_proof(
+        files,
+        {"new.py": "new-blob", "old.py": "old-still-present"},
+    )
+    assert not _patch_proof(files, {"new.py": "different"})
+
+
+def test_exact_patch_proof_fails_closed_at_compare_file_cap():
+    files = [
+        {"filename": f"f{i}.py", "status": "modified", "sha": f"s{i}"}
+        for i in range(300)
+    ]
+    contents = {f"f{i}.py": f"s{i}" for i in range(300)}
+    assert not _patch_proof(files, contents)
+
+
+def test_exact_patch_proof_rejects_unknown_status():
+    files = [{"filename": "a.py", "status": "mystery", "sha": "a1"}]
+    assert not _patch_proof(files, {"a.py": "a1"})
 
 
 def test_cleanup_deletes_ref_still_pinned_to_closed_pr_head():
