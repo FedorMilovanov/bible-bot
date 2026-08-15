@@ -6,7 +6,7 @@ import logging
 import random
 import time
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
@@ -26,7 +26,7 @@ COMPLETION_TIME_PROTOCOL_DURABLE = "answer_completed_at_v1"
 
 def _now() -> datetime:
     """UTC timestamp matching the repository's existing naive-UTC Mongo model."""
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def question_id(question: dict) -> str:
