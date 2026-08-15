@@ -1,6 +1,7 @@
 """Telegram adapter for restart-safe retry-error practice."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from telegram.ext import ConversationHandler
@@ -46,7 +47,8 @@ async def retry_errors(update, context):
         return ConversationHandler.END
 
     try:
-        source = load_retry_source_for_result_message(
+        source = await asyncio.to_thread(
+            load_retry_source_for_result_message,
             user_id=user_id,
             chat_id=message.chat_id,
             message_date=message.date,
