@@ -81,8 +81,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
             entry = _resolve_normal_course(payload, mode)
         except CourseUnavailableError:
             return None, "course unavailable", 409
-        except CourseCatalogError as exc:
-            return None, str(exc), 400
+        except CourseCatalogError:
+            return None, "invalid course selection", 400
         course_key = entry.key
         pool_key = entry.pool_key
         expected_count = entry.default_question_count
