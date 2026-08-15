@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from pymongo.errors import DuplicateKeyError
 
@@ -31,12 +31,17 @@ _TERMINAL_SESSION_STATUSES = frozenset({"finished", "abandoned"})
 _RESULT_CAS_RETRIES = 8
 
 
+def _now_utc_naive() -> datetime:
+    """UTC timestamp matching the repository's existing naive-UTC Mongo model."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def _today_utc() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d")
+    return _now_utc_naive().strftime("%Y-%m-%d")
 
 
 def _week_id_utc(moment: datetime | None = None) -> str:
-    iso = (moment or datetime.utcnow()).date().isocalendar()
+    iso = (moment or _now_utc_naive()).date().isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
 
@@ -145,7 +150,7 @@ def _sync_weekly_challenge_result(
     doc_id = f"{resolved_week_id}_{mode}_{user_id}"
     score = int(score)
     time_seconds = max(0.0, float(time_seconds))
-    now = datetime.utcnow()
+    now = _now_utc_naive()
     replacement = {
         "week_id": resolved_week_id,
         "mode": mode,
@@ -213,7 +218,7 @@ def _prune_old_receipts(user_id: int) -> None:
         if not isinstance(receipts, dict):
             return
 
-        cutoff = datetime.utcnow() - _RECEIPT_RETENTION
+        cutoff = _now_utc_naive() - _RECEIPT_RETENTION
         sessions = db["miniapp_sessions"]
         stale: list[str] = []
         for result_id, receipt in receipts.items():
@@ -254,7 +259,7 @@ def _persist_once(
     uid = str(user_id)
     field = _receipt_field(result_id)
     stored_receipt = dict(receipt)
-    stored_receipt["applied_at"] = datetime.utcnow()
+    stored_receipt["applied_at"] = _now_utc_naive()
     update.setdefault("$set", {})[field] = stored_receipt
     query = {"_id": uid, field: {"$exists": False}}
     if expected:
@@ -328,7 +333,7 @@ def _apply_learning_result_once(
         "$set": {
             "username": username or "",
             "first_name": first_name or "Пользователь",
-            "last_activity": datetime.utcnow(),
+            "last_activity": _now_utc_naive(),
         },
         "$max": {f"{level_key}_best_score": score},
     }
@@ -426,7 +431,7 @@ def apply_regular_result_once(
         set_fields = {
             "username": username or "",
             "first_name": first_name or "Пользователь",
-            "last_activity": datetime.utcnow(),
+            "last_activity": _now_utc_naive(),
         }
         if last_activity != today:
             set_fields["daily_activity_streak"] = daily_streak
@@ -524,7 +529,7 @@ def apply_challenge_result_once(
         set_fields = {
             "username": username or "",
             "first_name": first_name or "Пользователь",
-            "last_activity": datetime.utcnow(),
+            "last_activity": _now_utc_naive(),
         }
         if eligible:
             set_fields[f"{mode}_last_bonus_date"] = today
