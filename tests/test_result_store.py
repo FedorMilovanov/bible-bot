@@ -1,5 +1,5 @@
 import copy
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import database
@@ -8,6 +8,10 @@ from web_api import result_store
 
 
 _MISSING = object()
+
+
+def _now_utc_naive():
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _get_path(doc, path):
@@ -262,7 +266,7 @@ def test_old_receipt_is_kept_while_session_is_recoverable(monkeypatch):
             "points": 12,
             "daily_bonus": 5,
             "new_achievements": [],
-            "applied_at": datetime.utcnow() - timedelta(days=2),
+            "applied_at": _now_utc_naive() - timedelta(days=2),
         }
     }
     users = FakeUserCollection(user)
@@ -284,7 +288,7 @@ def test_old_receipt_is_pruned_after_source_session_disappears(monkeypatch):
             "points": 12,
             "daily_bonus": 5,
             "new_achievements": [],
-            "applied_at": datetime.utcnow() - timedelta(days=2),
+            "applied_at": _now_utc_naive() - timedelta(days=2),
         }
     }
     users = FakeUserCollection(user)

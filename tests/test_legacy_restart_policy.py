@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -8,6 +8,10 @@ from legacy_restart_policy import (
     classify_restart_session,
     restart_timeout_route,
 )
+
+
+def _naive_utc_from_timestamp(value: float) -> str:
+    return datetime.fromtimestamp(value, UTC).replace(tzinfo=None).isoformat()
 
 
 def session(mode="level", current=0, time_limit=None):
@@ -21,14 +25,14 @@ def session(mode="level", current=0, time_limit=None):
             "index": 0, "qid": "q0", "user_answer": "A",
             "is_correct": True, "question_obj": questions[0],
             "latency_seconds": 2.0,
-            "ts": datetime.utcfromtimestamp(101).isoformat(),
+            "ts": _naive_utc_from_timestamp(101),
         })
     if current >= 2:
         answered.append({
             "index": 1, "qid": "q1", "user_answer": "B",
             "is_correct": False, "question_obj": questions[1],
             "latency_seconds": 3.0,
-            "ts": datetime.utcfromtimestamp(102).isoformat(),
+            "ts": _naive_utc_from_timestamp(102),
         })
     return {
         "_id": "s1", "user_id": "42", "status": "in_progress",
@@ -48,7 +52,7 @@ def test_partial_session_resumes_but_exact_completion_finalizes():
     assert (partial.action, partial.current_index, partial.total) == ("resume", 1, 2)
     assert complete.action == "finalize"
     assert complete.result_inputs["score"] == 1
-    assert complete.result_inputs["completed_at"] == datetime.utcfromtimestamp(102).isoformat()
+    assert complete.result_inputs["completed_at"] == _naive_utc_from_timestamp(102)
 
 
 def test_partial_session_requires_contiguous_consistent_ledger():

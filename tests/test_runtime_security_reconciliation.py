@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -248,7 +248,7 @@ def test_strict_session_create_rejects_unacknowledged_insert(monkeypatch):
         legacy_session_access,
         "_database",
         lambda: SimpleNamespace(
-            _now_utc=lambda: datetime.utcnow(),
+            _now_utc=lambda: datetime.now(UTC).replace(tzinfo=None),
             _uid=lambda value: str(value),
         ),
     )
