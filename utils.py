@@ -9,7 +9,7 @@ import re
 import time
 import logging
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 from telegram import Update
 from telegram.error import BadRequest, RetryAfter, TimedOut
@@ -59,6 +59,11 @@ _COLORS = {
     "avatar_bg":    (70, 130, 180, 255),
     "avatar_text":  (255, 255, 255),
 }
+
+
+def _today_utc_display() -> str:
+    """UTC date for rendered result media, preserving the existing display format."""
+    return datetime.now(UTC).strftime("%d.%m.%Y")
 
 
 # ═══════════════════════════════════════════════
@@ -456,7 +461,7 @@ async def generate_result_image(
         )
 
         # Дата
-        date_str = datetime.utcnow().strftime("%d.%m.%Y")
+        date_str = _today_utc_display()
         draw.text(
             (W - 120, 230), date_str,
             fill=_COLORS["text_footer"],
