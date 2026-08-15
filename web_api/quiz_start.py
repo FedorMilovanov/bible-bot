@@ -13,6 +13,7 @@ from course_catalog import (
     SURFACE_MINIAPP,
     CourseCatalogError,
     CourseUnavailableError,
+    UnknownCourseError,
     course_for_pool,
     resolve_course,
     resolve_course_pool,
@@ -26,20 +27,34 @@ _CLIENT_POLICY_FIELDS = frozenset(
 )
 
 
+class _ClientPolicyOverrideError(CourseCatalogError):
+    pass
+
+
+class _CoursePoolMismatchError(CourseCatalogError):
+    pass
+
+
+class _UnexposedPoolError(CourseCatalogError):
+    pass
+
+
+class _CourseKeyRequiredError(CourseCatalogError):
+    pass
+
+
 def _resolve_normal_course(payload: dict, mode: str):
     """Resolve new course_key or a safe legacy pool_key through the catalog."""
     forbidden = sorted(_CLIENT_POLICY_FIELDS.intersection(payload))
     if forbidden:
-        raise CourseCatalogError(
-            f"client cannot override server course policy: {', '.join(forbidden)}"
-        )
+        raise _ClientPolicyOverrideError
 
     course_key = str(payload.get("course_key", "")).strip()
     legacy_pool_key = str(payload.get("pool_key", "")).strip()
     if course_key:
         entry = resolve_course(course_key, surface=SURFACE_MINIAPP, mode=mode)
         if legacy_pool_key and legacy_pool_key != entry.pool_key:
-            raise CourseCatalogError("course_key and pool_key do not match")
+            raise _CoursePoolMismatchError
         return entry
 
     # Backwards compatibility for a previously deployed Mini App bundle.  A
@@ -48,10 +63,10 @@ def _resolve_normal_course(payload: dict, mode: str):
     if legacy_pool_key:
         entry = course_for_pool(legacy_pool_key, surface=SURFACE_MINIAPP)
         if entry is None:
-            raise CourseCatalogError("pool is not an exposed Mini App course")
+            raise _UnexposedPoolError
         return resolve_course(entry.key, surface=SURFACE_MINIAPP, mode=mode)
 
-    raise CourseCatalogError("course_key is required")
+    raise _CourseKeyRequiredError
 
 
 def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]:
@@ -81,9 +96,17 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
             entry = _resolve_normal_course(payload, mode)
         except CourseUnavailableError:
             return None, "course unavailable", 409
+        except _ClientPolicyOverrideError:
+            return None, "client cannot override server course policy", 400
+        except _CoursePoolMismatchError:
+            return None, "course_key and pool_key do not match", 400
+        except _UnexposedPoolError:
+            return None, "pool is not an exposed Mini App course", 400
+        except _CourseKeyRequiredError:
+            return None, "course_key is required", 400
+        except UnknownCourseError:
+            return None, "unknown course", 400
         except CourseCatalogError:
-            if _CLIENT_POLICY_FIELDS.intersection(payload):
-                return None, "client cannot override server course policy", 400
             return None, "invalid course selection", 400
         course_key = entry.key
         pool_key = entry.pool_key
