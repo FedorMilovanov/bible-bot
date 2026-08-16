@@ -2,7 +2,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTROLLER = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+CORE = (ROOT / "telegram_quiz_controller.py").read_text(encoding="utf-8")
+COMPAT = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
 
 
 ANSWER_MARKERS = (
@@ -20,13 +21,13 @@ LIFECYCLE_MARKERS = (
 )
 
 
-def test_production_controller_migrates_answer_and_lifecycle_as_one_boundary():
+def test_production_core_migrates_answer_and_lifecycle_as_one_boundary():
     for marker in ANSWER_MARKERS:
-        assert marker in CONTROLLER
+        assert marker in CORE
     for marker in LIFECYCLE_MARKERS:
-        assert marker in CONTROLLER
+        assert marker in CORE
 
-    # The production controller must have exactly one state authority. Historical
+    # The production core must have exactly one state authority. Historical
     # blind/global writers cannot coexist with attempt-bound answer/lifecycle CAS.
     for historical in (
         "advance_quiz_session(",
@@ -36,12 +37,17 @@ def test_production_controller_migrates_answer_and_lifecycle_as_one_boundary():
         "cancel_active_quiz_session(",
         "cancel_quiz_session(",
     ):
-        assert historical not in CONTROLLER
+        assert historical not in CORE
 
 
-def test_controller_does_not_delegate_quiz_state_back_to_legacy_handlers():
-    # Importing bot.py for presentation helpers is transitional; registering its
-    # historical quiz handlers would silently reintroduce a second controller.
+def test_bot_free_core_and_compat_name_do_not_delegate_state_back_to_legacy():
+    assert "import bot" not in CORE
+    assert "from bot" not in CORE
+    assert "legacy." not in CORE
+    assert "import bot" not in COMPAT
+    assert "from bot" not in COMPAT
+    assert "legacy." not in COMPAT
+
     forbidden_delegations = (
         "legacy.quiz_inline_answer",
         "legacy.challenge_inline_answer",
@@ -55,4 +61,9 @@ def test_controller_does_not_delegate_quiz_state_back_to_legacy_handlers():
         "legacy.show_challenge_results",
     )
     for marker in forbidden_delegations:
-        assert marker not in CONTROLLER
+        assert marker not in CORE
+
+
+def test_compat_module_resolves_to_one_mutable_core_module_object():
+    assert "import telegram_quiz_controller as _core" in COMPAT
+    assert "sys.modules[__name__] = _core" in COMPAT

@@ -1,9 +1,9 @@
 from pathlib import Path
 
 
-CONTROLLER = (
-    Path(__file__).resolve().parents[1] / "telegram_controller.py"
-).read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+CONTROLLER = (ROOT / "telegram_quiz_controller.py").read_text(encoding="utf-8")
+PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 
 
 def function(name: str, *, async_def: bool = True) -> str:
@@ -108,15 +108,16 @@ def test_strict_session_lifecycle_is_the_only_production_path():
         assert "_cancel_current(" in source
         assert "cancel_active_quiz_session(" not in source
 
+    # Callback registration is owned by the production composition root.
     for old_pattern in (
         'pattern="^resume_session_"',
         'pattern="^restart_session_"',
         'pattern="^cancel_session_"',
     ):
-        assert old_pattern not in CONTROLLER
+        assert old_pattern not in PRODUCTION
     for new_pattern in (
         'pattern=r"^res:"',
         'pattern=r"^rst:"',
         'pattern=r"^can:"',
     ):
-        assert new_pattern in CONTROLLER
+        assert new_pattern in PRODUCTION

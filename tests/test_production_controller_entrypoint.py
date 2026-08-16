@@ -10,7 +10,8 @@ DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 RENDER = (ROOT / "render.yaml").read_text(encoding="utf-8")
 ENTRYPOINT = (ROOT / "production_entrypoint.py").read_text(encoding="utf-8")
 PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
-QUIZ = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+QUIZ_COMPAT = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+QUIZ_CORE = (ROOT / "telegram_quiz_controller.py").read_text(encoding="utf-8")
 
 
 def test_runtime_surfaces_run_safe_bootstrap_into_production_composition_root():
@@ -27,8 +28,9 @@ def test_runtime_surfaces_run_safe_bootstrap_into_production_composition_root():
     )
 
 
-def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
-    ast.parse(QUIZ, filename="telegram_controller.py")
+def test_quiz_controller_core_is_valid_python_and_owns_quiz_state():
+    ast.parse(QUIZ_COMPAT, filename="telegram_controller.py")
+    ast.parse(QUIZ_CORE, filename="telegram_quiz_controller.py")
     for marker in (
         "launch_quiz_attempt(",
         "apply_live_answer_once(",
@@ -37,7 +39,16 @@ def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
         "cancel_current_incomplete_session(",
         "resolve_session_action(",
     ):
-        assert marker in QUIZ
+        assert marker in QUIZ_CORE
+
+    assert "import bot" not in QUIZ_CORE
+    assert "from bot" not in QUIZ_CORE
+    assert "legacy." not in QUIZ_CORE
+    assert "run_polling" not in QUIZ_CORE
+    assert "Application.builder" not in QUIZ_CORE
+    assert "import bot" not in QUIZ_COMPAT
+    assert "legacy." not in QUIZ_COMPAT
+    assert "sys.modules[__name__] = _core" in QUIZ_COMPAT
 
 
 def test_production_composition_imports_with_runtime_dependencies():
@@ -57,8 +68,10 @@ def test_production_composition_imports_with_runtime_dependencies():
                 "import telegram_production as production; "
                 "import telegram_admin_controller as admin; "
                 "import telegram_controller as quiz; "
+                "import telegram_quiz_controller as core; "
                 "import telegram_report_controller as reports; "
                 "import telegram_battle_controller as battles; "
+                "assert quiz is core; "
                 "assert callable(production.main); "
                 "assert callable(admin.admin_cleanup); "
                 "assert callable(quiz.show_results); "

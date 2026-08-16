@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 CONTROLLER = (
-    Path(__file__).resolve().parents[1] / "telegram_controller.py"
+    Path(__file__).resolve().parents[1] / "telegram_quiz_controller.py"
 ).read_text(encoding="utf-8")
 
 

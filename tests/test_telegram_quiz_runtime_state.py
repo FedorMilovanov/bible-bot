@@ -9,7 +9,7 @@ import telegram_quiz_runtime_state as runtime_state
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
-CONTROLLER_SOURCE = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+CORE_SOURCE = (ROOT / "telegram_quiz_controller.py").read_text(encoding="utf-8")
 RUNTIME_SOURCE = (ROOT / "telegram_quiz_runtime_state.py").read_text(encoding="utf-8")
 
 
@@ -67,9 +67,10 @@ def _legacy(
 
 
 def _clear_runtime(monkeypatch):
-    monkeypatch.setattr(runtime_state, "_user_data", None)
-    monkeypatch.setattr(runtime_state, "_user_locks", None)
-    monkeypatch.setattr(runtime_state, "_bad_input_counts", None)
+    monkeypatch.setattr(runtime_state, "_user_data", {})
+    monkeypatch.setattr(runtime_state, "_user_locks", {})
+    monkeypatch.setattr(runtime_state, "_bad_input_counts", {})
+    monkeypatch.setattr(runtime_state, "_legacy_bridge_installed", False)
 
 
 def test_session_factory_preserves_historical_projection_shape_and_overrides():
@@ -106,36 +107,60 @@ def test_session_factory_preserves_historical_projection_shape_and_overrides():
     assert canonical["question_sent_at"] is None
 
 
-def test_runtime_bridge_exposes_exact_identity_and_canonicalizes_helpers(monkeypatch):
+def test_runtime_state_exists_before_legacy_bridge(monkeypatch):
     _clear_runtime(monkeypatch)
-    user_data = {7: {"last_activity": 1.0}}
-    user_locks = {7: object()}
-    bad_input_counts = {9: 2}
+
+    assert runtime_state.get_user_data() == {}
+    assert runtime_state.get_user_locks() == {}
+    assert runtime_state.get_bad_input_counts() == {}
+
+    runtime_state.get_user_data()[7] = {"last_activity": 1.0}
+    assert runtime_state.get_user_data()[7]["last_activity"] == 1.0
+
+
+def test_first_bridge_migrates_legacy_ram_and_rebinds_exact_canonical_objects(monkeypatch):
+    _clear_runtime(monkeypatch)
+    runtime_state.get_user_data()[5] = {"canonical": True}
+    legacy_user_data = {7: {"last_activity": 1.0}}
+    legacy_user_locks = {7: object()}
+    legacy_bad_input_counts = {9: 2}
     legacy = _legacy(
-        user_data=user_data,
-        user_locks=user_locks,
-        bad_input_counts=bad_input_counts,
+        user_data=legacy_user_data,
+        user_locks=legacy_user_locks,
+        bad_input_counts=legacy_bad_input_counts,
     )
-    historical_factory = legacy._create_session_data
-    historical_increment = legacy._inc_bad_input
-    historical_reset = legacy._reset_bad_input
 
     runtime_state.install_legacy_bridge(legacy)
 
-    assert runtime_state.get_user_data() is user_data
-    assert runtime_state.get_user_locks() is user_locks
-    assert runtime_state.get_bad_input_counts() is bad_input_counts
-    assert historical_factory is not runtime_state.create_session_data
-    assert historical_increment is not runtime_state.increment_bad_input
-    assert historical_reset is not runtime_state.reset_bad_input
+    assert runtime_state.get_user_data() == {
+        5: {"canonical": True},
+        7: {"last_activity": 1.0},
+    }
+    assert runtime_state.get_user_locks()[7] is legacy_user_locks[7]
+    assert runtime_state.get_bad_input_counts() == {9: 2}
+    assert legacy.user_data is runtime_state.get_user_data()
+    assert legacy.user_locks is runtime_state.get_user_locks()
+    assert legacy._bad_input_count is runtime_state.get_bad_input_counts()
     assert legacy._create_session_data is runtime_state.create_session_data
     assert legacy._inc_bad_input is runtime_state.increment_bad_input
     assert legacy._reset_bad_input is runtime_state.reset_bad_input
 
     runtime_state.install_legacy_bridge(legacy)
-    assert runtime_state.get_user_data() is user_data
-    assert runtime_state.get_user_locks() is user_locks
-    assert runtime_state.get_bad_input_counts() is bad_input_counts
+    assert legacy.user_data is runtime_state.get_user_data()
+
+
+def test_runtime_bridge_fails_closed_before_any_migration_on_mapping_conflict(monkeypatch):
+    _clear_runtime(monkeypatch)
+    runtime_state.get_user_data()[7] = {"source": "canonical"}
+    legacy = _legacy(user_data={7: {"source": "legacy"}}, user_locks={9: object()})
+
+    with pytest.raises(RuntimeError, match="user_data conflicts"):
+        runtime_state.install_legacy_bridge(legacy)
+
+    assert runtime_state.get_user_locks() == {}
+    assert runtime_state.get_bad_input_counts() == {}
+    assert legacy.user_data == {7: {"source": "legacy"}}
+    assert runtime_state._legacy_bridge_installed is False
 
 
 def test_runtime_bridge_fails_closed_on_session_factory_drift(monkeypatch):
@@ -152,12 +177,7 @@ def test_runtime_bridge_fails_closed_on_session_factory_drift(monkeypatch):
         runtime_state.install_legacy_bridge(legacy)
 
     assert legacy._create_session_data is drifted_factory
-    with pytest.raises(RuntimeError, match="user_data"):
-        runtime_state.get_user_data()
-    with pytest.raises(RuntimeError, match="user_locks"):
-        runtime_state.get_user_locks()
-    with pytest.raises(RuntimeError, match="bad-input"):
-        runtime_state.get_bad_input_counts()
+    assert runtime_state._legacy_bridge_installed is False
 
 
 def test_runtime_bridge_rejects_missing_process_local_helpers(monkeypatch):
@@ -184,37 +204,18 @@ def test_runtime_bridge_rejects_missing_process_local_helpers(monkeypatch):
         runtime_state.install_legacy_bridge(missing_reset)
 
 
-def test_runtime_bridge_fails_closed_on_rebinding(monkeypatch):
+def test_runtime_bridge_rejects_different_mapping_after_install(monkeypatch):
     _clear_runtime(monkeypatch)
     first = _legacy()
     runtime_state.install_legacy_bridge(first)
 
+    second = _legacy(
+        user_data={},
+        user_locks=runtime_state.get_user_locks(),
+        bad_input_counts=runtime_state.get_bad_input_counts(),
+    )
     with pytest.raises(RuntimeError, match="user_data"):
-        runtime_state.install_legacy_bridge(
-            _legacy(
-                user_data={},
-                user_locks=first.user_locks,
-                bad_input_counts=first._bad_input_count,
-            )
-        )
-
-    with pytest.raises(RuntimeError, match="user_locks"):
-        runtime_state.install_legacy_bridge(
-            _legacy(
-                user_data=first.user_data,
-                user_locks={},
-                bad_input_counts=first._bad_input_count,
-            )
-        )
-
-    with pytest.raises(RuntimeError, match="bad-input"):
-        runtime_state.install_legacy_bridge(
-            _legacy(
-                user_data=first.user_data,
-                user_locks=first.user_locks,
-                bad_input_counts={},
-            )
-        )
+        runtime_state.install_legacy_bridge(second)
 
 
 @pytest.mark.parametrize(
@@ -238,21 +239,6 @@ def test_runtime_bridge_fails_closed_on_rebinding(monkeypatch):
             _bad_input_count=None,
             _create_session_data=_historical_session_factory,
         ),
-        SimpleNamespace(
-            user_locks={},
-            _bad_input_count={},
-            _create_session_data=_historical_session_factory,
-        ),
-        SimpleNamespace(
-            user_data={},
-            _bad_input_count={},
-            _create_session_data=_historical_session_factory,
-        ),
-        SimpleNamespace(
-            user_data={},
-            user_locks={},
-            _create_session_data=_historical_session_factory,
-        ),
     ],
 )
 def test_runtime_bridge_rejects_malformed_legacy_state(monkeypatch, legacy):
@@ -261,60 +247,46 @@ def test_runtime_bridge_rejects_malformed_legacy_state(monkeypatch, legacy):
         runtime_state.install_legacy_bridge(legacy)
 
 
-def test_runtime_access_fails_closed_before_install(monkeypatch):
+def test_get_user_lock_reuses_exact_canonical_lock_mapping(monkeypatch):
     _clear_runtime(monkeypatch)
-
-    with pytest.raises(RuntimeError, match="user_data"):
-        runtime_state.get_user_data()
-    with pytest.raises(RuntimeError, match="user_locks"):
-        runtime_state.get_user_locks()
-    with pytest.raises(RuntimeError, match="bad-input"):
-        runtime_state.get_bad_input_counts()
-
-
-def test_get_user_lock_reuses_exact_installed_lock_mapping(monkeypatch):
-    _clear_runtime(monkeypatch)
-    locks = {}
-    legacy = _legacy(user_locks=locks)
-    runtime_state.install_legacy_bridge(legacy)
 
     first = runtime_state.get_user_lock(77)
     second = runtime_state.get_user_lock(77)
 
     assert isinstance(first, asyncio.Lock)
     assert second is first
-    assert locks[77] is first
-    assert runtime_state.get_user_locks() is locks
+    assert runtime_state.get_user_locks()[77] is first
 
 
-def test_bad_input_helpers_share_exact_legacy_mapping(monkeypatch):
+def test_bad_input_helpers_share_canonical_mapping_and_legacy_alias(monkeypatch):
     _clear_runtime(monkeypatch)
-    counts = {}
-    legacy = _legacy(bad_input_counts=counts)
+    legacy = _legacy()
     runtime_state.install_legacy_bridge(legacy)
 
     assert runtime_state.increment_bad_input(42) == 1
     assert legacy._inc_bad_input(42) == 2
-    assert counts == {42: 2}
+    assert runtime_state.get_bad_input_counts() == {42: 2}
 
     legacy._reset_bad_input(42)
-    assert counts == {}
-    runtime_state.reset_bad_input(42)
-    assert counts == {}
+    assert runtime_state.get_bad_input_counts() == {}
 
 
-def test_runtime_state_is_only_process_local_projection_and_has_no_legacy_import():
+def test_runtime_state_is_canonical_process_local_owner_and_has_no_legacy_import():
     assert "Mongo remains the durable authority" in RUNTIME_SOURCE
     assert "import bot" not in RUNTIME_SOURCE
     assert "from bot" not in RUNTIME_SOURCE
+    assert "_user_data: MutableMapping = {}" in RUNTIME_SOURCE
+    assert "legacy_module.user_data = _user_data" in RUNTIME_SOURCE
+    assert "legacy_module.user_locks = _user_locks" in RUNTIME_SOURCE
+    assert "legacy_module._bad_input_count = _bad_input_counts" in RUNTIME_SOURCE
     assert "legacy_module._create_session_data = create_session_data" in RUNTIME_SOURCE
-    assert "legacy_module._inc_bad_input = increment_bad_input" in RUNTIME_SOURCE
-    assert "legacy_module._reset_bad_input = reset_bad_input" in RUNTIME_SOURCE
 
 
-def test_production_bridge_canonicalizes_controller_process_local_helpers():
+def test_production_bridge_and_core_use_canonical_process_local_helpers():
     assert "import telegram_quiz_runtime_state as quiz_runtime" in PRODUCTION_SOURCE
     assert "quiz_runtime.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
-    assert "legacy._create_session_data(" in CONTROLLER_SOURCE
-    assert "legacy._reset_bad_input(user_id)" in CONTROLLER_SOURCE
-    assert "user_data=quiz.user_data" not in PRODUCTION_SOURCE
+    assert "quiz_runtime.create_session_data(" in CORE_SOURCE
+    assert "quiz_runtime.reset_bad_input(user_id)" in CORE_SOURCE
+    assert "quiz_runtime.get_user_lock(user_id)" in CORE_SOURCE
+    assert "legacy." not in CORE_SOURCE
+    assert "import bot" not in CORE_SOURCE

@@ -1,9 +1,9 @@
 from pathlib import Path
 
 
-CONTROLLER = (
-    Path(__file__).resolve().parents[1] / "telegram_controller.py"
-).read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+CONTROLLER = (ROOT / "telegram_quiz_controller.py").read_text(encoding="utf-8")
+PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 
 
 def async_function(name: str) -> str:
@@ -63,7 +63,7 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
     # timer cancellation or analytics side effects.
     for later in (
         "_cancel_runtime_timer(",
-        "_animate_answer_buttons(",
+        "answer_animation.animate_answer_buttons(",
         "record_question_stat(",
     ):
         _assert_before(answer, "apply_live_answer_once(", later)
@@ -79,7 +79,8 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
     # Shutdown may clean process-local timers, never roll stale RAM into Mongo.
     assert "update_quiz_session(" not in shutdown
 
-    assert 'pattern=r"^qa_' not in CONTROLLER
-    assert 'pattern=r"^cha_' not in CONTROLLER
-    assert 'pattern=r"^qa:"' in CONTROLLER
-    assert 'pattern=r"^cha:"' in CONTROLLER
+    # Callback routing is owned by the composition root, not the bot-free core.
+    assert 'pattern=r"^qa_' not in PRODUCTION
+    assert 'pattern=r"^cha_' not in PRODUCTION
+    assert 'pattern=r"^qa:"' in PRODUCTION
+    assert 'pattern=r"^cha:"' in PRODUCTION
