@@ -124,7 +124,7 @@ def safe_truncate(text: str, limit: int = MAX_MSG_LEN) -> str:
 
 def escape_markdown(text: str) -> str:
     """Экранирует спецсимволы для Telegram Markdown."""
-    chars = r"\_*[]()~`>#+-=|{}. !".replace(" ", "")
+    chars = r"\_*[]()~`>#+-=|{}.!"
     for ch in chars:
         text = text.replace(ch, f"\\{ch}")
     return text
