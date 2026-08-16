@@ -33,6 +33,10 @@ def _import_legacy_presentation():
 
 legacy = _import_legacy_presentation()
 
+import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
+
+quiz_runtime.install_legacy_bridge(legacy)
+
 import achievement_catalog as achievement_catalog  # noqa: E402
 import question_identity as question_identity  # noqa: E402
 import quiz_answer_history as answer_history  # noqa: E402
@@ -50,7 +54,6 @@ import telegram_controller as quiz  # noqa: E402
 import telegram_error_controller as errors  # noqa: E402
 import telegram_intro_controller as intro  # noqa: E402
 import telegram_main_menu as main_menu  # noqa: E402
-import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_report_runtime as report_runtime  # noqa: E402
 import telegram_report_state as report_state  # noqa: E402
@@ -116,7 +119,6 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
-quiz_runtime.install_legacy_bridge(legacy)
 question_identity.install_legacy_bridge(legacy)
 answer_history.install_legacy_bridge(legacy)
 achievement_catalog.install_legacy_bridge(legacy)

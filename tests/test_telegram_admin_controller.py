@@ -313,5 +313,6 @@ def test_admin_adapter_never_calls_broad_legacy_or_unsafe_database_cleanup():
     assert "db_cleanup_stale_battles" not in source
     assert "database.cleanup_stale_battles" not in source
     assert "cleanup_stale_waiting_battles" in source
-    assert "from telegram_controller import user_data" in source
+    assert "from telegram_quiz_runtime_state import user_data" in source
+    assert "from telegram_controller import user_data" not in source
     assert "from database import get_admin_stats, get_hardest_questions" in source

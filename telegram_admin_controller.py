@@ -13,7 +13,7 @@ from legacy_battle_cleanup import (
     LegacyBattleCleanupUnavailable,
     cleanup_stale_waiting_battles,
 )
-from telegram_controller import user_data
+from telegram_quiz_runtime_state import user_data
 
 
 _ADMIN_READ_ACTIONS = {

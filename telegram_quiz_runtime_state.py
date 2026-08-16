@@ -1,9 +1,10 @@
-"""Canonical access to process-local quiz runtime mirrors and session shape.
+"""Canonical process-local quiz runtime mirrors and session projection.
 
-Mongo remains the durable authority for active quiz attempts. This module only
-exposes the exact in-process dictionaries already created by the transitional
-legacy layer and the process-local session projection factory. It owns no
-durable quiz state.
+Mongo remains the durable authority for active quiz attempts. The mappings in
+this module are deliberately process-local UI/runtime mirrors only. Production
+owns them here directly; the legacy bridge exists solely to migrate any
+pre-existing compatibility state and point ``bot.py`` at the exact same
+objects.
 """
 from __future__ import annotations
 
@@ -11,9 +12,9 @@ import asyncio
 from collections.abc import MutableMapping
 
 
-_user_data: MutableMapping | None = None
-_user_locks: MutableMapping | None = None
-_bad_input_counts: MutableMapping | None = None
+user_data: dict = {}
+user_locks: dict = {}
+bad_input_counts: dict = {}
 
 
 def create_session_data(
@@ -24,11 +25,7 @@ def create_session_data(
     chat_id: int,
     **extra_fields,
 ) -> dict:
-    """Create the canonical process-local projection for one quiz session.
-
-    This intentionally preserves the historical projection shape exactly while
-    Mongo remains authoritative for the durable attempt.
-    """
+    """Create the canonical process-local projection for one quiz session."""
     base_data = {
         "session_id": session_id,
         "questions": questions,
@@ -84,10 +81,36 @@ def _validate_legacy_session_factory(legacy_factory) -> None:
         raise RuntimeError("legacy session factory drifted from canonical projection")
 
 
-def install_legacy_bridge(legacy_module) -> None:
-    """Bind exact runtime dictionaries and canonicalize process-local helpers."""
-    global _user_data, _user_locks, _bad_input_counts
+def _assert_migration_safe(
+    name: str,
+    canonical: MutableMapping,
+    legacy_mapping: MutableMapping,
+) -> None:
+    """Reject ambiguous merges before mutating any runtime mapping."""
+    if canonical is legacy_mapping:
+        return
+    for key, legacy_value in legacy_mapping.items():
+        if key not in canonical:
+            continue
+        canonical_value = canonical[key]
+        if canonical_value is legacy_value:
+            continue
+        try:
+            equal = canonical_value == legacy_value
+        except Exception:
+            equal = False
+        if not equal:
+            raise RuntimeError(f"legacy {name} conflicts with canonical runtime state")
 
+
+def install_legacy_bridge(legacy_module) -> None:
+    """Migrate compatibility state and point legacy globals at canonical mappings.
+
+    Every shape/parity/conflict check runs before the first mutation, so a
+    failed bridge cannot partially migrate one mapping and leave the others
+    split. Production itself does not require this bridge once ``bot.py`` is no
+    longer imported; it remains for the standalone compatibility launcher.
+    """
     legacy_user_data = getattr(legacy_module, "user_data", None)
     legacy_user_locks = getattr(legacy_module, "user_locks", None)
     legacy_bad_input_counts = getattr(legacy_module, "_bad_input_count", None)
@@ -98,13 +121,6 @@ def install_legacy_bridge(legacy_module) -> None:
     if not isinstance(legacy_bad_input_counts, dict):
         raise TypeError("legacy module must expose a _bad_input_count dict")
 
-    if _user_data is not None and _user_data is not legacy_user_data:
-        raise RuntimeError("quiz runtime user_data is already bound to another mapping")
-    if _user_locks is not None and _user_locks is not legacy_user_locks:
-        raise RuntimeError("quiz runtime user_locks is already bound to another mapping")
-    if _bad_input_counts is not None and _bad_input_counts is not legacy_bad_input_counts:
-        raise RuntimeError("quiz runtime bad-input counts are already bound to another mapping")
-
     legacy_session_factory = getattr(legacy_module, "_create_session_data", None)
     legacy_increment_bad_input = getattr(legacy_module, "_inc_bad_input", None)
     legacy_reset_bad_input = getattr(legacy_module, "_reset_bad_input", None)
@@ -114,47 +130,66 @@ def install_legacy_bridge(legacy_module) -> None:
     if not callable(legacy_reset_bad_input):
         raise TypeError("legacy module must expose a callable _reset_bad_input")
 
-    _user_data = legacy_user_data
-    _user_locks = legacy_user_locks
-    _bad_input_counts = legacy_bad_input_counts
+    _assert_migration_safe("user_data", user_data, legacy_user_data)
+    _assert_migration_safe("user_locks", user_locks, legacy_user_locks)
+    _assert_migration_safe("bad-input counts", bad_input_counts, legacy_bad_input_counts)
+
+    if legacy_user_data is not user_data:
+        user_data.update(legacy_user_data)
+    if legacy_user_locks is not user_locks:
+        user_locks.update(legacy_user_locks)
+    if legacy_bad_input_counts is not bad_input_counts:
+        bad_input_counts.update(legacy_bad_input_counts)
+
+    legacy_module.user_data = user_data
+    legacy_module.user_locks = user_locks
+    legacy_module._bad_input_count = bad_input_counts
     legacy_module._create_session_data = create_session_data
     legacy_module._inc_bad_input = increment_bad_input
     legacy_module._reset_bad_input = reset_bad_input
 
 
 def get_user_data() -> MutableMapping:
-    """Return the installed process-local quiz projection, fail-closed if absent."""
-    if _user_data is None:
-        raise RuntimeError("quiz runtime user_data is not installed")
-    return _user_data
+    """Return the canonical process-local quiz projection mapping."""
+    return user_data
 
 
 def get_user_locks() -> MutableMapping:
-    """Return the installed per-user lock mapping, fail-closed if absent."""
-    if _user_locks is None:
-        raise RuntimeError("quiz runtime user_locks is not installed")
-    return _user_locks
+    """Return the canonical per-user lock mapping."""
+    return user_locks
 
 
 def get_user_lock(user_id: int):
     """Return the exact per-user asyncio lock used by the runtime projection."""
-    return get_user_locks().setdefault(user_id, asyncio.Lock())
+    return user_locks.setdefault(user_id, asyncio.Lock())
 
 
 def get_bad_input_counts() -> MutableMapping:
-    """Return the installed process-local bad-input counter mapping."""
-    if _bad_input_counts is None:
-        raise RuntimeError("quiz runtime bad-input counts are not installed")
-    return _bad_input_counts
+    """Return the canonical process-local bad-input counter mapping."""
+    return bad_input_counts
 
 
 def increment_bad_input(user_id: int) -> int:
     """Increment and return one user's process-local invalid-input count."""
-    counts = get_bad_input_counts()
-    counts[user_id] = counts.get(user_id, 0) + 1
-    return counts[user_id]
+    bad_input_counts[user_id] = bad_input_counts.get(user_id, 0) + 1
+    return bad_input_counts[user_id]
 
 
 def reset_bad_input(user_id: int) -> None:
     """Drop one user's process-local invalid-input count."""
-    get_bad_input_counts().pop(user_id, None)
+    bad_input_counts.pop(user_id, None)
+
+
+__all__ = [
+    "bad_input_counts",
+    "create_session_data",
+    "get_bad_input_counts",
+    "get_user_data",
+    "get_user_lock",
+    "get_user_locks",
+    "increment_bad_input",
+    "install_legacy_bridge",
+    "reset_bad_input",
+    "user_data",
+    "user_locks",
+]
