@@ -20,6 +20,7 @@ from legacy_session_lifecycle import (
     QuizSessionLifecycleUnavailable,
     restart_owned_quiz_attempt,
 )
+from question_identity import get_qid
 from questions import pick_competitive_challenge_questions
 
 logger = logging.getLogger(__name__)
@@ -191,7 +192,7 @@ async def restart_session_handler(update, context):
             user_id,
             expected_attempt_id=resolved.attempt_id,
             mode=mode,
-            question_ids=[quiz.legacy.get_qid(item) for item in questions],
+            question_ids=[get_qid(item) for item in questions],
             questions_data=questions,
             level_key=session.get("level_key"),
             level_name=session.get("level_name"),
