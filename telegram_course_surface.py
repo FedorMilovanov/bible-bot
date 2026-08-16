@@ -26,6 +26,8 @@ from course_catalog import (
     resolve_course_pool,
 )
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
+from telegram_conversation_states import ANSWERING, CHOOSING_LEVEL
+import telegram_quiz_runtime_controller as quiz
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +61,11 @@ def _group_keyboard() -> InlineKeyboardMarkup:
         courses = list_courses(surface=SURFACE_TELEGRAM, group=group.key)
         if not courses:
             continue
-        if len(courses) == 1:
-            callback = f"course:{courses[0].key}"
-        else:
-            callback = f"course_group:{group.key}"
+        callback = (
+            f"course:{courses[0].key}"
+            if len(courses) == 1
+            else f"course_group:{group.key}"
+        )
         rows.append([
             InlineKeyboardButton(
                 f"{group.icon} {group.title}",
@@ -86,7 +89,7 @@ async def choose_level(update, context, is_callback: bool = False):
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     else:
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    return getattr(__import__("bot"), "CHOOSING_LEVEL", ConversationHandler.END)
+    return CHOOSING_LEVEL
 
 
 async def _show_unavailable(query) -> None:
@@ -169,12 +172,7 @@ def _course_text(entry: CourseEntry) -> str:
 
 
 async def start_course_deep_link(update, context, course_key: str) -> bool:
-    """Handle one `/start <course>` token without consulting bot.py maps.
-
-    ``False`` means the token is not a declared course and another deep-link
-    owner may handle it. A declared-but-unavailable course is handled with a
-    controlled fail-closed message and returns ``True``.
-    """
+    """Handle one `/start <course>` token without consulting bot.py maps."""
     del context
     try:
         entry = resolve_course(course_key, surface=SURFACE_TELEGRAM)
@@ -204,8 +202,6 @@ async def start_course_deep_link(update, context, course_key: str) -> bool:
 async def _show_course(query, course_key: str):
     try:
         entry = resolve_course(course_key, surface=SURFACE_TELEGRAM)
-        # Resolve the pool here too; a course card must not be rendered if the
-        # canonical registry changed or cannot provide the pool.
         resolve_course_pool(entry)
     except (CourseCatalogError, KeyError):
         await _show_unavailable(query)
@@ -294,20 +290,12 @@ async def _launch_course(update, context, *, mode: str, course_key: str):
         await _show_unavailable(query)
         return ConversationHandler.END
 
-    # Reaching this point proves course existence, surface exposure, mode
-    # eligibility, pool existence/size and server-side scoring policy. Callback
-    # data contains no ranked/scoring toggle to escalate Chapter 2/3.
     count = entry.default_question_count
     if len(pool) < count:
         await _show_unavailable(query)
         return ConversationHandler.END
     questions = random.sample(pool, count)
 
-    import telegram_controller as quiz
-
-    # Acknowledge the click before a durable DB/session launch. If the launcher
-    # reports an existing attempt or a retryable DB conflict, it may return None
-    # after sending lifecycle guidance; the Telegram spinner must still stop.
     await query.answer()
     data = await quiz._launch_attempt(
         user=update.effective_user,
@@ -330,7 +318,7 @@ async def _launch_course(update, context, *, mode: str, course_key: str):
         parse_mode="Markdown",
     )
     await quiz.send_question(context.bot, update.effective_user.id)
-    return getattr(__import__("bot"), "ANSWERING", ConversationHandler.END)
+    return ANSWERING
 
 
 async def course_mode_callback(update, context):

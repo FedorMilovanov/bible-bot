@@ -1,11 +1,15 @@
 """Production Challenge adapter using only ranking-eligible questions."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 
-import telegram_controller as quiz
+import telegram_quiz_runtime_controller as quiz
+from database import is_bonus_eligible
 from legacy_retry_policy import LegacyRetryPolicyInvalid, persisted_is_retry
 from legacy_session_action import (
     LegacySessionActionStale,
@@ -17,10 +21,90 @@ from legacy_session_lifecycle import (
     QuizSessionLifecycleUnavailable,
     restart_owned_quiz_attempt,
 )
-from questions import pick_competitive_challenge_questions
+from question_identity import get_qid
+from questions import get_pool_by_key, pick_competitive_challenge_questions
 
 logger = logging.getLogger(__name__)
 _COMPETITIVE_MODES = frozenset({"random20", "hardcore20"})
+
+
+async def challenge_menu(update, context):
+    """Render Challenge bonus availability without blocking the PTB event loop."""
+    del context
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    normal_ok, hardcore_ok = await asyncio.gather(
+        asyncio.to_thread(is_bonus_eligible, user_id, "random20"),
+        asyncio.to_thread(is_bonus_eligible, user_id, "hardcore20"),
+    )
+
+    def badge(ok: bool) -> str:
+        return "✅ доступен" if ok else "❌ уже получен"
+
+    text = (
+        "🎲 *RANDOM CHALLENGE (20)*\n\n"
+        "🎁 Бонус сегодня:\n"
+        f"• 🎲 Normal:   {badge(normal_ok)}\n"
+        f"• 💀 Hardcore: {badge(hardcore_ok)}\n\n"
+        "Выбери режим:"
+    )
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "🎲 Normal (20) — без таймера",
+                    callback_data="challenge_rules_random20",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💀 Hardcore (20) — 10 сек",
+                    callback_data="challenge_rules_hardcore20",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🏆 Лидерборд недели",
+                    callback_data="weekly_lb_random20",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main")],
+        ]),
+        parse_mode="Markdown",
+    )
+
+
+async def challenge_rules(update, context):
+    """Render one Challenge rule card with the bonus read off-loop."""
+    del context
+    query = update.callback_query
+    await query.answer()
+    mode = query.data.replace("challenge_rules_", "")
+    user_id = query.from_user.id
+    eligible = await asyncio.to_thread(is_bonus_eligible, user_id, mode)
+    today_status = "✅ доступен" if eligible else "❌ уже получен сегодня"
+    title = (
+        "🎲 *Random Challenge (20)*"
+        if mode == "random20"
+        else "💀 *Hardcore Random (20)*"
+    )
+    timer_info = "• без таймера" if mode == "random20" else "• ⏱ 10 сек на вопрос"
+    await query.edit_message_text(
+        f"{title}\n━━━━━━━━━━━━━━━━\n{timer_info}\n"
+        f"*Статус бонуса:* {today_status}",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "▶️ Начать!",
+                    callback_data=f"challenge_start_{mode}",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="challenge_menu")],
+        ]),
+        parse_mode="Markdown",
+    )
 
 
 async def challenge_start(update, context):
@@ -78,9 +162,6 @@ async def restart_session_handler(update, context):
 
     session = resolved.session
     mode = session.get("mode")
-    if mode not in _COMPETITIVE_MODES:
-        return await quiz.restart_session_handler(update, context)
-
     try:
         if persisted_is_retry(session):
             await query.answer(
@@ -92,12 +173,24 @@ async def restart_session_handler(update, context):
         await query.answer("⚠️ Политика сохранённой попытки повреждена.", show_alert=True)
         return
 
-    try:
-        questions = pick_competitive_challenge_questions(mode)
-    except ValueError:
-        logger.exception("competitive Challenge restart selection failed")
+    if mode in _COMPETITIVE_MODES:
+        try:
+            questions = pick_competitive_challenge_questions(mode)
+        except ValueError:
+            logger.exception("competitive Challenge restart selection failed")
+            await query.answer(
+                "⚠️ Не удалось собрать вопросы Challenge для перезапуска.",
+                show_alert=True,
+            )
+            return
+    else:
+        pool = get_pool_by_key(session.get("level_key"))
+        total = len(session.get("questions_data", []))
+        questions = random.sample(pool, min(total, len(pool))) if pool else []
+
+    if not questions:
         await query.answer(
-            "⚠️ Не удалось собрать вопросы Challenge для перезапуска.",
+            "⚠️ Не удалось собрать вопросы для перезапуска.",
             show_alert=True,
         )
         return
@@ -109,7 +202,7 @@ async def restart_session_handler(update, context):
             user_id,
             expected_attempt_id=resolved.attempt_id,
             mode=mode,
-            question_ids=[quiz.legacy.get_qid(item) for item in questions],
+            question_ids=[get_qid(item) for item in questions],
             questions_data=questions,
             level_key=session.get("level_key"),
             level_name=session.get("level_name"),
@@ -132,8 +225,11 @@ async def restart_session_handler(update, context):
         first_name=query.from_user.first_name,
     )
     await query.edit_message_text(
-        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Challenge')}_\n\n"
+        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Тест')}_\n\n"
         f"Вопросов: {len(questions)}",
         parse_mode="Markdown",
     )
-    await quiz.send_challenge_question(context.bot, user_id)
+    if data.get("is_challenge"):
+        await quiz.send_challenge_question(context.bot, user_id)
+    else:
+        await quiz.send_question(context.bot, user_id)

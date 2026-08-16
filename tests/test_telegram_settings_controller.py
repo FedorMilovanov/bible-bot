@@ -1,9 +1,5 @@
 import asyncio
-import os
 from types import SimpleNamespace
-
-os.environ.setdefault("ADMIN_USER_ID", "1")
-os.environ.setdefault("DISABLE_WEB_SERVER", "true")
 
 import telegram_settings_controller as settings
 
@@ -32,7 +28,7 @@ def _button_callback(query):
 
 
 def test_settings_menu_emits_target_specific_callback(monkeypatch):
-    monkeypatch.setattr(settings.legacy, "get_pref", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(settings, "get_pref", lambda *_args, **_kwargs: True)
     query = Query(data="user_settings")
 
     asyncio.run(settings.user_settings_handler(_update(query), object()))
@@ -52,8 +48,8 @@ def test_explicit_set_callback_is_idempotent_on_replay(monkeypatch):
         writes.append(value)
         state["value"] = value
 
-    monkeypatch.setattr(settings.legacy, "get_pref", get_pref)
-    monkeypatch.setattr(settings.legacy, "set_pref", set_pref)
+    monkeypatch.setattr(settings, "get_pref", get_pref)
+    monkeypatch.setattr(settings, "set_pref", set_pref)
 
     first = Query(data="typewriter_set:0")
     asyncio.run(settings.set_typewriter_handler(_update(first), object()))
@@ -66,12 +62,12 @@ def test_explicit_set_callback_is_idempotent_on_replay(monkeypatch):
 
 
 def test_old_toggle_callback_only_upgrades_menu_without_mutation(monkeypatch):
-    monkeypatch.setattr(settings.legacy, "get_pref", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(settings, "get_pref", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
-        settings.legacy,
+        settings,
         "set_pref",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("legacy compatibility callback must not toggle")
+            AssertionError("compatibility callback must not toggle")
         ),
     )
     query = Query(data="toggle_typewriter")
@@ -84,7 +80,7 @@ def test_old_toggle_callback_only_upgrades_menu_without_mutation(monkeypatch):
 
 def test_invalid_set_payload_does_not_write(monkeypatch):
     monkeypatch.setattr(
-        settings.legacy,
+        settings,
         "set_pref",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("invalid payload must not write")
@@ -96,3 +92,14 @@ def test_invalid_set_payload_does_not_write(monkeypatch):
 
     assert query.answers == 1
     assert query.edits == []
+
+
+def test_preferences_are_owned_process_locally_without_bot_import():
+    settings._USER_PREFS.clear()
+    assert settings.get_pref(7, "typewriter") is True
+    settings.set_pref(7, "typewriter", False)
+    assert settings.get_pref(7, "typewriter") is False
+
+    source = __import__("pathlib").Path(settings.__file__).read_text(encoding="utf-8")
+    assert "import bot" not in source
+    assert "from bot" not in source

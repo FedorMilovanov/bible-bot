@@ -6,7 +6,7 @@ import logging
 
 from telegram.ext import ConversationHandler
 
-import telegram_controller as quiz
+import telegram_quiz_runtime_controller as quiz
 from legacy_retry_source import (
     LegacyRetrySourceInvalid,
     LegacyRetrySourceUnavailable,

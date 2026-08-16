@@ -51,7 +51,7 @@ def test_learning_navigation_routes_through_catalog_surface_not_legacy_authority
     assert "CallbackQueryHandler(legacy.historical_menu" not in SOURCE
 
 
-def test_start_course_deep_link_is_handled_before_legacy_controller(monkeypatch):
+def test_start_course_deep_link_is_handled_before_canonical_quiz_start(monkeypatch):
     calls = []
 
     async def no_battle(_update, _context):
@@ -61,12 +61,12 @@ def test_start_course_deep_link_is_handled_before_legacy_controller(monkeypatch)
         calls.append(("course", key))
         return True
 
-    async def forbidden_legacy_start(_update, _context):
-        raise AssertionError("catalog course deep link reached legacy quiz.start")
+    async def forbidden_quiz_start(_update, _context):
+        raise AssertionError("catalog course deep link reached quiz.start")
 
     monkeypatch.setattr(production.battle_share, "handle_start_deep_link", no_battle)
     monkeypatch.setattr(production.courses, "start_course_deep_link", handle_course)
-    monkeypatch.setattr(production.quiz, "start", forbidden_legacy_start)
+    monkeypatch.setattr(production.quiz, "start", forbidden_quiz_start)
     context = SimpleNamespace(args=["chapter3"])
 
     asyncio.run(production._start(SimpleNamespace(), context))
@@ -75,7 +75,7 @@ def test_start_course_deep_link_is_handled_before_legacy_controller(monkeypatch)
     assert context.args == ["chapter3"]
 
 
-def test_unknown_start_token_cannot_reach_legacy_level_config_branch(monkeypatch):
+def test_unknown_start_token_cannot_reach_course_authority_branch(monkeypatch):
     seen = []
 
     async def no_battle(_update, _context):
@@ -84,12 +84,12 @@ def test_unknown_start_token_cannot_reach_legacy_level_config_branch(monkeypatch
     async def unknown_course(_update, _context, _key):
         return False
 
-    async def safe_legacy_start(_update, context):
+    async def safe_quiz_start(_update, context):
         seen.append(list(context.args or []))
 
     monkeypatch.setattr(production.battle_share, "handle_start_deep_link", no_battle)
     monkeypatch.setattr(production.courses, "start_course_deep_link", unknown_course)
-    monkeypatch.setattr(production.quiz, "start", safe_legacy_start)
+    monkeypatch.setattr(production.quiz, "start", safe_quiz_start)
     context = SimpleNamespace(args=["stale-chapter-token"])
 
     asyncio.run(production._start(SimpleNamespace(), context))
@@ -118,12 +118,12 @@ def test_active_report_conversation_precedes_same_group_global_commands():
     assert 'CommandHandler("reset", _reset_during_report)' in SOURCE
 
 
-def test_reset_during_report_drops_only_local_draft_before_quiz_reset(monkeypatch):
+def test_reset_during_report_drops_only_canonical_local_draft_before_quiz_reset(monkeypatch):
     calls = []
-    production.legacy.report_drafts[42] = {"report_id": "r1"}
+    production.report_runtime.report_drafts[42] = {"report_id": "r1"}
 
     async def fake_reset(update, context):
-        calls.append((update, context, 42 in production.legacy.report_drafts))
+        calls.append((update, context, 42 in production.report_runtime.report_drafts))
         return "reset-result"
 
     monkeypatch.setattr(production.quiz, "reset_command", fake_reset)
@@ -134,7 +134,8 @@ def test_reset_during_report_drops_only_local_draft_before_quiz_reset(monkeypatc
 
     assert result == "reset-result"
     assert calls == [(update, context, False)]
-    assert 42 not in production.legacy.report_drafts
+    assert 42 not in production.report_runtime.report_drafts
+    assert not hasattr(production, "legacy")
 
 
 def test_production_module_imports_for_routing_contract():

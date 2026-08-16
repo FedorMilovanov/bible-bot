@@ -8,6 +8,20 @@ import telegram_admin_controller as admin
 from legacy_battle_cleanup import LegacyBattleCleanupUnavailable
 
 
+class _Message:
+    def __init__(self):
+        self.replies = []
+
+    async def reply_text(self, text, **kwargs):
+        self.replies.append((text, kwargs))
+
+
+class _CommandUpdate:
+    def __init__(self, user_id=1):
+        self.effective_user = type("User", (), {"id": user_id})()
+        self.message = _Message()
+
+
 class _Query:
     def __init__(self, user_id=1, data="admin_back"):
         self.from_user = type("User", (), {"id": user_id})()
@@ -31,6 +45,60 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def test_non_admin_cannot_open_admin_command(monkeypatch):
+    monkeypatch.setattr(
+        admin,
+        "get_admin_stats",
+        lambda: (_ for _ in ()).throw(AssertionError("must not read")),
+    )
+    update = _CommandUpdate(user_id=999)
+
+    _run(admin.admin_command(update, object()))
+
+    assert update.message.replies == [
+        ("❌ У тебя нет доступа к этой команде.", {})  # noqa: RUF001
+    ]
+
+
+def test_admin_command_db_read_runs_off_event_loop_and_preserves_panel(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    worker_threads = []
+
+    def read_stats():
+        worker_threads.append(threading.get_ident())
+        return {"total_users": 12, "online_24h": 4, "new_today": 2}
+
+    monkeypatch.setattr(admin, "get_admin_stats", read_stats)
+    monkeypatch.setattr(admin, "user_data", {10: {}, 11: {}})
+    update = _CommandUpdate()
+
+    _run(admin.admin_command(update, object()))
+
+    assert len(worker_threads) == 1
+    assert worker_threads[0] != event_loop_thread
+    assert len(update.message.replies) == 1
+    text, kwargs = update.message.replies[0]
+    assert "ПАНЕЛЬ АДМИНИСТРАТОРА" in text
+    assert "Всего пользователей: *12*" in text  # noqa: RUF001
+    assert "Онлайн за 24ч: *4*" in text
+    assert "Новых сегодня: *2*" in text
+    assert "Активных сессий в памяти: *2*" in text
+    assert kwargs["parse_mode"] == "Markdown"
+    buttons = [row[0] for row in kwargs["reply_markup"].inline_keyboard]
+    assert [button.callback_data for button in buttons] == [
+        "admin_hard_questions",
+        "admin_active_sessions",
+        "admin_cleanup",
+        "admin_broadcast_prompt",
+    ]
+    assert [button.text for button in buttons] == [
+        "🔍 Сложные вопросы",
+        "👥 Активные сессии",
+        "🧹 Очистка данных",
+        "📢 Рассылка",
+    ]
+
+
 def test_non_admin_cannot_run_cleanup(monkeypatch):
     monkeypatch.setattr(
         admin,
@@ -47,7 +115,7 @@ def test_non_admin_cannot_run_cleanup(monkeypatch):
 
 def test_non_admin_cannot_use_admin_read_callbacks(monkeypatch):
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "get_hardest_questions",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not read")),
     )
@@ -61,7 +129,7 @@ def test_non_admin_cannot_use_admin_read_callbacks(monkeypatch):
 
 def test_unknown_admin_read_action_is_rejected_without_dispatch(monkeypatch):
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "get_hardest_questions",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not read")),
     )
@@ -75,7 +143,7 @@ def test_unknown_admin_read_action_is_rejected_without_dispatch(monkeypatch):
 
 def test_admin_hard_questions_is_read_only_presentation(monkeypatch):
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "get_hardest_questions",
         lambda limit=10: [
             {
@@ -106,7 +174,7 @@ def test_admin_hard_questions_db_read_runs_off_event_loop_thread(monkeypatch):
         worker_threads.append(threading.get_ident())
         return []
 
-    monkeypatch.setattr(admin.legacy, "get_hardest_questions", read_hardest)
+    monkeypatch.setattr(admin, "get_hardest_questions", read_hardest)
     query = _Query(data="admin_hard_questions")
 
     _run(admin.admin_read_callback(_Update(query), object()))
@@ -118,7 +186,7 @@ def test_admin_hard_questions_db_read_runs_off_event_loop_thread(monkeypatch):
 
 def test_admin_active_sessions_reads_process_local_projection(monkeypatch):
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "user_data",
         {
             10: {"first_name": "Test", "current_question": 2, "questions": [1, 2, 3]},
@@ -159,9 +227,9 @@ def test_cleanup_uses_recovery_safe_battle_policy_then_prunes_stale_ram(monkeypa
 
     monkeypatch.setattr(admin, "cleanup_stale_waiting_battles", safe_cleanup)
     monkeypatch.setattr(admin.time, "time", lambda: 100_000.0)
-    monkeypatch.setattr(admin.legacy, "GC_STALE_THRESHOLD", 1000)
+    monkeypatch.setattr(admin, "GC_STALE_THRESHOLD", 1000)
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "user_data",
         {
             10: {"last_activity": 98_000.0},
@@ -174,7 +242,7 @@ def test_cleanup_uses_recovery_safe_battle_policy_then_prunes_stale_ram(monkeypa
     _run(admin.admin_cleanup(_Update(query), object()))
 
     assert calls == [{"max_age_minutes": 10}]
-    assert set(admin.legacy.user_data) == {11}
+    assert set(admin.user_data) == {11}
     assert query.answers == [(None, False)]
     assert len(query.edits) == 1
     text, kwargs = query.edits[0]
@@ -193,7 +261,7 @@ def test_cleanup_db_delete_runs_off_event_loop_thread(monkeypatch):
         return 0
 
     monkeypatch.setattr(admin, "cleanup_stale_waiting_battles", safe_cleanup)
-    monkeypatch.setattr(admin.legacy, "user_data", {})
+    monkeypatch.setattr(admin, "user_data", {})
     query = _Query()
 
     _run(admin.admin_cleanup(_Update(query), object()))
@@ -210,20 +278,20 @@ def test_cleanup_fails_closed_before_ram_prune_on_mongo_outage(monkeypatch):
 
     monkeypatch.setattr(admin, "cleanup_stale_waiting_battles", unavailable)
     original = {10: {"last_activity": 0.0}}
-    monkeypatch.setattr(admin.legacy, "user_data", dict(original))
+    monkeypatch.setattr(admin, "user_data", dict(original))
     query = _Query()
 
     _run(admin.admin_cleanup(_Update(query), object()))
 
-    assert admin.legacy.user_data == original
+    assert admin.user_data == original
     assert query.answers == [("Battle storage is temporarily unavailable.", True)]
     assert query.edits == []
 
 
 def test_stale_ram_classifier_is_fail_closed_for_malformed_records(monkeypatch):
-    monkeypatch.setattr(admin.legacy, "GC_STALE_THRESHOLD", 100)
+    monkeypatch.setattr(admin, "GC_STALE_THRESHOLD", 100)
     monkeypatch.setattr(
-        admin.legacy,
+        admin,
         "user_data",
         {
             1: {"last_activity": 950.0},
@@ -240,7 +308,11 @@ def test_admin_adapter_never_calls_broad_legacy_or_unsafe_database_cleanup():
     from pathlib import Path
 
     source = Path(admin.__file__).read_text(encoding="utf-8")
-    assert "legacy.admin_callback_handler" not in source
+    assert "import bot" not in source
+    assert "legacy." not in source
     assert "db_cleanup_stale_battles" not in source
     assert "database.cleanup_stale_battles" not in source
     assert "cleanup_stale_waiting_battles" in source
+    assert "from telegram_quiz_runtime_state import user_data" in source
+    assert "from telegram_controller import user_data" not in source
+    assert "from database import get_admin_stats, get_hardest_questions" in source

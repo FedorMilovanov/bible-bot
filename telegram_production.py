@@ -1,7 +1,6 @@
 """Single production composition root for Telegram quiz, reports and durable PvP."""
 from __future__ import annotations
 
-import importlib
 import logging
 import os
 
@@ -16,44 +15,36 @@ from telegram.ext import (
 )
 
 from keep_alive import keep_alive
-
-
-def _import_legacy_presentation():
-    """Import legacy presentation helpers without starting HTTP as a side effect."""
-    previous = os.environ.get("DISABLE_WEB_SERVER")
-    os.environ["DISABLE_WEB_SERVER"] = "true"
-    try:
-        return importlib.import_module("bot")
-    finally:
-        if previous is None:
-            os.environ.pop("DISABLE_WEB_SERVER", None)
-        else:
-            os.environ["DISABLE_WEB_SERVER"] = previous
-
-
-legacy = _import_legacy_presentation()
-
-import telegram_course_surface as courses  # noqa: E402
-import telegram_admin_controller as admin  # noqa: E402
-import telegram_battle_controller as battles  # noqa: E402
-import telegram_battle_create_controller as battle_create  # noqa: E402
-import telegram_battle_share_controller as battle_share  # noqa: E402
-import telegram_broadcast_controller as broadcasts  # noqa: E402
-import telegram_challenge_controller as challenge  # noqa: E402
-import telegram_command_menu_retry as command_menu  # noqa: E402
-import telegram_controller as quiz  # noqa: E402
-import telegram_report_controller as reports  # noqa: E402
-import telegram_result_delivery_controller as result_delivery  # noqa: E402
-import telegram_retry_controller as retry  # noqa: E402
-import telegram_settings_controller as settings  # noqa: E402
-import telegram_stats_controller as stats  # noqa: E402
-from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
-from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
-from web_api.db_hardening import (  # noqa: E402
+import telegram_activity_controller as activity
+import telegram_achievement_controller as achievements
+import telegram_admin_controller as admin
+import telegram_battle_controller as battles
+import telegram_battle_create_controller as battle_create
+import telegram_battle_share_controller as battle_share
+import telegram_broadcast_controller as broadcasts
+import telegram_challenge_controller as challenge
+import telegram_command_menu_retry as command_menu
+import telegram_course_surface as courses
+import telegram_error_controller as errors
+import telegram_intro_controller as intro
+import telegram_main_menu as main_menu
+import telegram_quiz_runtime_controller as quiz
+import telegram_report_controller as reports
+import telegram_report_runtime as report_runtime
+import telegram_result_delivery_controller as result_delivery
+import telegram_retry_controller as retry
+import telegram_review_controller as review
+import telegram_runtime_maintenance as maintenance
+import telegram_settings_controller as settings
+import telegram_static_presentation as static_presentation
+import telegram_stats_controller as stats
+from broadcast_index_safety import ensure_broadcast_indexes
+from legacy_session_access import ensure_active_session_unique_index
+from web_api.db_hardening import (
     MiniAppIndexSafetyUnavailable,
     ensure_miniapp_indexes,
 )
-from web_api.telegram_transport import (  # noqa: E402
+from web_api.telegram_transport import (
     run_telegram_application,
     validate_telegram_transport_configuration,
 )
@@ -102,23 +93,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
-_legacy_main_keyboard = legacy._main_keyboard
-
-
-def _main_keyboard_with_app() -> InlineKeyboardMarkup:
-    current = _legacy_main_keyboard()
-    url = _miniapp_url()
-    if not url:
-        return current
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=url))],
-            *current.inline_keyboard,
-        ]
-    )
-
-
-legacy._main_keyboard = _main_keyboard_with_app
+main_menu.configure_miniapp_url_provider(_miniapp_url)
 
 
 async def _app_command(update, context):
@@ -157,10 +132,6 @@ async def _start(update, context):
     if await battle_share.handle_start_deep_link(update, context):
         return
 
-    # Course deep links are resolved by the canonical catalog before the legacy
-    # controller sees command arguments. Unknown tokens preserve the historical
-    # fallback-to-main-menu behavior, but bot.py LEVEL_CONFIG is never consulted
-    # by the production /start path.
     original_args = list(context.args or [])
     if original_args and await courses.start_course_deep_link(
         update,
@@ -180,7 +151,7 @@ async def _start(update, context):
 
 
 async def _menu(update, context):
-    """Open the main menu without allowing command args to reach legacy routing."""
+    """Open the main menu without allowing command args into course routing."""
     original_args = list(getattr(context, "args", None) or [])
     context.args = []
     try:
@@ -193,25 +164,47 @@ async def _stats_command(update, context):
     return await stats.stats_command(
         update,
         context,
-        main_keyboard_factory=legacy._main_keyboard,
+        main_keyboard_factory=main_menu.main_keyboard,
+    )
+
+
+async def _help_command(update, context):
+    return await static_presentation.help_command(
+        update,
+        context,
+        main_keyboard_factory=main_menu.main_keyboard,
+    )
+
+
+async def _back_to_main(update, context):
+    return await static_presentation.back_to_main(
+        update,
+        context,
+        main_keyboard_factory=main_menu.main_keyboard,
     )
 
 
 async def _reset_during_report(update, context):
-    """Drop only the process-local report draft, then run the durable-safe quiz reset."""
-    legacy.report_drafts.pop(update.effective_user.id, None)
+    """Drop only the process-local report draft, then run durable-safe quiz reset."""
+    report_runtime.drop_report_draft(update.effective_user.id)
     return await quiz.reset_command(update, context)
 
 
-def _touch_presentation_callback(update):
-    query = update.callback_query
-    legacy._touch(query.from_user.id)
-    return query
+async def _cleanup_stale_userdata_job(context):
+    return await maintenance.cleanup_stale_userdata_job(context)
+
+
+async def _review_errors_handler(update, context):
+    return await review.review_errors_handler(update, context)
+
+
+async def _review_test_handler(update, context):
+    return await review.review_test_handler(update, context)
 
 
 async def _about_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await query.edit_message_text(
         "Bible quiz bot: 1 Peter\n"
@@ -225,21 +218,21 @@ async def _about_callback(update, context):
 
 
 async def _start_test_callback(update, context):
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await courses.choose_level(update, context, is_callback=True)
 
 
 async def _leaderboard_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await stats.show_general_leaderboard(query, 0)
 
 
 async def _leaderboard_page_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer()
     try:
         page = int((query.data or "").removeprefix("leaderboard_page_"))
@@ -250,25 +243,25 @@ async def _leaderboard_page_callback(update, context):
 
 async def _my_stats_callback(update, context):
     del context
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await stats.show_my_stats(query)
 
 
 async def _achievements_callback(update, context):
-    _touch_presentation_callback(update)
-    await legacy.show_achievements(update, context)
+    await achievements.show_achievements(update, context)
 
 
 async def _coming_soon_callback(update, context):
     """Old deployed Chapter-2 button: redirect to the fresh catalog menu."""
-    query = _touch_presentation_callback(update)
+    query = await activity.touch_presentation(update)
     await query.answer("Меню курсов обновлено.")
     await courses.choose_level(update, context, is_callback=True)
 
 
 def main() -> None:
     token = _required_env("BOT_TOKEN")
+    admin_user_id = int(_required_env("ADMIN_USER_ID"))
     _required_env("MONGO_URL")
     validate_telegram_transport_configuration()
     ensure_active_session_unique_index()
@@ -331,14 +324,10 @@ def main() -> None:
     app.add_handler(CommandHandler("cancel", quiz.cancel))
     app.add_handler(CommandHandler("status", quiz.status_command))
     app.add_handler(CommandHandler("cancelreport", reports.cancel_report_command))
-    app.add_handler(CommandHandler("admin", legacy.admin_command))
+    app.add_handler(CommandHandler("admin", admin.admin_command))
     app.add_handler(CommandHandler("broadcast", broadcasts.broadcast_command))
-    app.add_handler(CommandHandler("help", legacy.help_command))
+    app.add_handler(CommandHandler("help", _help_command))
 
-    # Learning course callbacks are validated against the canonical catalog.
-    # Old level/mode patterns remain only as compatibility aliases for already
-    # delivered Telegram keyboards; production never treats bot.py LEVEL_CONFIG
-    # as course authority.
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern=r"^course_menu$"))
     app.add_handler(CallbackQueryHandler(courses.show_group_callback, pattern=r"^course_group:"))
     app.add_handler(CallbackQueryHandler(courses.course_callback, pattern=r"^course:"))
@@ -388,23 +377,21 @@ def main() -> None:
         )
     )
 
-    app.add_handler(CallbackQueryHandler(legacy.back_to_main, pattern="^back_to_main$"))
-    # Stale category buttons from old messages now resolve to the catalog rather
-    # than rendering their historical hard-coded chapter/context lists.
+    app.add_handler(CallbackQueryHandler(_back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^chapter_1_menu$"))
     app.add_handler(CallbackQueryHandler(quiz.random_all_start_handler, pattern="^random_all_start$"))
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^historical_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.challenge_menu, pattern="^challenge_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.intro_hint_handler, pattern=r"^intro_hint_"))
+    app.add_handler(CallbackQueryHandler(challenge.challenge_menu, pattern="^challenge_menu$"))
+    app.add_handler(CallbackQueryHandler(intro.intro_hint_handler, pattern=r"^intro_hint_"))
     app.add_handler(
         CallbackQueryHandler(
             courses.legacy_intro_start_callback,
             pattern=r"^intro_start_",
         )
     )
-    app.add_handler(CallbackQueryHandler(legacy.random_fact_handler, pattern="^random_fact_intro$"))
-    app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
+    app.add_handler(CallbackQueryHandler(intro.random_fact_handler, pattern="^random_fact_intro$"))
+    app.add_handler(CallbackQueryHandler(static_presentation.report_menu, pattern="^report_menu$"))
+    app.add_handler(CallbackQueryHandler(challenge.challenge_rules, pattern="^challenge_rules_"))
     app.add_handler(CallbackQueryHandler(stats.show_weekly_leaderboard, pattern="^weekly_lb_"))
     app.add_handler(
         CallbackQueryHandler(
@@ -426,10 +413,10 @@ def main() -> None:
         )
     )
     app.add_handler(CallbackQueryHandler(stats.show_history, pattern="^my_history$"))
-    app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_errors_"))
-    app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_nav_"))
-    app.add_handler(CallbackQueryHandler(legacy.review_test_handler, pattern=r"^review_test_\d+$"))
-    app.add_handler(CallbackQueryHandler(legacy.noop_handler, pattern="^noop$"))
+    app.add_handler(CallbackQueryHandler(_review_errors_handler, pattern=r"^review_errors_"))
+    app.add_handler(CallbackQueryHandler(_review_errors_handler, pattern=r"^review_nav_"))
+    app.add_handler(CallbackQueryHandler(_review_test_handler, pattern=r"^review_test_\d+$"))
+    app.add_handler(CallbackQueryHandler(static_presentation.noop_handler, pattern="^noop$"))
 
     app.add_handler(CallbackQueryHandler(quiz.show_status_inline, pattern="^my_status$"))
     app.add_handler(CallbackQueryHandler(quiz.reset_session_inline, pattern="^reset_session$"))
@@ -450,14 +437,11 @@ def main() -> None:
         )
     )
 
-    app.job_queue.run_once(
-        _sync_public_command_menu_job,
-        when=0,
-    )
+    app.job_queue.run_once(_sync_public_command_menu_job, when=0)
     app.job_queue.run_repeating(
-        legacy.cleanup_stale_userdata_job,
-        interval=legacy.GC_INTERVAL,
-        first=legacy.GC_INTERVAL,
+        _cleanup_stale_userdata_job,
+        interval=maintenance.GC_INTERVAL,
+        first=maintenance.GC_INTERVAL,
     )
     app.job_queue.run_repeating(
         quiz.remind_unfinished_tests_job,
@@ -485,7 +469,7 @@ def main() -> None:
         first=10,
     )
 
-    app.add_error_handler(legacy.on_error)
+    app.add_error_handler(errors.build_error_handler(admin_user_id))
 
     keep_alive()
     logger.info("Production Telegram composition root started")
