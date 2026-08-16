@@ -26,6 +26,7 @@ from course_catalog import (
     resolve_course_pool,
 )
 from config import SPEED_MODE_TIMEOUT, TIMED_MODE_TIMEOUT
+from telegram_conversation_states import ANSWERING, CHOOSING_LEVEL
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ async def choose_level(update, context, is_callback: bool = False):
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     else:
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    return getattr(__import__("bot"), "CHOOSING_LEVEL", ConversationHandler.END)
+    return CHOOSING_LEVEL
 
 
 async def _show_unavailable(query) -> None:
@@ -330,7 +331,7 @@ async def _launch_course(update, context, *, mode: str, course_key: str):
         parse_mode="Markdown",
     )
     await quiz.send_question(context.bot, update.effective_user.id)
-    return getattr(__import__("bot"), "ANSWERING", ConversationHandler.END)
+    return ANSWERING
 
 
 async def course_mode_callback(update, context):
