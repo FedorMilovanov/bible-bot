@@ -87,6 +87,45 @@ def _reachable_import_paths(entry: str) -> dict[str, tuple[str, ...]]:
     return paths
 
 
+def _literal_import_target(node: ast.Call) -> str | None:
+    if not node.args or not isinstance(node.args[0], ast.Constant):
+        return None
+    target = node.args[0].value
+    if not isinstance(target, str):
+        return None
+    if isinstance(node.func, ast.Name) and node.func.id == "__import__":
+        return target
+    if (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "import_module"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "importlib"
+    ):
+        return target
+    return None
+
+
+def _forbidden_imports_anywhere(path: Path) -> list[str]:
+    """Find direct or literal dynamic legacy imports, including function bodies."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root in FORBIDDEN_PRODUCTION_MODULES:
+                    violations.append(f"line {node.lineno}: import {alias.name}")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            root = node.module.split(".", 1)[0]
+            if root in FORBIDDEN_PRODUCTION_MODULES:
+                violations.append(f"line {node.lineno}: from {node.module} import ...")
+        elif isinstance(node, ast.Call):
+            target = _literal_import_target(node)
+            if target and target.split(".", 1)[0] in FORBIDDEN_PRODUCTION_MODULES:
+                violations.append(f"line {node.lineno}: dynamic import {target!r}")
+    return violations
+
+
 def test_deployed_module_load_graph_has_no_bot_or_giant_controller():
     paths = _reachable_import_paths("production_entrypoint")
     violations = {
@@ -96,6 +135,18 @@ def test_deployed_module_load_graph_has_no_bot_or_giant_controller():
     assert violations == {}
     assert "telegram_production" in paths
     assert "telegram_quiz_runtime_controller" in paths
+
+
+def test_production_reachable_modules_have_no_call_time_legacy_import_backdoors():
+    """A reachable helper must not be able to lazily import the retired runtimes."""
+    paths = _reachable_import_paths("production_entrypoint")
+    violations = {
+        module: findings
+        for module in sorted(paths)
+        if (path := _module_path(module)) is not None
+        and (findings := _forbidden_imports_anywhere(path))
+    }
+    assert violations == {}
 
 
 def test_production_root_has_no_legacy_bootstrap_spelling():
