@@ -49,6 +49,7 @@ import telegram_intro_controller as intro  # noqa: E402
 import telegram_main_menu as main_menu  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_report_runtime as report_runtime  # noqa: E402
+import telegram_report_state as report_state  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
 import telegram_review_controller as review  # noqa: E402
@@ -112,6 +113,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
 
 
 main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)
+report_state.install_legacy_bridge(legacy)
 
 
 async def _app_command(update, context):

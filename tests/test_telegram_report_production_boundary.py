@@ -50,8 +50,8 @@ def test_production_report_handlers_do_not_delegate_to_legacy_writers():
 def test_report_confirmation_accepts_before_ram_cleanup_and_never_direct_sends():
     confirm = async_function(REPORTS, "report_confirm")
     assert "accept_report_draft_once(" in confirm
-    assert "legacy.report_drafts.pop(" in confirm
-    assert confirm.index("accept_report_draft_once(") < confirm.index("legacy.report_drafts.pop(")
+    assert "report_drafts.pop(" in confirm
+    assert confirm.index("accept_report_draft_once(") < confirm.index("report_drafts.pop(")
     assert "insert_report(" not in confirm
     assert "mark_report_delivered(" not in confirm
     assert "ADMIN_USER_ID" not in confirm
@@ -61,12 +61,13 @@ def test_report_confirmation_accepts_before_ram_cleanup_and_never_direct_sends()
 def test_report_draft_gets_stable_identity_at_start():
     start = async_function(REPORTS, "report_start")
     assert "new_report_draft(" in start
-    assert "legacy.report_drafts[user_id] = draft" in start
+    assert "report_drafts[user_id] = draft" in start
 
 
 def test_inaccuracy_acceptance_is_attempt_bound_and_not_direct_send():
     handler = async_function(REPORTS, "report_inaccuracy_handler")
-    assert "attempt_id = data.get(\"attempt_id\")" in handler
+    assert "get_active_quiz_session_strict" in handler
+    assert 'attempt_id = session.get("attempt_id")' in handler
     assert "accept_inaccuracy_report_once(" in handler
     assert "ADMIN_USER_ID" not in handler
     assert "send_message(" not in handler

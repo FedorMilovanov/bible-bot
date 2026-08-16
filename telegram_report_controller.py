@@ -17,13 +17,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ConversationHandler
 
-import bot as legacy
-import telegram_report_state as report_state
+import telegram_main_menu as main_menu
+from database import can_submit_report, seconds_until_next_report
 from legacy_inaccuracy_report import (
     LegacyInaccuracyReportInvalid,
     accept_inaccuracy_report_once,
@@ -36,15 +38,38 @@ from legacy_report_submit import (
     set_report_draft_photo,
     set_report_draft_text,
 )
+from legacy_session_access import (
+    QuizSessionAccessSchemaInvalid,
+    QuizSessionAccessUnavailable,
+    get_active_quiz_session_strict,
+)
 from report_integrity import ReportStoreUnavailable
+from telegram_report_state import (
+    REPORT_CONFIRM,
+    REPORT_PHOTO,
+    REPORT_TEXT,
+    REPORT_TYPE_LABELS,
+    report_drafts,
+)
+from utils import safe_edit, safe_send
 
 logger = logging.getLogger(__name__)
 
-report_state.install_legacy_bridge(legacy)
 
-REPORT_TEXT = legacy.REPORT_TEXT
-REPORT_PHOTO = legacy.REPORT_PHOTO
-REPORT_CONFIRM = legacy.REPORT_CONFIRM
+def _admin_user_id() -> int:
+    raw = os.getenv("ADMIN_USER_ID")
+    if not raw:
+        raise ValueError("ADMIN_USER_ID is required for report delivery")
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError("ADMIN_USER_ID must be an integer") from exc
+
+
+def _sanitize_report_text(text: str) -> str:
+    text = text[:2000]
+    text = re.sub(r"([*_`\[\]])", r"\\\1", text)
+    return text.strip()
 
 
 def _confirm_keyboard() -> InlineKeyboardMarkup:
@@ -65,28 +90,39 @@ def _report_type(query_data: str | None) -> str | None:
     value = (query_data or "").replace("report_start_", "", 1)
     if value == "bug_direct":
         value = "bug"
-    return value if value in legacy.REPORT_TYPE_LABELS else None
+    return value if value in REPORT_TYPE_LABELS else None
 
 
-def _draft_context(user_id: int) -> dict:
-    data = legacy.user_data.get(user_id)
-    if not isinstance(data, dict):
+def _session_context(session: dict | None) -> dict:
+    if not isinstance(session, dict):
         return {}
     return {
-        "mode": data.get("level_key"),
-        "level": data.get("level_name"),
-        "q": data.get("current_question"),
-        "attempt_id": data.get("attempt_id"),
+        "mode": session.get("level_key"),
+        "level": session.get("level_name"),
+        "q": session.get("current_index"),
+        "attempt_id": session.get("attempt_id"),
     }
 
 
+def _durable_draft_context(user_id: int) -> dict:
+    """Best-effort context enrichment; report acceptance must not depend on it."""
+    try:
+        return _session_context(get_active_quiz_session_strict(user_id))
+    except (QuizSessionAccessUnavailable, QuizSessionAccessSchemaInvalid):
+        logger.warning("report context session lookup unavailable for user %s", user_id)
+        return {}
+
+
 def _draft_for(user_id: int) -> dict | None:
-    draft = legacy.report_drafts.get(user_id)
+    draft = report_drafts.get(user_id)
     return draft if isinstance(draft, dict) else None
 
 
 def _confirmation_text(draft: dict) -> str:
-    label = legacy.REPORT_TYPE_LABELS.get(draft.get("type"), str(draft.get("type") or "Сообщение"))
+    label = REPORT_TYPE_LABELS.get(
+        draft.get("type"),
+        str(draft.get("type") or "Сообщение"),
+    )
     has_photo = "✅ фото приложено" if draft.get("photo_file_id") else "нет фото"
     return (
         "📋 *Подтверждение*\n\n"
@@ -105,8 +141,8 @@ async def report_start(update, context):
         return ConversationHandler.END
 
     user_id = query.from_user.id
-    if not await asyncio.to_thread(legacy.can_submit_report, user_id):
-        remaining = await asyncio.to_thread(legacy.seconds_until_next_report, user_id)
+    if not await asyncio.to_thread(can_submit_report, user_id):
+        remaining = await asyncio.to_thread(seconds_until_next_report, user_id)
         await query.answer(
             f"⏳ Слишком часто. Попробуй через {remaining} сек.",
             show_alert=True,
@@ -120,10 +156,10 @@ async def report_start(update, context):
         await query.answer("⚠️ Не удалось начать сообщение. Попробуй позже.", show_alert=True)
         return ConversationHandler.END
 
-    legacy.report_drafts[user_id] = draft
+    report_drafts[user_id] = draft
     await query.answer()
-    label = legacy.REPORT_TYPE_LABELS[report_type]
-    await legacy.safe_edit(
+    label = REPORT_TYPE_LABELS[report_type]
+    await safe_edit(
         query,
         f"{label}\n\n✏️ Напиши своё сообщение.",
         reply_markup=InlineKeyboardMarkup([
@@ -140,18 +176,18 @@ async def report_receive_text(update, context):
     if draft is None:
         return ConversationHandler.END
 
-    text = legacy.sanitize_report_text((update.message.text or "").strip())
+    text = _sanitize_report_text((update.message.text or "").strip())
     if not text:
-        await legacy.safe_send(update.message, "Пожалуйста, напиши текст.")
+        await safe_send(update.message, "Пожалуйста, напиши текст.")
         return REPORT_TEXT
     try:
         set_report_draft_text(draft, text)
     except LegacyReportDraftInvalid:
         logger.warning("report draft text rejected for user %s", user_id, exc_info=True)
-        await legacy.safe_send(update.message, "⚠️ Черновик повреждён. Начни сообщение заново.")
+        await safe_send(update.message, "⚠️ Черновик повреждён. Начни сообщение заново.")
         return ConversationHandler.END
 
-    await legacy.safe_send(
+    await safe_send(
         update.message,
         "📎 Хочешь приложить скриншот?\n\nПришли *фото* или нажми кнопку ниже.",
         reply_markup=_photo_keyboard(),
@@ -167,16 +203,16 @@ async def report_receive_photo(update, context):
     if draft is None:
         return ConversationHandler.END
     if not update.message.photo:
-        await legacy.safe_send(update.message, "Пришли фото или выбери «Без фото».")
+        await safe_send(update.message, "Пришли фото или выбери «Без фото».")
         return REPORT_PHOTO
     try:
         set_report_draft_photo(draft, update.message.photo[-1].file_id)
     except LegacyReportDraftInvalid:
         logger.warning("report photo rejected for user %s", user_id, exc_info=True)
-        await legacy.safe_send(update.message, "⚠️ Фото не удалось привязать к черновику.")
+        await safe_send(update.message, "⚠️ Фото не удалось привязать к черновику.")
         return REPORT_PHOTO
 
-    await legacy.safe_send(
+    await safe_send(
         update.message,
         _confirmation_text(draft),
         reply_markup=_confirm_keyboard(),
@@ -195,9 +231,9 @@ async def report_skip_photo(update, context):
     try:
         set_report_draft_photo(draft, None)
     except LegacyReportDraftInvalid:
-        await legacy.safe_edit(query, "⚠️ Черновик повреждён. Начни сообщение заново.")
+        await safe_edit(query, "⚠️ Черновик повреждён. Начни сообщение заново.")
         return ConversationHandler.END
-    await legacy.safe_edit(
+    await safe_edit(
         query,
         _confirmation_text(draft),
         reply_markup=_confirm_keyboard(),
@@ -210,7 +246,7 @@ async def _send_report_photo(bot, report: dict) -> Any:
     if not isinstance(photo_file_id, str) or not photo_file_id:
         raise ValueError("durable report photo id is missing")
     return await bot.send_photo(
-        chat_id=legacy.ADMIN_USER_ID,
+        chat_id=_admin_user_id(),
         photo=photo_file_id,
         caption=f"📎 Report {report.get('report_id') or report.get('_id')}",
     )
@@ -230,7 +266,7 @@ def _plain_context(report: dict) -> str:
 
 async def _send_report_text(bot, report: dict) -> Any:
     report_type = report.get("type")
-    label = legacy.REPORT_TYPE_LABELS.get(report_type, str(report_type or "report"))
+    label = REPORT_TYPE_LABELS.get(report_type, str(report_type or "report"))
     username = report.get("username") or "—"
     first_name = report.get("first_name") or "—"
     text = str(report.get("text") or "")
@@ -241,7 +277,7 @@ async def _send_report_text(bot, report: dict) -> Any:
         f"Context: {_plain_context(report)}\n\n"
         f"{text}"
     )
-    return await bot.send_message(chat_id=legacy.ADMIN_USER_ID, text=body[:4096])
+    return await bot.send_message(chat_id=_admin_user_id(), text=body[:4096])
 
 
 async def drain_report_outbox(bot, *, limit: int = 50):
@@ -275,10 +311,10 @@ async def report_confirm(update, context):
     user_id = user.id
     draft = _draft_for(user_id)
     if draft is None:
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⚠️ Данные устарели. Начни сообщение заново.",
-            reply_markup=legacy._main_keyboard(),
+            reply_markup=main_menu.main_keyboard(),
         )
         return ConversationHandler.END
 
@@ -290,22 +326,26 @@ async def report_confirm(update, context):
                 username=user.username,
                 first_name=user.first_name,
                 draft=draft,
-                context=_draft_context(user_id),
+                context=_durable_draft_context(user_id),
             )
         )
     except (LegacyReportDraftInvalid, ReportStoreUnavailable, ValueError):
         logger.warning("durable report acceptance failed for user %s", user_id, exc_info=True)
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⚠️ База не подтвердила сохранение. Черновик не удалён — нажми «Отправить» ещё раз.",
             reply_markup=_confirm_keyboard(),
         )
         return REPORT_CONFIRM
 
-    accepted_id = accepted.get("_id") or accepted.get("report_id") if isinstance(accepted, dict) else None
+    accepted_id = (
+        accepted.get("_id") or accepted.get("report_id")
+        if isinstance(accepted, dict)
+        else None
+    )
     if not isinstance(accepted_id, str) or accepted_id != report_id:
         logger.error("durable report acceptance returned mismatched identity for user %s", user_id)
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⚠️ База вернула противоречивый идентификатор. Черновик сохранён локально для повтора.",
             reply_markup=_confirm_keyboard(),
@@ -314,18 +354,17 @@ async def report_confirm(update, context):
 
     current = _draft_for(user_id)
     if current is draft or (current and current.get("report_id") == report_id):
-        legacy.report_drafts.pop(user_id, None)
+        report_drafts.pop(user_id, None)
 
     try:
         await drain_report_outbox(context.bot, limit=10)
     except Exception:
-        # Acceptance is already durable. Delivery remains retryable by the job.
         logger.warning("accepted report remains queued for admin delivery", exc_info=True)
 
-    await legacy.safe_edit(
+    await safe_edit(
         query,
         "✅ Сообщение сохранено. Спасибо!",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
     )
     return ConversationHandler.END
 
@@ -334,11 +373,11 @@ async def report_cancel(update, context):
     del context
     query = update.callback_query
     await query.answer()
-    legacy.report_drafts.pop(query.from_user.id, None)
-    await legacy.safe_edit(
+    report_drafts.pop(query.from_user.id, None)
+    await safe_edit(
         query,
         "❌ Репорт отменён.",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
     )
     return ConversationHandler.END
 
@@ -346,9 +385,9 @@ async def report_cancel(update, context):
 async def cancel_report_command(update, context):
     del context
     user_id = update.effective_user.id
-    legacy.report_drafts.pop(user_id, None)
+    report_drafts.pop(user_id, None)
     await update.message.reply_text("❌ Репорт отменён.", reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("Главное меню:", reply_markup=legacy._main_keyboard())
+    await update.message.reply_text("Главное меню:", reply_markup=main_menu.main_keyboard())
     return ConversationHandler.END
 
 
@@ -356,9 +395,16 @@ async def report_inaccuracy_handler(update, context):
     query = update.callback_query
     user = update.effective_user
     user_id = user.id
-    data = legacy.user_data.get(user_id)
-    if not isinstance(data, dict):
-        await query.answer("Сессия уже не загружена. Используй /status.", show_alert=True)
+    try:
+        session = await asyncio.to_thread(get_active_quiz_session_strict, user_id)
+    except QuizSessionAccessUnavailable:
+        await query.answer("База сессий временно недоступна.", show_alert=True)
+        return
+    except QuizSessionAccessSchemaInvalid:
+        await query.answer("Состояние сессии противоречиво. Используй /status.", show_alert=True)
+        return
+    if not isinstance(session, dict):
+        await query.answer("Сессия уже не активна. Используй /status.", show_alert=True)
         return
 
     try:
@@ -367,7 +413,7 @@ async def report_inaccuracy_handler(update, context):
         await query.answer("Некорректная кнопка.", show_alert=True)
         return
 
-    questions = data.get("questions")
+    questions = session.get("questions_data")
     if (
         not isinstance(questions, list)
         or question_index < 0
@@ -376,7 +422,7 @@ async def report_inaccuracy_handler(update, context):
     ):
         await query.answer("Этот вопрос уже недоступен.", show_alert=True)
         return
-    attempt_id = data.get("attempt_id")
+    attempt_id = session.get("attempt_id")
     if not isinstance(attempt_id, str) or not attempt_id:
         await query.answer("Попытка не подтверждена. Используй /status.", show_alert=True)
         return
@@ -390,7 +436,7 @@ async def report_inaccuracy_handler(update, context):
                 attempt_id=attempt_id,
                 question_index=question_index,
                 question=questions[question_index],
-                level_name=data.get("level_name"),
+                level_name=session.get("level_name"),
             )
         )
     except (LegacyInaccuracyReportInvalid, ReportStoreUnavailable, ValueError):

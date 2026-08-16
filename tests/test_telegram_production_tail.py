@@ -31,7 +31,14 @@ def test_report_runtime_drops_canonical_mapping():
 
 def test_report_state_bridge_preserves_existing_legacy_drafts():
     report_state.report_drafts.clear()
-    legacy = SimpleNamespace(report_drafts={9: {"report_id": "existing"}})
+    legacy = SimpleNamespace(
+        REPORT_TYPE=report_state.REPORT_TYPE,
+        REPORT_TEXT=report_state.REPORT_TEXT,
+        REPORT_PHOTO=report_state.REPORT_PHOTO,
+        REPORT_CONFIRM=report_state.REPORT_CONFIRM,
+        REPORT_TYPE_LABELS=dict(report_state.REPORT_TYPE_LABELS),
+        report_drafts={9: {"report_id": "existing"}},
+    )
 
     report_state.install_legacy_bridge(legacy)
 
@@ -40,11 +47,14 @@ def test_report_state_bridge_preserves_existing_legacy_drafts():
     report_state.report_drafts.clear()
 
 
-def test_report_runtime_has_no_legacy_module_import():
+def test_report_runtime_and_controller_have_no_legacy_module_import():
     assert "import bot" not in REPORT_RUNTIME_SOURCE
     assert "legacy." not in REPORT_RUNTIME_SOURCE
     assert "from telegram_report_state import report_drafts" in REPORT_RUNTIME_SOURCE
-    assert "report_state.install_legacy_bridge(legacy)" in REPORT_CONTROLLER_SOURCE
+
+    assert "import bot" not in REPORT_CONTROLLER_SOURCE
+    assert "legacy." not in REPORT_CONTROLLER_SOURCE
+    assert "get_active_quiz_session_strict" in REPORT_CONTROLLER_SOURCE
 
 
 def test_error_policy_ignores_network_noise():
@@ -114,7 +124,9 @@ def test_error_handler_factory_binds_admin_id():
 def test_production_tail_routes_outside_direct_legacy_surface():
     assert "import telegram_error_controller as errors" in PRODUCTION_SOURCE
     assert "import telegram_report_runtime as report_runtime" in PRODUCTION_SOURCE
+    assert "import telegram_report_state as report_state" in PRODUCTION_SOURCE
     assert "report_runtime.drop_report_draft" in PRODUCTION_SOURCE
+    assert "report_state.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
     assert "errors.build_error_handler" in PRODUCTION_SOURCE
 
     assert "legacy.report_drafts" not in PRODUCTION_SOURCE
