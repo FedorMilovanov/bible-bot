@@ -27,8 +27,15 @@ def install_legacy_bridge(legacy_module) -> None:
     current = getattr(legacy_module, "report_drafts", None)
     if not isinstance(current, dict):
         raise TypeError("legacy module must expose a report_drafts dict")
-    if current is report_drafts:
-        return
-    if current:
-        report_drafts.update(current)
-    legacy_module.report_drafts = report_drafts
+    if current is not report_drafts:
+        if current:
+            report_drafts.update(current)
+        legacy_module.report_drafts = report_drafts
+
+    # The values are immutable integers, but assigning them after parity makes
+    # the ownership explicit before transitional consumers copy the constants.
+    legacy_module.REPORT_TYPE = REPORT_TYPE
+    legacy_module.REPORT_TEXT = REPORT_TEXT
+    legacy_module.REPORT_PHOTO = REPORT_PHOTO
+    legacy_module.REPORT_CONFIRM = REPORT_CONFIRM
+    legacy_module.REPORT_TYPE_LABELS = REPORT_TYPE_LABELS

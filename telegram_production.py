@@ -33,9 +33,22 @@ def _import_legacy_presentation():
 
 legacy = _import_legacy_presentation()
 
+# Canonicalize every residual controller-facing legacy authority before importing
+# any focused adapter that can load telegram_controller transitively.
 import achievement_catalog as achievement_catalog  # noqa: E402
 import question_identity as question_identity  # noqa: E402
 import quiz_answer_history as answer_history  # noqa: E402
+import telegram_controller_legacy_bridge as controller_legacy_bridge  # noqa: E402
+import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
+import telegram_report_state as report_state  # noqa: E402
+
+controller_legacy_bridge.install_legacy_bridge(legacy)
+quiz_runtime.install_legacy_bridge(legacy)
+question_identity.install_legacy_bridge(legacy)
+answer_history.install_legacy_bridge(legacy)
+achievement_catalog.install_legacy_bridge(legacy)
+report_state.install_legacy_bridge(legacy)
+
 import telegram_activity_controller as activity  # noqa: E402
 import telegram_achievement_controller as achievements  # noqa: E402
 import telegram_course_surface as courses  # noqa: E402
@@ -46,15 +59,12 @@ import telegram_battle_share_controller as battle_share  # noqa: E402
 import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_command_menu_retry as command_menu  # noqa: E402
-import telegram_controller_legacy_bridge as controller_legacy_bridge  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_error_controller as errors  # noqa: E402
 import telegram_intro_controller as intro  # noqa: E402
 import telegram_main_menu as main_menu  # noqa: E402
-import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_report_runtime as report_runtime  # noqa: E402
-import telegram_report_state as report_state  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
 import telegram_review_controller as review  # noqa: E402
@@ -117,13 +127,9 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
-controller_legacy_bridge.install_legacy_bridge(legacy)
-quiz_runtime.install_legacy_bridge(legacy)
-question_identity.install_legacy_bridge(legacy)
-answer_history.install_legacy_bridge(legacy)
-achievement_catalog.install_legacy_bridge(legacy)
+# Presentation bridges need the Mini App URL provider defined above, but all
+# controller-facing state/identity/history/catalog bridges are already installed.
 main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)
-report_state.install_legacy_bridge(legacy)
 
 
 async def _app_command(update, context):
