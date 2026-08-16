@@ -14,9 +14,9 @@ python scripts/run_production_acceptance.py predeploy
 
 Exit `0` requires all five production Mongo checks to be safe:
 
-1. active legacy Telegram duplicates;
+1. active Telegram quiz-session duplicates;
 2. Mini App open-session duplicates;
-3. exact legacy + Mini App unique-index contracts;
+3. exact Telegram + Mini App unique-index contracts;
 4. durable-evidence retention / TTL contracts;
 5. result-receipt BSON growth and Mongo topology.
 
@@ -24,7 +24,9 @@ Exit `1` means an external contract is unsafe and requires operator review. Exit
 
 ## Deploy boundary
 
-Only after phase 1 is green, make the explicitly authorized merge/deploy decision. Keep `render.yaml` single-instance, webhook transport, single Telegram webhook connection and `autoDeploy: false` unless a separately reviewed architecture change intentionally replaces that contract.
+Only after phase 1 is green, make the explicitly authorized merge/deploy decision. `render.yaml` remains the deployment authority and must keep the reviewed single-instance, webhook, single-connection and `autoDeployTrigger: checksPass` contract unless a separately reviewed architecture change intentionally replaces it.
+
+Checks-gated auto-deploy does not remove the merge authorization boundary: it means an authorized commit on the linked production branch is deployable only after repository checks pass.
 
 Record the exact 40-hex revision actually deployed. Do not infer it from branch names.
 
