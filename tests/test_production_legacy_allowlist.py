@@ -22,16 +22,14 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "help_command",
     "intro_hint_handler",
     "noop_handler",
-    "on_error",
     "random_fact_handler",
-    "report_drafts",
     "report_menu",
     "review_errors_handler",
     "review_test_handler",
     "show_achievements",
 }
 
-_NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}
+_NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL"}
 
 # Non-database authority writers still need an explicit fence because they live
 # in legacy/integrity/controller helpers rather than database.py.

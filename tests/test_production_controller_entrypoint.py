@@ -127,7 +127,9 @@ def test_http_server_is_started_only_after_startup_guards_and_handler_setup():
     mongo_guard = PRODUCTION.index("ensure_active_session_unique_index()", main_start)
     miniapp_guard = PRODUCTION.index("if ensure_miniapp_indexes() is not True:", main_start)
     job_queue_guard = PRODUCTION.index("if app.job_queue is None:", main_start)
-    last_handler = PRODUCTION.index("app.add_error_handler(legacy.on_error)", main_start)
+    last_handler = PRODUCTION.index(
+        "app.add_error_handler(errors.build_error_handler(admin_user_id))", main_start
+    )
     http_start = PRODUCTION.index("\n    keep_alive()", main_start)
     transport_start = PRODUCTION.index("\n    run_telegram_application(", main_start)
 

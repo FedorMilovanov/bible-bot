@@ -42,7 +42,9 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_command_menu_retry as command_menu  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
+import telegram_error_controller as errors  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
+import telegram_report_runtime as report_runtime  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
@@ -199,7 +201,7 @@ async def _stats_command(update, context):
 
 async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
-    legacy.report_drafts.pop(update.effective_user.id, None)
+    report_runtime.drop_report_draft(update.effective_user.id)
     return await quiz.reset_command(update, context)
 
 
@@ -269,6 +271,7 @@ async def _coming_soon_callback(update, context):
 
 def main() -> None:
     token = _required_env("BOT_TOKEN")
+    admin_user_id = int(_required_env("ADMIN_USER_ID"))
     _required_env("MONGO_URL")
     validate_telegram_transport_configuration()
     ensure_active_session_unique_index()
@@ -485,7 +488,7 @@ def main() -> None:
         first=10,
     )
 
-    app.add_error_handler(legacy.on_error)
+    app.add_error_handler(errors.build_error_handler(admin_user_id))
 
     keep_alive()
     logger.info("Production Telegram composition root started")
