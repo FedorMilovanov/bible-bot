@@ -26,8 +26,6 @@ ALLOWED_LEGACY_ATTRIBUTES = {
     "random_fact_handler",
     "report_drafts",
     "report_menu",
-    "review_errors_handler",
-    "review_test_handler",
     "show_achievements",
 }
 

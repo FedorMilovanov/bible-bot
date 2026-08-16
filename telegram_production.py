@@ -45,6 +45,7 @@ import telegram_controller as quiz  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
+import telegram_review_controller as review  # noqa: E402
 import telegram_settings_controller as settings  # noqa: E402
 import telegram_stats_controller as stats  # noqa: E402
 from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
@@ -201,6 +202,22 @@ async def _reset_during_report(update, context):
     """Drop only the process-local report draft, then run the durable-safe quiz reset."""
     legacy.report_drafts.pop(update.effective_user.id, None)
     return await quiz.reset_command(update, context)
+
+
+async def _review_errors_handler(update, context):
+    return await review.review_errors_handler(
+        update,
+        context,
+        user_data=quiz.user_data,
+    )
+
+
+async def _review_test_handler(update, context):
+    return await review.review_test_handler(
+        update,
+        context,
+        user_data=quiz.user_data,
+    )
 
 
 def _touch_presentation_callback(update):
@@ -426,9 +443,9 @@ def main() -> None:
         )
     )
     app.add_handler(CallbackQueryHandler(stats.show_history, pattern="^my_history$"))
-    app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_errors_"))
-    app.add_handler(CallbackQueryHandler(legacy.review_errors_handler, pattern=r"^review_nav_"))
-    app.add_handler(CallbackQueryHandler(legacy.review_test_handler, pattern=r"^review_test_\d+$"))
+    app.add_handler(CallbackQueryHandler(_review_errors_handler, pattern=r"^review_errors_"))
+    app.add_handler(CallbackQueryHandler(_review_errors_handler, pattern=r"^review_nav_"))
+    app.add_handler(CallbackQueryHandler(_review_test_handler, pattern=r"^review_test_\d+$"))
     app.add_handler(CallbackQueryHandler(legacy.noop_handler, pattern="^noop$"))
 
     app.add_handler(CallbackQueryHandler(quiz.show_status_inline, pattern="^my_status$"))
