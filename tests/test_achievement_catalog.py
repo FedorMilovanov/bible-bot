@@ -1,5 +1,4 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -23,16 +22,6 @@ EXPECTED_KEYS = {
 }
 
 
-def _legacy_copy():
-    return {
-        key: {
-            field: (dict(value) if field == "requirement" else value)
-            for field, value in meta.items()
-        }
-        for key, meta in catalog.ACHIEVEMENTS.items()
-    }
-
-
 def test_canonical_achievement_catalog_has_expected_contract():
     validated = catalog.validate_achievement_catalog()
 
@@ -43,27 +32,25 @@ def test_canonical_achievement_catalog_has_expected_contract():
     assert validated["daily_streak_30"]["requirement"] == {"daily_streak": 30}
 
 
-def test_legacy_bridge_preserves_values_and_replaces_identity():
-    legacy = SimpleNamespace(ACHIEVEMENTS=_legacy_copy())
-    assert legacy.ACHIEVEMENTS is not catalog.ACHIEVEMENTS
+def test_catalog_validation_rejects_drifted_shapes():
+    with pytest.raises(RuntimeError, match="unavailable"):
+        catalog.validate_achievement_catalog(None)
 
-    catalog.install_legacy_bridge(legacy)
+    malformed = dict(catalog.ACHIEVEMENTS)
+    malformed["first_steps"] = {"name": "broken"}
+    with pytest.raises(RuntimeError, match="missing required fields"):
+        catalog.validate_achievement_catalog(malformed)
 
-    assert legacy.ACHIEVEMENTS is catalog.ACHIEVEMENTS
-
-
-def test_legacy_bridge_fails_closed_on_catalog_drift():
-    drifted = _legacy_copy()
-    drifted["first_steps"]["reward"] = 999
-    legacy = SimpleNamespace(ACHIEVEMENTS=drifted)
-
-    with pytest.raises(RuntimeError, match="diverged"):
-        catalog.install_legacy_bridge(legacy)
+    invalid_reward = dict(catalog.ACHIEVEMENTS)
+    invalid_reward["first_steps"] = dict(catalog.ACHIEVEMENTS["first_steps"], reward=True)
+    with pytest.raises(RuntimeError, match="invalid reward"):
+        catalog.validate_achievement_catalog(invalid_reward)
 
 
-def test_legacy_bridge_fails_closed_on_malformed_catalog():
-    with pytest.raises(RuntimeError):
-        catalog.install_legacy_bridge(SimpleNamespace(ACHIEVEMENTS=None))
+def test_catalog_has_no_retired_monolith_bridge():
+    source = Path("achievement_catalog.py").read_text(encoding="utf-8")
+    assert "install_legacy_bridge" not in source
+    assert "bot.py" not in source
 
 
 def test_production_runtime_uses_canonical_achievement_catalog_directly():
@@ -71,5 +58,5 @@ def test_production_runtime_uses_canonical_achievement_catalog_directly():
     runtime = Path("telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
 
     assert "from achievement_catalog import ACHIEVEMENTS" in runtime
-    assert "install_legacy_bridge(legacy" not in production
+    assert "install_legacy_bridge" not in production
     assert "legacy =" not in production
