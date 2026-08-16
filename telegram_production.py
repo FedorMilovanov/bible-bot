@@ -42,6 +42,7 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_command_menu_retry as command_menu  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
+import telegram_intro_controller as intro  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
@@ -395,14 +396,14 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(quiz.random_all_start_handler, pattern="^random_all_start$"))
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern="^historical_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_menu, pattern="^challenge_menu$"))
-    app.add_handler(CallbackQueryHandler(legacy.intro_hint_handler, pattern=r"^intro_hint_"))
+    app.add_handler(CallbackQueryHandler(intro.intro_hint_handler, pattern=r"^intro_hint_"))
     app.add_handler(
         CallbackQueryHandler(
             courses.legacy_intro_start_callback,
             pattern=r"^intro_start_",
         )
     )
-    app.add_handler(CallbackQueryHandler(legacy.random_fact_handler, pattern="^random_fact_intro$"))
+    app.add_handler(CallbackQueryHandler(intro.random_fact_handler, pattern="^random_fact_intro$"))
     app.add_handler(CallbackQueryHandler(legacy.report_menu, pattern="^report_menu$"))
     app.add_handler(CallbackQueryHandler(legacy.challenge_rules, pattern="^challenge_rules_"))
     app.add_handler(CallbackQueryHandler(stats.show_weekly_leaderboard, pattern="^weekly_lb_"))
