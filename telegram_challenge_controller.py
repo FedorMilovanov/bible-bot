@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
@@ -21,7 +22,7 @@ from legacy_session_lifecycle import (
     restart_owned_quiz_attempt,
 )
 from question_identity import get_qid
-from questions import pick_competitive_challenge_questions
+from questions import get_pool_by_key, pick_competitive_challenge_questions
 
 logger = logging.getLogger(__name__)
 _COMPETITIVE_MODES = frozenset({"random20", "hardcore20"})
@@ -161,9 +162,6 @@ async def restart_session_handler(update, context):
 
     session = resolved.session
     mode = session.get("mode")
-    if mode not in _COMPETITIVE_MODES:
-        return await quiz.restart_session_handler(update, context)
-
     try:
         if persisted_is_retry(session):
             await query.answer(
@@ -175,12 +173,24 @@ async def restart_session_handler(update, context):
         await query.answer("⚠️ Политика сохранённой попытки повреждена.", show_alert=True)
         return
 
-    try:
-        questions = pick_competitive_challenge_questions(mode)
-    except ValueError:
-        logger.exception("competitive Challenge restart selection failed")
+    if mode in _COMPETITIVE_MODES:
+        try:
+            questions = pick_competitive_challenge_questions(mode)
+        except ValueError:
+            logger.exception("competitive Challenge restart selection failed")
+            await query.answer(
+                "⚠️ Не удалось собрать вопросы Challenge для перезапуска.",
+                show_alert=True,
+            )
+            return
+    else:
+        pool = get_pool_by_key(session.get("level_key"))
+        total = len(session.get("questions_data", []))
+        questions = random.sample(pool, min(total, len(pool))) if pool else []
+
+    if not questions:
         await query.answer(
-            "⚠️ Не удалось собрать вопросы Challenge для перезапуска.",
+            "⚠️ Не удалось собрать вопросы для перезапуска.",
             show_alert=True,
         )
         return
@@ -215,8 +225,11 @@ async def restart_session_handler(update, context):
         first_name=query.from_user.first_name,
     )
     await query.edit_message_text(
-        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Challenge')}_\n\n"
+        f"🔁 *Начинаем заново*\n_{data.get('level_name', 'Тест')}_\n\n"
         f"Вопросов: {len(questions)}",
         parse_mode="Markdown",
     )
-    await quiz.send_challenge_question(context.bot, user_id)
+    if data.get("is_challenge"):
+        await quiz.send_challenge_question(context.bot, user_id)
+    else:
+        await quiz.send_question(context.bot, user_id)
