@@ -18,6 +18,8 @@ on:
       - 'docs/**'
       - 'miniapp/**'
       - '.github/workflows/1peter-release-integrity.yml'
+      - 'requirements*.txt'
+      - 'constraints.txt'
   workflow_dispatch:
 
 permissions:
@@ -28,25 +30,35 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout product release
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Checkout pinned immutable Research release
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: FedorMilovanov/Research
           ref: 8d6e5bc3f303d0a6a2d1a15969e042907f3387db
           path: .release-research
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.12'
+          python-version: '3.14.7'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
 
       - name: Install product dependencies
-        run: pip install -r requirements-dev.txt
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+          PIP_NO_INPUT: '1'
+        run: python -m pip install --only-binary=:all: -c constraints.txt -r requirements-dev.txt
 
       - name: Verify Chapter 1 authority files are unchanged from release base
         run: |
@@ -128,7 +140,7 @@ jobs:
 
       - name: Upload verified Research and release audit artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: 1peter-release-diagnostics
           path: |
