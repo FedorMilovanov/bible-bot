@@ -31,6 +31,7 @@ jobs:
             requirements.txt
             constraints.txt
       - name: Install PyPA vulnerability scanner
-        run: python -m pip install --only-binary=:all: pip-audit==2.10.1
+        run: >-
+          python -m pip install --only-binary=:all: pip-audit==2.10.1
       - name: Audit runtime requirements
         run: python -m pip_audit -r requirements.txt --progress-spinner off
