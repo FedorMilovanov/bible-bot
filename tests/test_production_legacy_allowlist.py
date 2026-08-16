@@ -7,31 +7,11 @@ SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 BOT_SOURCE = (ROOT / "bot.py").read_text(encoding="utf-8")
 DATABASE_SOURCE = (ROOT / "database.py").read_text(encoding="utf-8")
 
-# Transitional legacy dependencies that are intentionally presentation/read-only
-# or process-local. Any new legacy attribute must be reviewed explicitly before
-# it can enter the production composition root.
-ALLOWED_LEGACY_ATTRIBUTES = {
-    "GC_INTERVAL",
-    "_main_keyboard",
-    "_touch",
-    "admin_command",
-    "back_to_main",
-    "challenge_menu",
-    "challenge_rules",
-    "cleanup_stale_userdata_job",
-    "help_command",
-    "intro_hint_handler",
-    "noop_handler",
-    "on_error",
-    "random_fact_handler",
-    "report_drafts",
-    "report_menu",
-    "review_errors_handler",
-    "review_test_handler",
-    "show_achievements",
-}
+# The production composition root may pass the transitional legacy module into
+# focused adapters, but it must not reach into any legacy attribute directly.
+ALLOWED_LEGACY_ATTRIBUTES: set[str] = set()
 
-_NON_CALLABLE_LEGACY_ATTRIBUTES = {"GC_INTERVAL", "report_drafts"}
+_NON_CALLABLE_LEGACY_ATTRIBUTES: set[str] = set()
 
 # Non-database authority writers still need an explicit fence because they live
 # in legacy/integrity/controller helpers rather than database.py.
