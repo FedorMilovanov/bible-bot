@@ -13,8 +13,7 @@ updates:
           - minor
           - patch
     ignore:
-      # PTB 21/22 is a deliberate migration wave: v22 removes APIs deprecated
-      # in 20.x and this bot has a large stateful ConversationHandler surface.
+      # PTB major upgrades remain deliberate migration waves.
       - dependency-name: python-telegram-bot
         update-types:
           - version-update:semver-major
@@ -23,10 +22,21 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    groups:
+      docker-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
