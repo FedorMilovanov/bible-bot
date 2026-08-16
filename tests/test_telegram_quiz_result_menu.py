@@ -2,8 +2,6 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 import telegram_quiz_result_menu as result_menu
 
 
@@ -156,26 +154,8 @@ def test_send_failure_is_logged_and_swallowed():
     _run(result_menu.send_final_results_menu(bot, 1, data))
 
 
-def test_bridge_replaces_only_expected_legacy_callable():
-    async def old_result_menu(bot, chat_id, data):
-        return None
-
-    legacy = SimpleNamespace(send_final_results_menu=old_result_menu, marker=object())
-    marker = legacy.marker
-
-    result_menu.install_legacy_bridge(legacy)
-
-    assert legacy.send_final_results_menu is result_menu.send_final_results_menu
-    assert legacy.marker is marker
-
-
-def test_bridge_rejects_missing_or_non_callable_legacy_seam():
-    with pytest.raises(TypeError):
-        result_menu.validate_legacy_bridge(SimpleNamespace())
-    with pytest.raises(TypeError):
-        result_menu.validate_legacy_bridge(SimpleNamespace(send_final_results_menu=None))
-
-
-def test_focused_result_menu_does_not_import_transitional_bot_module():
+def test_focused_result_menu_has_no_retired_monolith_bridge():
     assert "import bot" not in SOURCE
     assert "from bot" not in SOURCE
+    assert "install_legacy_bridge" not in SOURCE
+    assert "validate_legacy_bridge" not in SOURCE
