@@ -2,7 +2,6 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import telegram_answer_animation as animation
@@ -166,29 +165,11 @@ def test_edit_failure_and_malformed_markup_remain_fail_soft(monkeypatch):
     assert malformed.edits == []
 
 
-def test_bridge_replaces_only_expected_legacy_animation_callable():
-    async def old_animation(query, btn_index, correct_index, is_numeric_mode, shuffled):
-        return None
-
-    legacy = SimpleNamespace(_animate_answer_buttons=old_animation, marker=object())
-    marker = legacy.marker
-
-    animation.install_legacy_bridge(legacy)
-
-    assert legacy._animate_answer_buttons is animation.animate_answer_buttons
-    assert legacy.marker is marker
-
-
-def test_bridge_rejects_missing_or_non_callable_legacy_animation():
-    with pytest.raises(TypeError):
-        animation.validate_legacy_bridge(SimpleNamespace())
-    with pytest.raises(TypeError):
-        animation.validate_legacy_bridge(SimpleNamespace(_animate_answer_buttons=None))
-
-
-def test_focused_animation_has_no_legacy_or_durable_state_dependency():
+def test_focused_animation_has_no_monolith_bridge_or_durable_state_dependency():
     assert "import bot" not in SOURCE
     assert "from bot" not in SOURCE
+    assert "install_legacy_bridge" not in SOURCE
+    assert "validate_legacy_bridge" not in SOURCE
     assert "user_data" not in SOURCE
     assert "storage" not in SOURCE
     assert ".text =" not in SOURCE
