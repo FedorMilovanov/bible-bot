@@ -2,7 +2,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_VERSION = "3.14.6"
+PYTHON_VERSION = "3.14.7"
+PTB_VERSION = "22.8"
 PRODUCTION_ENTRYPOINT = "production_entrypoint.py"
 PRODUCTION_CONTROLLER = "telegram_production.py"
 
@@ -92,7 +93,7 @@ def test_production_controller_uses_configurable_transport_with_webhook_shutdown
 def test_custom_webhook_reuses_waitress_without_ptb_webhook_extra():
     requirements = read("requirements.txt")
     transport = read("web_api/telegram_transport.py")
-    assert "python-telegram-bot[job-queue]==22.7" in requirements
+    assert f"python-telegram-bot[job-queue]=={PTB_VERSION}" in requirements
     assert "python-telegram-bot[webhooks]" not in requirements
     assert "application.update_queue.put(update)" in transport
     assert "application.update_queue.join()" in transport
@@ -125,7 +126,7 @@ def test_docker_context_excludes_local_secrets_and_dev_tree():
 def test_production_requires_ptb_job_queue_for_recovery_jobs():
     requirements = read("requirements.txt")
     source = read(PRODUCTION_CONTROLLER)
-    assert "python-telegram-bot[job-queue]==22.7" in requirements
+    assert f"python-telegram-bot[job-queue]=={PTB_VERSION}" in requirements
     assert "if app.job_queue is None:" in source
     assert "if app.job_queue is not None:" not in source
     assert "reports.report_delivery_job" in source
