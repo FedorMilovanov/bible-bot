@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import telegram_answer_animation as answer_animation
 import telegram_main_menu as menu
 import telegram_quiz_result_menu as result_menu
 
@@ -58,9 +59,13 @@ def test_legacy_bridge_points_transitional_callers_at_canonical_factories():
     async def old_result_menu(bot, chat_id, data):
         return None
 
+    async def old_animation(query, btn_index, correct_index, is_numeric_mode, shuffled):
+        return None
+
     legacy = SimpleNamespace(
         _main_keyboard=old_factory,
         send_final_results_menu=old_result_menu,
+        _animate_answer_buttons=old_animation,
     )
 
     menu.install_legacy_bridge(
@@ -70,6 +75,7 @@ def test_legacy_bridge_points_transitional_callers_at_canonical_factories():
 
     assert legacy._main_keyboard is menu.main_keyboard
     assert legacy.send_final_results_menu is result_menu.send_final_results_menu
+    assert legacy._animate_answer_buttons is answer_animation.animate_answer_buttons
     keyboard = legacy._main_keyboard()
     assert keyboard.inline_keyboard[0][0].web_app.url == "https://example.test/app"
 
@@ -83,9 +89,13 @@ def test_legacy_bridge_validates_result_menu_before_mutating_main_menu():
     def old_factory():
         return object()
 
+    async def old_animation(query, btn_index, correct_index, is_numeric_mode, shuffled):
+        return None
+
     legacy = SimpleNamespace(
         _main_keyboard=old_factory,
         send_final_results_menu=None,
+        _animate_answer_buttons=old_animation,
     )
 
     with pytest.raises(TypeError):
@@ -96,6 +106,32 @@ def test_legacy_bridge_validates_result_menu_before_mutating_main_menu():
 
     assert legacy._main_keyboard is old_factory
     assert legacy.send_final_results_menu is None
+    assert legacy._animate_answer_buttons is old_animation
+    assert menu.main_keyboard().inline_keyboard[0][0].callback_data == "about"
+
+
+def test_legacy_bridge_validates_animation_before_mutating_other_presenters():
+    def old_factory():
+        return object()
+
+    async def old_result_menu(bot, chat_id, data):
+        return None
+
+    legacy = SimpleNamespace(
+        _main_keyboard=old_factory,
+        send_final_results_menu=old_result_menu,
+        _animate_answer_buttons=None,
+    )
+
+    with pytest.raises(TypeError):
+        menu.install_legacy_bridge(
+            legacy,
+            miniapp_url_provider=lambda: "https://should-not-install.test/app",
+        )
+
+    assert legacy._main_keyboard is old_factory
+    assert legacy.send_final_results_menu is old_result_menu
+    assert legacy._animate_answer_buttons is None
     assert menu.main_keyboard().inline_keyboard[0][0].callback_data == "about"
 
 
