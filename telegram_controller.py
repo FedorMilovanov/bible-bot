@@ -28,7 +28,25 @@ from telegram.ext import (
     filters,
 )
 
+from config import (
+    FEEDBACK_DELAY_CORRECT,
+    FEEDBACK_DELAY_WRONG,
+    QUIZ_TIMEOUT,
+    SPEED_MODE_TIMEOUT,
+    TIMED_MODE_TIMEOUT,
+)
+from database import (
+    format_time,
+    get_user_position,
+    init_user_stats,
+    record_question_stat,
+    touch_user_activity,
+)
+from questions import get_pool_by_key
+from utils import safe_edit
+
 import bot as legacy
+import telegram_main_menu as main_menu
 import telegram_report_controller as reports
 from legacy_live_answer import (
     LegacyLiveAnswerStale,
@@ -128,6 +146,13 @@ REPORT_PHOTO = legacy.REPORT_PHOTO
 REPORT_CONFIRM = legacy.REPORT_CONFIRM
 
 user_data = legacy.user_data
+
+
+async def _touch_activity(user_id: int) -> None:
+    data = user_data.get(user_id)
+    if isinstance(data, dict):
+        data["last_activity"] = time.time()
+    await _run_blocking_io(touch_user_activity, user_id)
 
 
 def _achievement_rewards() -> dict[str, int]:
@@ -265,7 +290,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
     data["result_pending"] = False
     data["user_id"] = user_id
     percentage = round(score / max(total, 1) * 100)
-    position, _entry = await _run_blocking_io(legacy.get_user_position, user_id)
+    position, _entry = await _run_blocking_io(get_user_position, user_id)
     position_text = f"#{position}" if position else "—"
 
     answered = data.get("answered_questions", [])
@@ -283,7 +308,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
         text = (
             "🔁 *ПОВТОРЕНИЕ ОШИБОК ЗАВЕРШЕНО*\n\n"
             f"*Правильно:* {score}/{total} ({percentage}%)\n"
-            f"*Время:* {legacy.format_time(time_seconds)}\n\n"
+            f"*Время:* {format_time(time_seconds)}\n\n"
             "Это тренировочный режим — баллы, бонусы и достижения не начисляются."
         )
     elif outcome.is_challenge:
@@ -304,7 +329,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
         text = (
             f"━━━━━━━━━━━━━━━━\n{mode_name}\n━━━━━━━━━━━━━━━━\n"
             f"📊 *{score}/{total}* ({percentage}%) {grade}\n"
-            f"⏱ Время: *{legacy.format_time(time_seconds)}*\n"
+            f"⏱ Время: *{format_time(time_seconds)}*\n"
             f"🏅 Позиция: *{position_text}*\n"
             f"💎 Очки: *+{base}*"
         )
@@ -331,7 +356,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
             f"*Категория:* {data.get('level_name', 'Тест')}\n"
             f"*Правильно:* {score}/{total} ({percentage}%)\n"
             f"*Баллы:* +{base} 💎\n"
-            f"*Время:* {legacy.format_time(time_seconds)}\n"
+            f"*Время:* {format_time(time_seconds)}\n"
             f"*Позиция:* {position_text}\n"
             f"*Оценка:* {grade}"
         )
@@ -554,7 +579,7 @@ async def _launch_level_from_query(
     if not cfg:
         await query.edit_message_text("⚠️ Уровень не найден.")
         return
-    pool = legacy.get_pool_by_key(cfg["pool_key"])
+    pool = get_pool_by_key(cfg["pool_key"])
     count = min(int(cfg.get("num_questions", 10)), len(pool))
     if count <= 0:
         await query.edit_message_text("⚠️ Вопросы не найдены.")
@@ -574,8 +599,8 @@ async def _launch_level_from_query(
         return
     labels = {
         "relaxed": "🧘 Без таймера",
-        "timed": f"⏱ {legacy.TIMED_MODE_TIMEOUT} сек / ×1.5",
-        "speed": f"⚡ {legacy.SPEED_MODE_TIMEOUT} сек / ×2",
+        "timed": f"⏱ {TIMED_MODE_TIMEOUT} сек / ×1.5",
+        "speed": f"⚡ {SPEED_MODE_TIMEOUT} сек / ×2",
     }
     await query.edit_message_text(
         f"*{cfg['name']}*\n\n📝 Вопросов: {len(questions)} · {labels.get(quiz_mode, '')}\nНачинаем!",
@@ -604,7 +629,7 @@ async def timed_mode_handler(update: Update, context):
         context,
         query.data.replace("timed_mode_", ""),
         "timed",
-        legacy.TIMED_MODE_TIMEOUT,
+        TIMED_MODE_TIMEOUT,
     )
 
 
@@ -616,14 +641,14 @@ async def speed_mode_handler(update: Update, context):
         context,
         query.data.replace("speed_mode_", ""),
         "speed",
-        legacy.SPEED_MODE_TIMEOUT,
+        SPEED_MODE_TIMEOUT,
     )
 
 
 async def random_all_start_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
-    pool = legacy.get_pool_by_key("random_all")
+    pool = get_pool_by_key("random_all")
     questions = random.sample(pool, min(10, len(pool))) if pool else []
     if not questions:
         await query.edit_message_text("⚠️ Вопросы не найдены.")
@@ -649,10 +674,10 @@ async def random_all_start_handler(update: Update, context):
 
 async def random_command(update: Update, context):
     user = update.effective_user
-    pool = legacy.get_pool_by_key("random_all")
+    pool = get_pool_by_key("random_all")
     questions = random.sample(pool, min(10, len(pool))) if pool else []
     if not questions:
-        await update.message.reply_text("⚠️ Вопросы не найдены.", reply_markup=legacy._main_keyboard())
+        await update.message.reply_text("⚠️ Вопросы не найдены.", reply_markup=main_menu.main_keyboard())
         return
     data = await _launch_attempt(
         user=user,
@@ -681,7 +706,7 @@ async def intro_start_handler(update: Update, context):
     if not cfg:
         await query.edit_message_text("⚠️ Уровень не найден.")
         return
-    pool = legacy.get_pool_by_key(cfg["pool_key"])
+    pool = get_pool_by_key(cfg["pool_key"])
     questions = random.sample(
         pool,
         min(int(cfg.get("num_questions", 10)), len(pool)),
@@ -1021,7 +1046,7 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
         if outcome.applied:
             try:
                 await _run_blocking_io(
-                    legacy.record_question_stat,
+                    record_question_stat,
                     outcome.question_id,
                     data.get("level_key"),
                     outcome.is_correct,
@@ -1033,10 +1058,10 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
         if outcome.is_correct:
             suffix = f" 🔥×{outcome.current_streak}" if outcome.current_streak >= 2 else ""
             feedback = f"✅ *Верно!*{suffix}\n\n_{outcome.correct_text}_"
-            delay = legacy.FEEDBACK_DELAY_CORRECT
+            delay = FEEDBACK_DELAY_CORRECT
         else:
             feedback = f"❌ *Неверно*\n\n✅ Правильно: *{outcome.correct_text}*"
-            delay = legacy.FEEDBACK_DELAY_WRONG
+            delay = FEEDBACK_DELAY_WRONG
 
         chat_id = data.get("quiz_chat_id")
         message_id = data.get("quiz_message_id")
@@ -1114,7 +1139,7 @@ async def _handle_question_timeout(
         if outcome.applied:
             try:
                 await _run_blocking_io(
-                    legacy.record_question_stat,
+                    record_question_stat,
                     outcome.question_id,
                     data.get("level_key"),
                     False,
@@ -1140,7 +1165,7 @@ async def _handle_question_timeout(
             except Exception:
                 pass
         data["quiz_message_id"] = None
-        await asyncio.sleep(legacy.FEEDBACK_DELAY_WRONG)
+        await asyncio.sleep(FEEDBACK_DELAY_WRONG)
         await _after_answer(bot, user_id, outcome)
 
 
@@ -1151,7 +1176,7 @@ async def auto_timeout(bot, user_id, q_num_at_send):
     target = capture_live_question_target(data)
     if target.question_index != q_num_at_send:
         return
-    timeout_seconds = int(_time_limit(data) or legacy.QUIZ_TIMEOUT)
+    timeout_seconds = int(_time_limit(data) or QUIZ_TIMEOUT)
     await _handle_question_timeout(
         bot,
         user_id,
@@ -1257,7 +1282,7 @@ async def restart_session_handler(update: Update, context):
     if mode in {"random20", "hardcore20"}:
         questions = legacy.pick_challenge_questions(mode)
     else:
-        pool = legacy.get_pool_by_key(session.get("level_key"))
+        pool = get_pool_by_key(session.get("level_key"))
         questions = random.sample(pool, min(total, len(pool))) if pool else []
     if not questions:
         await query.answer(
@@ -1341,7 +1366,7 @@ async def cancel_session_handler(update: Update, context):
         user_data.pop(user_id, None)
     await query.edit_message_text(
         "❌ Тест отменён.",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
     )
 
 
@@ -1379,7 +1404,7 @@ async def cancel_quiz_handler(update: Update, context):
         return ConversationHandler.END
     await query.edit_message_text(
         "❌ *Тест отменён.* Выбери действие:",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
         parse_mode="Markdown",
     )
     return ConversationHandler.END
@@ -1415,7 +1440,7 @@ async def reset_command(update: Update, context):
     await update.message.reply_text("🆘 Тест сброшен.", reply_markup=ReplyKeyboardRemove())
     await update.message.reply_text(
         "📖 *Главное меню*",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
         parse_mode="Markdown",
     )
     return ConversationHandler.END
@@ -1426,23 +1451,23 @@ async def reset_session_inline(update: Update, context):
     await query.answer()
     _had, status = await _cancel_current(query.from_user.id)
     if status == "result_pending":
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⏳ Завершённый результат нельзя удалить. Используй /status.",
-            reply_markup=legacy._main_keyboard(),
+            reply_markup=main_menu.main_keyboard(),
         )
         return
     if status in {"unavailable", "conflict"}:
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⚠️ Безопасный сброс сейчас не подтверждён.",
-            reply_markup=legacy._main_keyboard(),
+            reply_markup=main_menu.main_keyboard(),
         )
         return
-    await legacy.safe_edit(
+    await safe_edit(
         query,
         "🆘 Тест сброшен.",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
     )
 
 
@@ -1470,7 +1495,7 @@ async def status_command(update: Update, context):
     if status == "none":
         await update.message.reply_text(
             "📌 Нет активного теста.",
-            reply_markup=legacy._main_keyboard(),
+            reply_markup=main_menu.main_keyboard(),
         )
         return
     if status == "unavailable":
@@ -1498,17 +1523,17 @@ async def show_status_inline(update: Update, context):
     user = query.from_user
     session, status = await _status_session(user.id)
     if status == "none":
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "📌 *Статус:* нет активного теста",
-            reply_markup=legacy._main_keyboard(),
+            reply_markup=main_menu.main_keyboard(),
         )
         return
     if status == "unavailable":
-        await legacy.safe_edit(query, "⚠️ База сессий временно недоступна.")
+        await safe_edit(query, "⚠️ База сессий временно недоступна.")
         return
     if status == "conflict":
-        await legacy.safe_edit(
+        await safe_edit(
             query,
             "⚠️ Состояние сессии противоречиво; ничего не удалено.",
         )
@@ -1526,8 +1551,8 @@ async def show_status_inline(update: Update, context):
 
 async def start(update: Update, context):
     user = update.effective_user
-    await _run_blocking_io(legacy.init_user_stats, user.id, user.username, user.first_name)
-    await _run_blocking_io(legacy._touch, user.id)
+    await _run_blocking_io(init_user_stats, user.id, user.username, user.first_name)
+    await _touch_activity(user.id)
 
     try:
         if update.message:
@@ -1578,13 +1603,13 @@ async def start(update: Update, context):
                 ],
                 [
                     InlineKeyboardButton(
-                        f"⏱ На время ({legacy.TIMED_MODE_TIMEOUT} сек)",
+                        f"⏱ На время ({TIMED_MODE_TIMEOUT} сек)",
                         callback_data=f"timed_mode_{level_key}",
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        f"⚡ Скоростной ({legacy.SPEED_MODE_TIMEOUT} сек)",
+                        f"⚡ Скоростной ({SPEED_MODE_TIMEOUT} сек)",
                         callback_data=f"speed_mode_{level_key}",
                     )
                 ],
@@ -1602,7 +1627,7 @@ async def start(update: Update, context):
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=f"👋 *Добро пожаловать, {name}!*\n\nВыбери действие:",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
         parse_mode="Markdown",
     )
 
@@ -1756,7 +1781,7 @@ async def _general_message_fallback(update: Update, context):
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="📖 *Главное меню*\n\nВыбери действие:",
-        reply_markup=legacy._main_keyboard(),
+        reply_markup=main_menu.main_keyboard(),
         parse_mode="Markdown",
     )
 
