@@ -2,12 +2,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
+QUIZ_RUNTIME = (ROOT / "telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
 SESSION_INTEGRITY = (ROOT / "session_integrity.py").read_text(encoding="utf-8")
 
 
-def test_bot_imports_session_integrity_before_runtime_handlers():
-    assert "from session_integrity import (" in BOT
+def test_quiz_runtime_imports_session_integrity_before_runtime_handlers():
+    assert "from session_integrity import" in QUIZ_RUNTIME
 
 
 def test_session_integrity_bootstraps_state_aware_retention_synchronously():
