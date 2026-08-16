@@ -46,6 +46,7 @@ import telegram_battle_share_controller as battle_share  # noqa: E402
 import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_command_menu_retry as command_menu  # noqa: E402
+import telegram_controller_legacy_bridge as controller_legacy_bridge  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
 import telegram_error_controller as errors  # noqa: E402
 import telegram_intro_controller as intro  # noqa: E402
@@ -116,6 +117,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
+controller_legacy_bridge.install_legacy_bridge(legacy)
 quiz_runtime.install_legacy_bridge(legacy)
 question_identity.install_legacy_bridge(legacy)
 answer_history.install_legacy_bridge(legacy)
