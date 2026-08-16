@@ -94,7 +94,9 @@ def test_quiz_runtime_owns_strict_resume_cancel_and_status_lifecycle():
 
 def test_challenge_controller_owns_attempt_bound_restart():
     restart = function(CHALLENGE, "restart_session_handler")
-    _assert_before(restart, "resolve_session_action(", "restart_owned_quiz_attempt,")
+    resolve_boundary = "quiz._run_blocking_io(\n            resolve_session_action,"
+    restart_boundary = "quiz._run_blocking_io(\n            restart_owned_quiz_attempt,"
+    _assert_before(restart, resolve_boundary, restart_boundary)
     assert '"rst"' in restart
     assert "expected_attempt_id=resolved.attempt_id" in restart
     assert "cancel_owned_quiz_session(" not in restart
