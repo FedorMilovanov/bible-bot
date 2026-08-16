@@ -13,6 +13,7 @@ from collections.abc import MutableMapping
 
 _user_data: MutableMapping | None = None
 _user_locks: MutableMapping | None = None
+_bad_input_counts: MutableMapping | None = None
 
 
 def create_session_data(
@@ -84,27 +85,41 @@ def _validate_legacy_session_factory(legacy_factory) -> None:
 
 
 def install_legacy_bridge(legacy_module) -> None:
-    """Bind exact runtime dictionaries and canonicalize session reconstruction."""
-    global _user_data, _user_locks
+    """Bind exact runtime dictionaries and canonicalize process-local helpers."""
+    global _user_data, _user_locks, _bad_input_counts
 
     legacy_user_data = getattr(legacy_module, "user_data", None)
     legacy_user_locks = getattr(legacy_module, "user_locks", None)
+    legacy_bad_input_counts = getattr(legacy_module, "_bad_input_count", None)
     if not isinstance(legacy_user_data, dict):
         raise TypeError("legacy module must expose a user_data dict")
     if not isinstance(legacy_user_locks, dict):
         raise TypeError("legacy module must expose a user_locks dict")
+    if not isinstance(legacy_bad_input_counts, dict):
+        raise TypeError("legacy module must expose a _bad_input_count dict")
 
     if _user_data is not None and _user_data is not legacy_user_data:
         raise RuntimeError("quiz runtime user_data is already bound to another mapping")
     if _user_locks is not None and _user_locks is not legacy_user_locks:
         raise RuntimeError("quiz runtime user_locks is already bound to another mapping")
+    if _bad_input_counts is not None and _bad_input_counts is not legacy_bad_input_counts:
+        raise RuntimeError("quiz runtime bad-input counts are already bound to another mapping")
 
     legacy_session_factory = getattr(legacy_module, "_create_session_data", None)
+    legacy_increment_bad_input = getattr(legacy_module, "_inc_bad_input", None)
+    legacy_reset_bad_input = getattr(legacy_module, "_reset_bad_input", None)
     _validate_legacy_session_factory(legacy_session_factory)
+    if not callable(legacy_increment_bad_input):
+        raise TypeError("legacy module must expose a callable _inc_bad_input")
+    if not callable(legacy_reset_bad_input):
+        raise TypeError("legacy module must expose a callable _reset_bad_input")
 
     _user_data = legacy_user_data
     _user_locks = legacy_user_locks
+    _bad_input_counts = legacy_bad_input_counts
     legacy_module._create_session_data = create_session_data
+    legacy_module._inc_bad_input = increment_bad_input
+    legacy_module._reset_bad_input = reset_bad_input
 
 
 def get_user_data() -> MutableMapping:
@@ -124,3 +139,22 @@ def get_user_locks() -> MutableMapping:
 def get_user_lock(user_id: int):
     """Return the exact per-user asyncio lock used by the runtime projection."""
     return get_user_locks().setdefault(user_id, asyncio.Lock())
+
+
+def get_bad_input_counts() -> MutableMapping:
+    """Return the installed process-local bad-input counter mapping."""
+    if _bad_input_counts is None:
+        raise RuntimeError("quiz runtime bad-input counts are not installed")
+    return _bad_input_counts
+
+
+def increment_bad_input(user_id: int) -> int:
+    """Increment and return one user's process-local invalid-input count."""
+    counts = get_bad_input_counts()
+    counts[user_id] = counts.get(user_id, 0) + 1
+    return counts[user_id]
+
+
+def reset_bad_input(user_id: int) -> None:
+    """Drop one user's process-local invalid-input count."""
+    get_bad_input_counts().pop(user_id, None)

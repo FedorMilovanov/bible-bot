@@ -40,17 +40,36 @@ def _historical_session_factory(
     return base_data
 
 
-def _legacy(*, user_data=None, user_locks=None, factory=_historical_session_factory):
+def _legacy(
+    *,
+    user_data=None,
+    user_locks=None,
+    bad_input_counts=None,
+    factory=_historical_session_factory,
+):
+    counts = {} if bad_input_counts is None else bad_input_counts
+
+    def inc_bad_input(user_id: int) -> int:
+        counts[user_id] = counts.get(user_id, 0) + 1
+        return counts[user_id]
+
+    def reset_bad_input(user_id: int) -> None:
+        counts.pop(user_id, None)
+
     return SimpleNamespace(
         user_data={} if user_data is None else user_data,
         user_locks={} if user_locks is None else user_locks,
+        _bad_input_count=counts,
         _create_session_data=factory,
+        _inc_bad_input=inc_bad_input,
+        _reset_bad_input=reset_bad_input,
     )
 
 
 def _clear_runtime(monkeypatch):
     monkeypatch.setattr(runtime_state, "_user_data", None)
     monkeypatch.setattr(runtime_state, "_user_locks", None)
+    monkeypatch.setattr(runtime_state, "_bad_input_counts", None)
 
 
 def test_session_factory_preserves_historical_projection_shape_and_overrides():
@@ -87,24 +106,36 @@ def test_session_factory_preserves_historical_projection_shape_and_overrides():
     assert canonical["question_sent_at"] is None
 
 
-def test_runtime_bridge_exposes_exact_identity_and_canonicalizes_factory(monkeypatch):
+def test_runtime_bridge_exposes_exact_identity_and_canonicalizes_helpers(monkeypatch):
     _clear_runtime(monkeypatch)
     user_data = {7: {"last_activity": 1.0}}
     user_locks = {7: object()}
-    legacy = _legacy(user_data=user_data, user_locks=user_locks)
+    bad_input_counts = {9: 2}
+    legacy = _legacy(
+        user_data=user_data,
+        user_locks=user_locks,
+        bad_input_counts=bad_input_counts,
+    )
     historical_factory = legacy._create_session_data
+    historical_increment = legacy._inc_bad_input
+    historical_reset = legacy._reset_bad_input
 
     runtime_state.install_legacy_bridge(legacy)
 
     assert runtime_state.get_user_data() is user_data
     assert runtime_state.get_user_locks() is user_locks
+    assert runtime_state.get_bad_input_counts() is bad_input_counts
     assert historical_factory is not runtime_state.create_session_data
+    assert historical_increment is not runtime_state.increment_bad_input
+    assert historical_reset is not runtime_state.reset_bad_input
     assert legacy._create_session_data is runtime_state.create_session_data
+    assert legacy._inc_bad_input is runtime_state.increment_bad_input
+    assert legacy._reset_bad_input is runtime_state.reset_bad_input
 
     runtime_state.install_legacy_bridge(legacy)
     assert runtime_state.get_user_data() is user_data
     assert runtime_state.get_user_locks() is user_locks
-    assert legacy._create_session_data is runtime_state.create_session_data
+    assert runtime_state.get_bad_input_counts() is bad_input_counts
 
 
 def test_runtime_bridge_fails_closed_on_session_factory_drift(monkeypatch):
@@ -125,14 +156,32 @@ def test_runtime_bridge_fails_closed_on_session_factory_drift(monkeypatch):
         runtime_state.get_user_data()
     with pytest.raises(RuntimeError, match="user_locks"):
         runtime_state.get_user_locks()
+    with pytest.raises(RuntimeError, match="bad-input"):
+        runtime_state.get_bad_input_counts()
 
 
-def test_runtime_bridge_rejects_missing_session_factory(monkeypatch):
+def test_runtime_bridge_rejects_missing_process_local_helpers(monkeypatch):
     _clear_runtime(monkeypatch)
-    legacy = SimpleNamespace(user_data={}, user_locks={})
 
+    missing_factory = SimpleNamespace(
+        user_data={},
+        user_locks={},
+        _bad_input_count={},
+        _inc_bad_input=lambda _user_id: 1,
+        _reset_bad_input=lambda _user_id: None,
+    )
     with pytest.raises(TypeError, match="_create_session_data"):
-        runtime_state.install_legacy_bridge(legacy)
+        runtime_state.install_legacy_bridge(missing_factory)
+
+    missing_increment = _legacy()
+    del missing_increment._inc_bad_input
+    with pytest.raises(TypeError, match="_inc_bad_input"):
+        runtime_state.install_legacy_bridge(missing_increment)
+
+    missing_reset = _legacy()
+    del missing_reset._reset_bad_input
+    with pytest.raises(TypeError, match="_reset_bad_input"):
+        runtime_state.install_legacy_bridge(missing_reset)
 
 
 def test_runtime_bridge_fails_closed_on_rebinding(monkeypatch):
@@ -142,12 +191,29 @@ def test_runtime_bridge_fails_closed_on_rebinding(monkeypatch):
 
     with pytest.raises(RuntimeError, match="user_data"):
         runtime_state.install_legacy_bridge(
-            _legacy(user_data={}, user_locks=first.user_locks)
+            _legacy(
+                user_data={},
+                user_locks=first.user_locks,
+                bad_input_counts=first._bad_input_count,
+            )
         )
 
     with pytest.raises(RuntimeError, match="user_locks"):
         runtime_state.install_legacy_bridge(
-            _legacy(user_data=first.user_data, user_locks={})
+            _legacy(
+                user_data=first.user_data,
+                user_locks={},
+                bad_input_counts=first._bad_input_count,
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="bad-input"):
+        runtime_state.install_legacy_bridge(
+            _legacy(
+                user_data=first.user_data,
+                user_locks=first.user_locks,
+                bad_input_counts={},
+            )
         )
 
 
@@ -157,19 +223,34 @@ def test_runtime_bridge_fails_closed_on_rebinding(monkeypatch):
         SimpleNamespace(
             user_data=None,
             user_locks={},
+            _bad_input_count={},
             _create_session_data=_historical_session_factory,
         ),
         SimpleNamespace(
             user_data={},
             user_locks=None,
-            _create_session_data=_historical_session_factory,
-        ),
-        SimpleNamespace(
-            user_locks={},
+            _bad_input_count={},
             _create_session_data=_historical_session_factory,
         ),
         SimpleNamespace(
             user_data={},
+            user_locks={},
+            _bad_input_count=None,
+            _create_session_data=_historical_session_factory,
+        ),
+        SimpleNamespace(
+            user_locks={},
+            _bad_input_count={},
+            _create_session_data=_historical_session_factory,
+        ),
+        SimpleNamespace(
+            user_data={},
+            _bad_input_count={},
+            _create_session_data=_historical_session_factory,
+        ),
+        SimpleNamespace(
+            user_data={},
+            user_locks={},
             _create_session_data=_historical_session_factory,
         ),
     ],
@@ -187,6 +268,8 @@ def test_runtime_access_fails_closed_before_install(monkeypatch):
         runtime_state.get_user_data()
     with pytest.raises(RuntimeError, match="user_locks"):
         runtime_state.get_user_locks()
+    with pytest.raises(RuntimeError, match="bad-input"):
+        runtime_state.get_bad_input_counts()
 
 
 def test_get_user_lock_reuses_exact_installed_lock_mapping(monkeypatch):
@@ -204,15 +287,34 @@ def test_get_user_lock_reuses_exact_installed_lock_mapping(monkeypatch):
     assert runtime_state.get_user_locks() is locks
 
 
+def test_bad_input_helpers_share_exact_legacy_mapping(monkeypatch):
+    _clear_runtime(monkeypatch)
+    counts = {}
+    legacy = _legacy(bad_input_counts=counts)
+    runtime_state.install_legacy_bridge(legacy)
+
+    assert runtime_state.increment_bad_input(42) == 1
+    assert legacy._inc_bad_input(42) == 2
+    assert counts == {42: 2}
+
+    legacy._reset_bad_input(42)
+    assert counts == {}
+    runtime_state.reset_bad_input(42)
+    assert counts == {}
+
+
 def test_runtime_state_is_only_process_local_projection_and_has_no_legacy_import():
     assert "Mongo remains the durable authority" in RUNTIME_SOURCE
     assert "import bot" not in RUNTIME_SOURCE
     assert "from bot" not in RUNTIME_SOURCE
     assert "legacy_module._create_session_data = create_session_data" in RUNTIME_SOURCE
+    assert "legacy_module._inc_bad_input = increment_bad_input" in RUNTIME_SOURCE
+    assert "legacy_module._reset_bad_input = reset_bad_input" in RUNTIME_SOURCE
 
 
-def test_production_bridge_canonicalizes_controller_session_factory():
+def test_production_bridge_canonicalizes_controller_process_local_helpers():
     assert "import telegram_quiz_runtime_state as quiz_runtime" in PRODUCTION_SOURCE
     assert "quiz_runtime.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
     assert "legacy._create_session_data(" in CONTROLLER_SOURCE
+    assert "legacy._reset_bad_input(user_id)" in CONTROLLER_SOURCE
     assert "user_data=quiz.user_data" not in PRODUCTION_SOURCE
