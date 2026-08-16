@@ -1,14 +1,9 @@
-"""Narrow adapter around the existing process-local report draft mapping.
-
-The durable report controller still owns report acceptance and delivery. This
-module only prevents the production composition root from reaching directly
-into the transitional legacy mapping while preserving that exact single mapping.
-"""
+"""Narrow adapter around canonical process-local report draft state."""
 from __future__ import annotations
 
-import bot as legacy
+from telegram_report_state import report_drafts
 
 
 def drop_report_draft(user_id: int) -> bool:
     """Drop one process-local report draft; return whether one existed."""
-    return legacy.report_drafts.pop(user_id, None) is not None
+    return report_drafts.pop(user_id, None) is not None

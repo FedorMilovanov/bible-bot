@@ -23,6 +23,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRe
 from telegram.ext import ConversationHandler
 
 import bot as legacy
+import telegram_report_state as report_state
 from legacy_inaccuracy_report import (
     LegacyInaccuracyReportInvalid,
     accept_inaccuracy_report_once,
@@ -38,6 +39,8 @@ from legacy_report_submit import (
 from report_integrity import ReportStoreUnavailable
 
 logger = logging.getLogger(__name__)
+
+report_state.install_legacy_bridge(legacy)
 
 REPORT_TEXT = legacy.REPORT_TEXT
 REPORT_PHOTO = legacy.REPORT_PHOTO

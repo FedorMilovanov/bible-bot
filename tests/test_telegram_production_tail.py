@@ -7,19 +7,44 @@ from telegram.error import BadRequest, NetworkError
 
 import telegram_error_controller as errors
 import telegram_report_runtime as report_runtime
+import telegram_report_state as report_state
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
+REPORT_RUNTIME_SOURCE = (ROOT / "telegram_report_runtime.py").read_text(encoding="utf-8")
+REPORT_CONTROLLER_SOURCE = (ROOT / "telegram_report_controller.py").read_text(encoding="utf-8")
 
 
-def test_report_runtime_drops_exact_legacy_mapping(monkeypatch):
-    drafts = {7: {"report_id": "r1"}, 8: {"report_id": "r2"}}
-    monkeypatch.setattr(report_runtime.legacy, "report_drafts", drafts)
+def test_report_runtime_drops_canonical_mapping():
+    report_state.report_drafts.clear()
+    report_state.report_drafts.update(
+        {7: {"report_id": "r1"}, 8: {"report_id": "r2"}}
+    )
 
+    assert report_runtime.report_drafts is report_state.report_drafts
     assert report_runtime.drop_report_draft(7) is True
     assert report_runtime.drop_report_draft(7) is False
-    assert drafts == {8: {"report_id": "r2"}}
+    assert report_state.report_drafts == {8: {"report_id": "r2"}}
+    report_state.report_drafts.clear()
+
+
+def test_report_state_bridge_preserves_existing_legacy_drafts():
+    report_state.report_drafts.clear()
+    legacy = SimpleNamespace(report_drafts={9: {"report_id": "existing"}})
+
+    report_state.install_legacy_bridge(legacy)
+
+    assert legacy.report_drafts is report_state.report_drafts
+    assert report_state.report_drafts == {9: {"report_id": "existing"}}
+    report_state.report_drafts.clear()
+
+
+def test_report_runtime_has_no_legacy_module_import():
+    assert "import bot" not in REPORT_RUNTIME_SOURCE
+    assert "legacy." not in REPORT_RUNTIME_SOURCE
+    assert "from telegram_report_state import report_drafts" in REPORT_RUNTIME_SOURCE
+    assert "report_state.install_legacy_bridge(legacy)" in REPORT_CONTROLLER_SOURCE
 
 
 def test_error_policy_ignores_network_noise():
