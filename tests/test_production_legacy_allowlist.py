@@ -12,7 +12,6 @@ DATABASE_SOURCE = (ROOT / "database.py").read_text(encoding="utf-8")
 # it can enter the production composition root.
 ALLOWED_LEGACY_ATTRIBUTES = {
     "GC_INTERVAL",
-    "_main_keyboard",
     "_touch",
     "admin_command",
     "back_to_main",

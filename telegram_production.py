@@ -42,6 +42,7 @@ import telegram_broadcast_controller as broadcasts  # noqa: E402
 import telegram_challenge_controller as challenge  # noqa: E402
 import telegram_command_menu_retry as command_menu  # noqa: E402
 import telegram_controller as quiz  # noqa: E402
+import telegram_main_menu as main_menu  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_result_delivery_controller as result_delivery  # noqa: E402
 import telegram_retry_controller as retry  # noqa: E402
@@ -102,23 +103,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
-_legacy_main_keyboard = legacy._main_keyboard
-
-
-def _main_keyboard_with_app() -> InlineKeyboardMarkup:
-    current = _legacy_main_keyboard()
-    url = _miniapp_url()
-    if not url:
-        return current
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=url))],
-            *current.inline_keyboard,
-        ]
-    )
-
-
-legacy._main_keyboard = _main_keyboard_with_app
+main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)
 
 
 async def _app_command(update, context):
@@ -193,7 +178,7 @@ async def _stats_command(update, context):
     return await stats.stats_command(
         update,
         context,
-        main_keyboard_factory=legacy._main_keyboard,
+        main_keyboard_factory=main_menu.main_keyboard,
     )
 
 
