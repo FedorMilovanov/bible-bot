@@ -67,14 +67,21 @@ def install_legacy_bridge(
     *,
     miniapp_url_provider: MiniAppUrlProvider | None = None,
 ) -> None:
-    """Point transitional legacy callers at the canonical production factory.
+    """Point transitional legacy callers at canonical presentation authority.
 
     `bot.py` remains import-compatible while production runtime authority lives
-    here. This bridge can disappear once the legacy module itself is physically
-    decomposed.
+    in focused modules. Both presentation seams are validated before either
+    legacy callable is replaced.
     """
+    from telegram_quiz_result_menu import (
+        send_final_results_menu,
+        validate_legacy_bridge as validate_result_menu_bridge,
+    )
+
     current = getattr(legacy_module, "_main_keyboard", None)
     if not callable(current):
         raise TypeError("legacy module must expose a callable _main_keyboard")
+    validate_result_menu_bridge(legacy_module)
     configure_miniapp_url_provider(miniapp_url_provider)
     legacy_module._main_keyboard = main_keyboard
+    legacy_module.send_final_results_menu = send_final_results_menu
