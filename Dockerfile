@@ -1,18 +1,18 @@
-FROM python:3.14.6-slim-trixie@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
+FROM python:3.14.7-slim-trixie@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080 APP_ENV=production HOME=/tmp PTB_TIMEDELTA=1
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080 APP_ENV=production HOME=/tmp PTB_TIMEDELTA=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core passwd \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core=2.37-8 \
     && groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-log-init --no-create-home --shell /usr/sbin/nologin app \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt constraints.txt ./
 RUN python -m pip install --no-cache-dir --upgrade \
         pip==26.2.1 setuptools==83.0.0 wheel==0.47.0 \
-    && python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m pip install --no-cache-dir --only-binary=:all: -c constraints.txt -r requirements.txt \
     && python -m pip check
 
 COPY --chown=10001:10001 . .
