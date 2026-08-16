@@ -140,8 +140,9 @@ def test_invalid_provider_is_rejected():
         menu.configure_miniapp_url_provider("https://example.test/app")
 
 
-def test_production_uses_focused_main_menu_authority():
+def test_production_uses_focused_main_menu_without_legacy_bridge():
     assert "import telegram_main_menu as main_menu" in PRODUCTION_SOURCE
-    assert "main_menu.install_legacy_bridge" in PRODUCTION_SOURCE
+    assert "main_menu.configure_miniapp_url_provider(_miniapp_url)" in PRODUCTION_SOURCE
+    assert "main_menu.install_legacy_bridge" not in PRODUCTION_SOURCE
     assert "main_menu.main_keyboard" in PRODUCTION_SOURCE
-    assert "legacy._main_keyboard" not in PRODUCTION_SOURCE
+    assert "import bot" not in PRODUCTION_SOURCE

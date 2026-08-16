@@ -282,9 +282,10 @@ def test_runtime_state_is_canonical_process_local_owner_and_has_no_legacy_import
     assert "legacy_module._create_session_data = create_session_data" in RUNTIME_SOURCE
 
 
-def test_production_bridge_and_core_use_canonical_process_local_helpers():
-    assert "import telegram_quiz_runtime_state as quiz_runtime" in PRODUCTION_SOURCE
-    assert "quiz_runtime.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
+def test_production_and_core_use_canonical_process_local_helpers_without_bootstrap_bridge():
+    assert "import telegram_quiz_runtime_state as quiz_runtime" not in PRODUCTION_SOURCE
+    assert "quiz_runtime.install_legacy_bridge" not in PRODUCTION_SOURCE
+    assert "import bot" not in PRODUCTION_SOURCE
     assert "quiz_runtime.create_session_data(" in CORE_SOURCE
     assert "quiz_runtime.reset_bad_input(user_id)" in CORE_SOURCE
     assert "quiz_runtime.get_user_lock(user_id)" in CORE_SOURCE

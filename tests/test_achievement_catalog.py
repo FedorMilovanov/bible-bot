@@ -66,8 +66,10 @@ def test_legacy_bridge_fails_closed_on_malformed_catalog():
         catalog.install_legacy_bridge(SimpleNamespace(ACHIEVEMENTS=None))
 
 
-def test_production_composition_root_installs_achievement_identity_bridge():
+def test_production_no_longer_installs_achievement_legacy_bridge():
     source = Path("telegram_production.py").read_text(encoding="utf-8")
 
-    assert "import achievement_catalog as achievement_catalog" in source
-    assert "achievement_catalog.install_legacy_bridge(legacy)" in source
+    assert "achievement_catalog.install_legacy_bridge" not in source
+    assert "import achievement_catalog as achievement_catalog" not in source
+    assert "import bot" not in source
+    assert "_import_legacy_presentation" not in source

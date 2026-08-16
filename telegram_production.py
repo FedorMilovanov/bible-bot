@@ -1,7 +1,6 @@
 """Single production composition root for Telegram quiz, reports and durable PvP."""
 from __future__ import annotations
 
-import importlib
 import logging
 import os
 
@@ -15,59 +14,37 @@ from telegram.ext import (
     filters,
 )
 
+import telegram_activity_controller as activity
+import telegram_achievement_controller as achievements
+import telegram_admin_controller as admin
+import telegram_battle_controller as battles
+import telegram_battle_create_controller as battle_create
+import telegram_battle_share_controller as battle_share
+import telegram_broadcast_controller as broadcasts
+import telegram_challenge_controller as challenge
+import telegram_command_menu_retry as command_menu
+import telegram_course_surface as courses
+import telegram_error_controller as errors
+import telegram_intro_controller as intro
+import telegram_main_menu as main_menu
+import telegram_quiz_controller as quiz
+import telegram_report_controller as reports
+import telegram_report_runtime as report_runtime
+import telegram_result_delivery_controller as result_delivery
+import telegram_retry_controller as retry
+import telegram_review_controller as review
+import telegram_runtime_maintenance as maintenance
+import telegram_settings_controller as settings
+import telegram_static_presentation as static_presentation
+import telegram_stats_controller as stats
+from broadcast_index_safety import ensure_broadcast_indexes
 from keep_alive import keep_alive
-
-
-def _import_legacy_presentation():
-    """Import legacy presentation helpers without starting HTTP as a side effect."""
-    previous = os.environ.get("DISABLE_WEB_SERVER")
-    os.environ["DISABLE_WEB_SERVER"] = "true"
-    try:
-        return importlib.import_module("bot")
-    finally:
-        if previous is None:
-            os.environ.pop("DISABLE_WEB_SERVER", None)
-        else:
-            os.environ["DISABLE_WEB_SERVER"] = previous
-
-
-legacy = _import_legacy_presentation()
-
-import achievement_catalog as achievement_catalog  # noqa: E402
-import question_identity as question_identity  # noqa: E402
-import quiz_answer_history as answer_history  # noqa: E402
-import telegram_activity_controller as activity  # noqa: E402
-import telegram_achievement_controller as achievements  # noqa: E402
-import telegram_course_surface as courses  # noqa: E402
-import telegram_admin_controller as admin  # noqa: E402
-import telegram_battle_controller as battles  # noqa: E402
-import telegram_battle_create_controller as battle_create  # noqa: E402
-import telegram_battle_share_controller as battle_share  # noqa: E402
-import telegram_broadcast_controller as broadcasts  # noqa: E402
-import telegram_challenge_controller as challenge  # noqa: E402
-import telegram_command_menu_retry as command_menu  # noqa: E402
-import telegram_controller as quiz  # noqa: E402
-import telegram_error_controller as errors  # noqa: E402
-import telegram_intro_controller as intro  # noqa: E402
-import telegram_main_menu as main_menu  # noqa: E402
-import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
-import telegram_report_controller as reports  # noqa: E402
-import telegram_report_runtime as report_runtime  # noqa: E402
-import telegram_report_state as report_state  # noqa: E402
-import telegram_result_delivery_controller as result_delivery  # noqa: E402
-import telegram_retry_controller as retry  # noqa: E402
-import telegram_review_controller as review  # noqa: E402
-import telegram_runtime_maintenance as maintenance  # noqa: E402
-import telegram_settings_controller as settings  # noqa: E402
-import telegram_static_presentation as static_presentation  # noqa: E402
-import telegram_stats_controller as stats  # noqa: E402
-from broadcast_index_safety import ensure_broadcast_indexes  # noqa: E402
-from legacy_session_access import ensure_active_session_unique_index  # noqa: E402
-from web_api.db_hardening import (  # noqa: E402
+from legacy_session_access import ensure_active_session_unique_index
+from web_api.db_hardening import (
     MiniAppIndexSafetyUnavailable,
     ensure_miniapp_indexes,
 )
-from web_api.telegram_transport import (  # noqa: E402
+from web_api.telegram_transport import (
     run_telegram_application,
     validate_telegram_transport_configuration,
 )
@@ -116,12 +93,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
-quiz_runtime.install_legacy_bridge(legacy)
-question_identity.install_legacy_bridge(legacy)
-answer_history.install_legacy_bridge(legacy)
-achievement_catalog.install_legacy_bridge(legacy)
-main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)
-report_state.install_legacy_bridge(legacy)
+main_menu.configure_miniapp_url_provider(_miniapp_url)
 
 
 async def _app_command(update, context):
@@ -160,10 +132,8 @@ async def _start(update, context):
     if await battle_share.handle_start_deep_link(update, context):
         return
 
-    # Course deep links are resolved by the canonical catalog before the legacy
-    # controller sees command arguments. Unknown tokens preserve the historical
-    # fallback-to-main-menu behavior, but bot.py LEVEL_CONFIG is never consulted
-    # by the production /start path.
+    # Course deep links are resolved by the canonical catalog. Unknown tokens
+    # preserve the historical fallback-to-main-menu behavior.
     original_args = list(context.args or [])
     if original_args and await courses.start_course_deep_link(
         update,
@@ -183,7 +153,7 @@ async def _start(update, context):
 
 
 async def _menu(update, context):
-    """Open the main menu without allowing command args to reach legacy routing."""
+    """Open the main menu without allowing command args to reach deep-link routing."""
     original_args = list(getattr(context, "args", None) or [])
     context.args = []
     try:
@@ -362,8 +332,7 @@ def main() -> None:
 
     # Learning course callbacks are validated against the canonical catalog.
     # Old level/mode patterns remain only as compatibility aliases for already
-    # delivered Telegram keyboards; production never treats bot.py LEVEL_CONFIG
-    # as course authority.
+    # delivered Telegram keyboards.
     app.add_handler(CallbackQueryHandler(courses.course_menu_callback, pattern=r"^course_menu$"))
     app.add_handler(CallbackQueryHandler(courses.show_group_callback, pattern=r"^course_group:"))
     app.add_handler(CallbackQueryHandler(courses.course_callback, pattern=r"^course:"))

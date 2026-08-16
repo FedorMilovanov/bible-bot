@@ -51,7 +51,7 @@ def test_quiz_controller_core_is_valid_python_and_owns_quiz_state():
     assert "sys.modules[__name__] = _core" in QUIZ_COMPAT
 
 
-def test_production_composition_imports_with_runtime_dependencies():
+def test_production_composition_imports_with_runtime_dependencies_without_bot():
     env = os.environ.copy()
     env.update(
         {
@@ -65,13 +65,15 @@ def test_production_composition_imports_with_runtime_dependencies():
             sys.executable,
             "-c",
             (
+                "import sys; "
+                "assert 'bot' not in sys.modules; "
                 "import telegram_production as production; "
                 "import telegram_admin_controller as admin; "
-                "import telegram_controller as quiz; "
-                "import telegram_quiz_controller as core; "
+                "import telegram_quiz_controller as quiz; "
                 "import telegram_report_controller as reports; "
                 "import telegram_battle_controller as battles; "
-                "assert quiz is core; "
+                "assert 'bot' not in sys.modules; "
+                "assert production.quiz is quiz; "
                 "assert callable(production.main); "
                 "assert callable(admin.admin_cleanup); "
                 "assert callable(quiz.show_results); "
@@ -90,46 +92,15 @@ def test_production_composition_imports_with_runtime_dependencies():
     assert result.returncode == 0, result.stderr
 
 
-def test_legacy_import_temporarily_disables_http_and_restores_environment():
-    env = os.environ.copy()
-    env.update(
-        {
-            "ADMIN_USER_ID": "1",
-            "BOT_TOKEN": "123456:TEST_TOKEN",
-            "DISABLE_WEB_SERVER": "true",
-        }
-    )
-    script = r'''
-import os
-import telegram_production as production
-seen = []
-
-def fake_import(name):
-    seen.append((name, os.environ.get("DISABLE_WEB_SERVER")))
-    return object()
-
-production.importlib.import_module = fake_import
-os.environ.pop("DISABLE_WEB_SERVER", None)
-production._import_legacy_presentation()
-assert seen == [("bot", "true")]
-assert "DISABLE_WEB_SERVER" not in os.environ
-
-seen.clear()
-os.environ["DISABLE_WEB_SERVER"] = "false"
-production._import_legacy_presentation()
-assert seen == [("bot", "true")]
-assert os.environ["DISABLE_WEB_SERVER"] == "false"
-'''
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
+def test_production_source_has_no_legacy_bootstrap_or_bot_import():
+    assert "import importlib" not in PRODUCTION
+    assert "_import_legacy_presentation" not in PRODUCTION
+    assert "import_module(\"bot\")" not in PRODUCTION
+    assert "import bot" not in PRODUCTION
+    assert "legacy =" not in PRODUCTION
+    assert "install_legacy_bridge(legacy)" not in PRODUCTION
+    assert "import telegram_quiz_controller as quiz" in PRODUCTION
+    assert "main_menu.configure_miniapp_url_provider(_miniapp_url)" in PRODUCTION
 
 
 def test_http_server_is_started_only_after_startup_guards_and_handler_setup():

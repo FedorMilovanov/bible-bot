@@ -73,7 +73,6 @@ def test_bridge_replaces_legacy_helpers_by_exact_identity_after_parity():
     assert legacy.stable_question_id is question_identity.stable_question_id
     assert legacy.get_qid is question_identity.get_qid
 
-    # Reinstall is idempotent because canonical functions satisfy the same probe.
     question_identity.install_legacy_bridge(legacy)
     assert legacy.stable_question_id is question_identity.stable_question_id
     assert legacy.get_qid is question_identity.get_qid
@@ -129,6 +128,7 @@ def test_question_identity_has_no_legacy_import_or_runtime_state():
     assert "Mongo" not in QUESTION_IDENTITY_SOURCE
 
 
-def test_production_composition_root_installs_question_identity_bridge():
-    assert "import question_identity as question_identity" in PRODUCTION_SOURCE
-    assert "question_identity.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
+def test_production_no_longer_installs_question_identity_bridge():
+    assert "question_identity.install_legacy_bridge" not in PRODUCTION_SOURCE
+    assert "import question_identity as question_identity" not in PRODUCTION_SOURCE
+    assert "import bot" not in PRODUCTION_SOURCE

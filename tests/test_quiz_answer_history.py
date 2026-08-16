@@ -186,6 +186,7 @@ def test_answer_history_module_is_pure_and_does_not_import_legacy_or_database():
     assert "telegram" not in ANSWER_HISTORY_SOURCE
 
 
-def test_production_composition_root_installs_answer_history_bridge():
-    assert "import quiz_answer_history as answer_history" in PRODUCTION_SOURCE
-    assert "answer_history.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
+def test_production_no_longer_installs_answer_history_bridge():
+    assert "answer_history.install_legacy_bridge" not in PRODUCTION_SOURCE
+    assert "import quiz_answer_history as answer_history" not in PRODUCTION_SOURCE
+    assert "import bot" not in PRODUCTION_SOURCE
