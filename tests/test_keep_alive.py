@@ -1,7 +1,6 @@
 import copy
 import hashlib
 import hmac
-import importlib
 import json
 import time
 from urllib.parse import urlencode
@@ -108,12 +107,14 @@ def client(monkeypatch):
     return keep_alive.app.test_client(), token
 
 
-def test_legacy_bot_imports_with_intro_compatibility(monkeypatch):
-    monkeypatch.setenv("ADMIN_USER_ID", "1")
-    monkeypatch.setenv("BOT_TOKEN", "123456:TEST_TOKEN")
-    monkeypatch.setenv("DISABLE_WEB_SERVER", "true")
-    module = importlib.import_module("bot")
-    assert module.INTRO_POOL
+def test_intro_compatibility_aliases_remain_without_retired_runtime():
+    import intro
+    import questions
+
+    assert intro.intro_part1_questions is questions.intro_part1_questions
+    assert intro.intro_part2_questions is questions.intro_part2_questions
+    assert intro.intro_part3_questions is questions.intro_part3_questions
+    assert intro.intro_part1_questions
 
 
 def test_job_queue_dependency_is_available():
