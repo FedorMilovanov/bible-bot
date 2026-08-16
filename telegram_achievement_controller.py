@@ -9,6 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from achievement_catalog import ACHIEVEMENTS, validate_achievement_catalog
 from database import get_user_stats, touch_user_activity
+from telegram_quiz_runtime_state import get_user_data
 
 
 def _achievement_catalog() -> Mapping[str, Mapping]:
@@ -16,16 +17,14 @@ def _achievement_catalog() -> Mapping[str, Mapping]:
     return validate_achievement_catalog(ACHIEVEMENTS)
 
 
-def _touch_memory(user_data, user_id: int) -> None:
+def _touch_memory(user_id: int) -> None:
     """Preserve the process-local activity timestamp without doing DB I/O."""
-    if not isinstance(user_data, dict):
-        return
-    entry = user_data.get(user_id)
+    entry = get_user_data().get(user_id)
     if isinstance(entry, dict):
         entry["last_activity"] = time.time()
 
 
-async def show_achievements(update, context, *, user_data):
+async def show_achievements(update, context):
     """Render achievements without running Mongo work on the PTB event loop."""
     del context
     query = update.callback_query
@@ -33,7 +32,7 @@ async def show_achievements(update, context, *, user_data):
     catalog = _achievement_catalog()
 
     await query.answer()
-    _touch_memory(user_data, user_id)
+    _touch_memory(user_id)
     await asyncio.to_thread(touch_user_activity, user_id)
     user_stats = await asyncio.to_thread(get_user_stats, user_id) or {}
     unlocked_achievements = user_stats.get("achievements", {})

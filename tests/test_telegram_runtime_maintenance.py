@@ -29,20 +29,20 @@ def test_cleanup_stale_userdata_only_drops_expired_runtime_entries():
     }
 
 
-def test_cleanup_job_uses_supplied_runtime_map(monkeypatch):
+def test_cleanup_job_uses_canonical_runtime_map(monkeypatch):
     calls = []
+    runtime = {7: {"last_activity": 1.0}}
 
     def fake_cleanup(user_data, *, stale_threshold):
         calls.append((user_data, stale_threshold))
         return 0
 
+    monkeypatch.setattr(maintenance, "get_user_data", lambda: runtime)
     monkeypatch.setattr(maintenance, "cleanup_stale_userdata", fake_cleanup)
-    runtime = {7: {"last_activity": 1.0}}
 
     asyncio.run(
         maintenance.cleanup_stale_userdata_job(
             SimpleNamespace(),
-            user_data=runtime,
             stale_threshold=123.0,
         )
     )
@@ -50,11 +50,11 @@ def test_cleanup_job_uses_supplied_runtime_map(monkeypatch):
     assert calls == [(runtime, 123.0)]
 
 
-def test_production_routes_runtime_gc_outside_legacy():
+def test_production_routes_runtime_gc_outside_legacy_and_controller_wiring():
     assert "import telegram_runtime_maintenance as maintenance" in PRODUCTION_SOURCE
     assert "async def _cleanup_stale_userdata_job" in PRODUCTION_SOURCE
     assert "maintenance.cleanup_stale_userdata_job" in PRODUCTION_SOURCE
-    assert "user_data=quiz.user_data" in PRODUCTION_SOURCE
+    assert "user_data=quiz.user_data" not in PRODUCTION_SOURCE
     assert "interval=maintenance.GC_INTERVAL" in PRODUCTION_SOURCE
     assert "first=maintenance.GC_INTERVAL" in PRODUCTION_SOURCE
 

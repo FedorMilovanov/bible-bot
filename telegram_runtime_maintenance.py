@@ -7,6 +7,7 @@ from collections.abc import MutableMapping
 
 from config import GC_INTERVAL as GC_INTERVAL
 from config import GC_STALE_THRESHOLD
+from telegram_quiz_runtime_state import get_user_data
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,12 @@ def cleanup_stale_userdata(
 async def cleanup_stale_userdata_job(
     context,
     *,
-    user_data: MutableMapping,
     stale_threshold: float = GC_STALE_THRESHOLD,
 ) -> None:
     """PTB JobQueue adapter for process-local garbage collection."""
     del context
     deleted = cleanup_stale_userdata(
-        user_data,
+        get_user_data(),
         stale_threshold=stale_threshold,
     )
     if deleted:

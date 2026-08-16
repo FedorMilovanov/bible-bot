@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from telegram_quiz_runtime_state import get_user_data
 from utils import safe_truncate
 
 
@@ -80,12 +81,12 @@ def _build_error_page(wrong: list, index: int) -> tuple[str, InlineKeyboardMarku
     return safe_truncate(text, 4000), keyboard
 
 
-async def review_test_handler(update, context, *, user_data: Mapping) -> None:
+async def review_test_handler(update, context) -> None:
     """Page through the completed in-memory attempt with answer markers."""
     del context
     query = update.callback_query
     user_id = query.from_user.id
-    data = user_data.get(user_id, {})
+    data = get_user_data().get(user_id, {})
 
     try:
         question_index = int((query.data or "").rsplit("_", 1)[-1])
@@ -164,7 +165,7 @@ async def review_test_handler(update, context, *, user_data: Mapping) -> None:
     )
 
 
-async def review_errors_handler(update, context, *, user_data: Mapping) -> None:
+async def review_errors_handler(update, context) -> None:
     """Render only the current user's process-local wrong-answer review."""
     del context
     query = update.callback_query
@@ -204,6 +205,7 @@ async def review_errors_handler(update, context, *, user_data: Mapping) -> None:
         return
 
     await query.answer()
+    user_data = get_user_data()
     if target_id not in user_data:
         await query.edit_message_text("⚠️ Данные устарели. Начни новый тест.")
         return

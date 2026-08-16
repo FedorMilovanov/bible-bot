@@ -51,6 +51,7 @@ def _run(coro):
 def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
     event_loop_thread = threading.get_ident()
     calls = []
+    user_data = {42: {"last_activity": 0.0}}
 
     def touch(user_id):
         calls.append(("touch", user_id, threading.get_ident()))
@@ -66,18 +67,12 @@ def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
         }
 
     monkeypatch.setattr(achievements, "ACHIEVEMENTS", CATALOG)
+    monkeypatch.setattr(achievements, "get_user_data", lambda: user_data)
     monkeypatch.setattr(achievements, "touch_user_activity", touch)
     monkeypatch.setattr(achievements, "get_user_stats", get_stats)
     query = _Query()
-    user_data = {42: {"last_activity": 0.0}}
 
-    _run(
-        achievements.show_achievements(
-            _Update(query),
-            object(),
-            user_data=user_data,
-        )
-    )
+    _run(achievements.show_achievements(_Update(query), object()))
 
     assert [call[:2] for call in calls] == [("touch", 42), ("stats", 42)]
     assert all(call[2] != event_loop_thread for call in calls)
@@ -96,17 +91,12 @@ def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
 
 def test_achievement_screen_handles_missing_user_stats(monkeypatch):
     monkeypatch.setattr(achievements, "ACHIEVEMENTS", CATALOG)
+    monkeypatch.setattr(achievements, "get_user_data", lambda: {})
     monkeypatch.setattr(achievements, "touch_user_activity", lambda _user_id: None)
     monkeypatch.setattr(achievements, "get_user_stats", lambda _user_id: None)
     query = _Query()
 
-    _run(
-        achievements.show_achievements(
-            _Update(query),
-            object(),
-            user_data={},
-        )
-    )
+    _run(achievements.show_achievements(_Update(query), object()))
 
     text = query.edits[0][0]
     assert "Разблокировано: 0/2" in text
@@ -129,7 +119,7 @@ def test_achievement_catalog_fails_closed_when_authority_is_malformed(monkeypatc
         achievements._achievement_catalog()
 
 
-def test_production_achievement_callback_uses_controller_not_legacy_handler():
+def test_production_achievement_callback_uses_canonical_runtime_state():
     source = Path("telegram_production.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     callback = next(
@@ -141,7 +131,7 @@ def test_production_achievement_callback_uses_controller_not_legacy_handler():
 
     assert "import telegram_achievement_controller as achievements" in source
     assert "achievements.show_achievements" in callback_source
-    assert "user_data=quiz.user_data" in callback_source
+    assert "user_data=quiz.user_data" not in callback_source
     assert "legacy_module=legacy" not in callback_source
     assert "legacy.show_achievements" not in callback_source
     assert "_touch_presentation_callback" not in callback_source

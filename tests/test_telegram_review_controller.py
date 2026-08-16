@@ -21,7 +21,7 @@ def _question():
     }
 
 
-def test_review_test_reads_only_supplied_runtime_map():
+def test_review_test_reads_only_canonical_runtime_map(monkeypatch):
     query = SimpleNamespace(
         data="review_test_0",
         from_user=SimpleNamespace(id=7),
@@ -35,12 +35,12 @@ def test_review_test_reads_only_supplied_runtime_map():
             ]
         }
     }
+    monkeypatch.setattr(review, "get_user_data", lambda: runtime)
 
     asyncio.run(
         review.review_test_handler(
             SimpleNamespace(callback_query=query),
             SimpleNamespace(),
-            user_data=runtime,
         )
     )
 
@@ -58,19 +58,19 @@ def test_review_test_reads_only_supplied_runtime_map():
     assert payloads == ["noop", "back_to_main"]
 
 
-def test_review_errors_rejects_foreign_user():
+def test_review_errors_rejects_foreign_user(monkeypatch):
     query = SimpleNamespace(
         data="review_errors_8_0",
         from_user=SimpleNamespace(id=7),
         answer=AsyncMock(),
         edit_message_text=AsyncMock(),
     )
+    monkeypatch.setattr(review, "get_user_data", lambda: {})
 
     asyncio.run(
         review.review_errors_handler(
             SimpleNamespace(callback_query=query),
             SimpleNamespace(),
-            user_data={},
         )
     )
 
@@ -81,7 +81,7 @@ def test_review_errors_rejects_foreign_user():
     query.edit_message_text.assert_not_awaited()
 
 
-def test_review_errors_preserves_navigation_and_clamps_index():
+def test_review_errors_preserves_navigation_and_clamps_index(monkeypatch):
     wrong = [
         {"question_obj": _question(), "user_answer": "Павел"},
         {"question_obj": _question(), "user_answer": "Иоанн"},
@@ -92,12 +92,12 @@ def test_review_errors_preserves_navigation_and_clamps_index():
         answer=AsyncMock(),
         edit_message_text=AsyncMock(),
     )
+    monkeypatch.setattr(review, "get_user_data", lambda: {7: {"wrong_answers": wrong}})
 
     asyncio.run(
         review.review_errors_handler(
             SimpleNamespace(callback_query=query),
             SimpleNamespace(),
-            user_data={7: {"wrong_answers": wrong}},
         )
     )
 
@@ -109,19 +109,19 @@ def test_review_errors_preserves_navigation_and_clamps_index():
     assert markup.inline_keyboard[1][0].callback_data == "back_to_main"
 
 
-def test_review_nav_noop_only_acknowledges():
+def test_review_nav_noop_only_acknowledges(monkeypatch):
     query = SimpleNamespace(
         data="review_nav_noop",
         from_user=SimpleNamespace(id=7),
         answer=AsyncMock(),
         edit_message_text=AsyncMock(),
     )
+    monkeypatch.setattr(review, "get_user_data", lambda: {})
 
     asyncio.run(
         review.review_errors_handler(
             SimpleNamespace(callback_query=query),
             SimpleNamespace(),
-            user_data={},
         )
     )
 
@@ -129,11 +129,11 @@ def test_review_nav_noop_only_acknowledges():
     query.edit_message_text.assert_not_awaited()
 
 
-def test_production_routes_review_handlers_outside_legacy():
+def test_production_routes_review_handlers_outside_legacy_and_controller_wiring():
     assert "import telegram_review_controller as review" in PRODUCTION_SOURCE
     assert "async def _review_errors_handler" in PRODUCTION_SOURCE
     assert "async def _review_test_handler" in PRODUCTION_SOURCE
-    assert "user_data=quiz.user_data" in PRODUCTION_SOURCE
+    assert "user_data=quiz.user_data" not in PRODUCTION_SOURCE
     assert "CallbackQueryHandler(_review_errors_handler, pattern=r\"^review_errors_\")" in PRODUCTION_SOURCE
     assert "CallbackQueryHandler(_review_errors_handler, pattern=r\"^review_nav_\")" in PRODUCTION_SOURCE
     assert "CallbackQueryHandler(_review_test_handler, pattern=r\"^review_test_\\d+$\")" in PRODUCTION_SOURCE

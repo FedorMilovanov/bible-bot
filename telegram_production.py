@@ -48,6 +48,7 @@ import telegram_controller as quiz  # noqa: E402
 import telegram_error_controller as errors  # noqa: E402
 import telegram_intro_controller as intro  # noqa: E402
 import telegram_main_menu as main_menu  # noqa: E402
+import telegram_quiz_runtime_state as quiz_runtime  # noqa: E402
 import telegram_report_controller as reports  # noqa: E402
 import telegram_report_runtime as report_runtime  # noqa: E402
 import telegram_report_state as report_state  # noqa: E402
@@ -113,6 +114,7 @@ def _miniapp_keyboard() -> InlineKeyboardMarkup | None:
     )
 
 
+quiz_runtime.install_legacy_bridge(legacy)
 achievement_catalog.install_legacy_bridge(legacy)
 main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)
 report_state.install_legacy_bridge(legacy)
@@ -217,31 +219,20 @@ async def _reset_during_report(update, context):
 
 
 async def _cleanup_stale_userdata_job(context):
-    return await maintenance.cleanup_stale_userdata_job(
-        context,
-        user_data=quiz.user_data,
-    )
+    return await maintenance.cleanup_stale_userdata_job(context)
 
 
 async def _review_errors_handler(update, context):
-    return await review.review_errors_handler(
-        update,
-        context,
-        user_data=quiz.user_data,
-    )
+    return await review.review_errors_handler(update, context)
 
 
 async def _review_test_handler(update, context):
-    return await review.review_test_handler(
-        update,
-        context,
-        user_data=quiz.user_data,
-    )
+    return await review.review_test_handler(update, context)
 
 
 async def _about_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await query.edit_message_text(
         "Bible quiz bot: 1 Peter\n"
@@ -255,21 +246,21 @@ async def _about_callback(update, context):
 
 
 async def _start_test_callback(update, context):
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await courses.choose_level(update, context, is_callback=True)
 
 
 async def _leaderboard_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await stats.show_general_leaderboard(query, 0)
 
 
 async def _leaderboard_page_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer()
     try:
         page = int((query.data or "").removeprefix("leaderboard_page_"))
@@ -280,22 +271,18 @@ async def _leaderboard_page_callback(update, context):
 
 async def _my_stats_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer()
     await stats.show_my_stats(query)
 
 
 async def _achievements_callback(update, context):
-    await achievements.show_achievements(
-        update,
-        context,
-        user_data=quiz.user_data,
-    )
+    await achievements.show_achievements(update, context)
 
 
 async def _coming_soon_callback(update, context):
     """Old deployed Chapter-2 button: redirect to the fresh catalog menu."""
-    query = await activity.touch_presentation(update, user_data=quiz.user_data)
+    query = await activity.touch_presentation(update)
     await query.answer("Меню курсов обновлено.")
     await courses.choose_level(update, context, is_callback=True)
 
