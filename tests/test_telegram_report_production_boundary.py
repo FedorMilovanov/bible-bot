@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTROLLER = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 REPORTS = (ROOT / "telegram_report_controller.py").read_text(encoding="utf-8")
 SCOPED_DRAIN = (ROOT / "legacy_report_delivery_drain.py").read_text(encoding="utf-8")
 
@@ -17,7 +17,7 @@ def async_function(source: str, name: str) -> str:
     return source[start:end]
 
 
-def test_production_report_handlers_do_not_delegate_to_legacy_writers():
+def test_production_report_handlers_route_only_to_focused_report_controller():
     required = (
         "import telegram_report_controller as reports",
         "reports.report_start",
@@ -31,7 +31,7 @@ def test_production_report_handlers_do_not_delegate_to_legacy_writers():
         "reports.report_delivery_job",
     )
     for marker in required:
-        assert marker in CONTROLLER
+        assert marker in PRODUCTION
 
     forbidden = (
         "legacy.report_start",
@@ -44,7 +44,7 @@ def test_production_report_handlers_do_not_delegate_to_legacy_writers():
         "legacy.report_inaccuracy_handler",
     )
     for marker in forbidden:
-        assert marker not in CONTROLLER
+        assert marker not in PRODUCTION
 
 
 def test_report_confirmation_accepts_before_ram_cleanup_and_never_direct_sends():
