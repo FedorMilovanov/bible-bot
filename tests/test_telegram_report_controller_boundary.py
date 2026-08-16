@@ -11,6 +11,7 @@ import telegram_report_state as report_state
 
 
 SOURCE = Path(reports.__file__).read_text(encoding="utf-8")
+STATE_SOURCE = Path(report_state.__file__).read_text(encoding="utf-8")
 
 
 def run(coro):
@@ -36,40 +37,21 @@ def test_report_sanitizer_preserves_deployed_contract():
     assert not sanitized.endswith(" ")
 
 
-def test_report_state_bridge_validates_constants_and_preserves_drafts():
-    report_state.report_drafts.clear()
-    legacy = SimpleNamespace(
-        REPORT_TYPE=report_state.REPORT_TYPE,
-        REPORT_TEXT=report_state.REPORT_TEXT,
-        REPORT_PHOTO=report_state.REPORT_PHOTO,
-        REPORT_CONFIRM=report_state.REPORT_CONFIRM,
-        REPORT_TYPE_LABELS=dict(report_state.REPORT_TYPE_LABELS),
-        report_drafts={9: {"report_id": "existing"}},
-    )
-
-    report_state.install_legacy_bridge(legacy)
-
-    assert legacy.report_drafts is report_state.report_drafts
-    assert report_state.report_drafts == {9: {"report_id": "existing"}}
-    report_state.report_drafts.clear()
-
-
-def test_report_state_bridge_fails_closed_on_state_drift():
-    legacy = SimpleNamespace(
-        REPORT_TYPE=999,
-        REPORT_TEXT=report_state.REPORT_TEXT,
-        REPORT_PHOTO=report_state.REPORT_PHOTO,
-        REPORT_CONFIRM=report_state.REPORT_CONFIRM,
-        REPORT_TYPE_LABELS=dict(report_state.REPORT_TYPE_LABELS),
-        report_drafts={},
-    )
-
-    try:
-        report_state.install_legacy_bridge(legacy)
-    except RuntimeError as exc:
-        assert "states diverged" in str(exc)
-    else:
-        raise AssertionError("divergent report states must fail closed")
+def test_report_state_constants_and_drafts_have_one_canonical_owner():
+    assert (
+        report_state.REPORT_TYPE,
+        report_state.REPORT_TEXT,
+        report_state.REPORT_PHOTO,
+        report_state.REPORT_CONFIRM,
+    ) == (10, 11, 12, 13)
+    assert report_state.REPORT_TYPE_LABELS == {
+        "bug": "🐞 Баг",
+        "idea": "💡 Идея",
+        "question": "❓ Вопрос по материалу",
+    }
+    assert reports.report_drafts is report_state.report_drafts
+    assert "install_legacy_bridge" not in STATE_SOURCE
+    assert "legacy_module" not in STATE_SOURCE
 
 
 class _Query:
