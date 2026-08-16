@@ -148,17 +148,4 @@ async def send_final_results_menu(bot, chat_id: int, data: dict) -> None:
         logger.error("send_final_results_menu: ошибка отправки: %s", exc)
 
 
-def validate_legacy_bridge(legacy_module) -> None:
-    """Fail closed unless the transitional module exposes the deployed callable."""
-    legacy_callable = getattr(legacy_module, "send_final_results_menu", None)
-    if not callable(legacy_callable):
-        raise TypeError("legacy module must expose callable send_final_results_menu")
-
-
-def install_legacy_bridge(legacy_module) -> None:
-    """Replace only the transitional result-menu callable with canonical authority."""
-    validate_legacy_bridge(legacy_module)
-    legacy_module.send_final_results_menu = send_final_results_menu
-
-
-__all__ = ["install_legacy_bridge", "send_final_results_menu", "validate_legacy_bridge"]
+__all__ = ["send_final_results_menu"]
