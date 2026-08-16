@@ -5,6 +5,7 @@ on:
     types: [closed]
 
 permissions:
+  actions: write
   contents: write
   pull-requests: read
 
@@ -19,6 +20,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Disable retired workflow registry records
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/cleanup_retired_workflow_registry.py
       - name: Delete only stale service-owned closed-PR branches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
