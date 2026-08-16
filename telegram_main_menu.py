@@ -60,34 +60,3 @@ def main_keyboard() -> InlineKeyboardMarkup:
         ]
     )
     return InlineKeyboardMarkup(rows)
-
-
-def install_legacy_bridge(
-    legacy_module,
-    *,
-    miniapp_url_provider: MiniAppUrlProvider | None = None,
-) -> None:
-    """Point transitional legacy callers at canonical presentation authority.
-
-    `bot.py` remains import-compatible while production runtime authority lives
-    in focused modules. All presentation seams are validated before any legacy
-    callable is replaced.
-    """
-    from telegram_answer_animation import (
-        animate_answer_buttons,
-        validate_legacy_bridge as validate_answer_animation_bridge,
-    )
-    from telegram_quiz_result_menu import (
-        send_final_results_menu,
-        validate_legacy_bridge as validate_result_menu_bridge,
-    )
-
-    current = getattr(legacy_module, "_main_keyboard", None)
-    if not callable(current):
-        raise TypeError("legacy module must expose a callable _main_keyboard")
-    validate_result_menu_bridge(legacy_module)
-    validate_answer_animation_bridge(legacy_module)
-    configure_miniapp_url_provider(miniapp_url_provider)
-    legacy_module._main_keyboard = main_keyboard
-    legacy_module.send_final_results_menu = send_final_results_menu
-    legacy_module._animate_answer_buttons = animate_answer_buttons
