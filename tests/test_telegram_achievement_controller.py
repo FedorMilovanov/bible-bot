@@ -48,13 +48,6 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _legacy(user_id=42):
-    return SimpleNamespace(
-        ACHIEVEMENTS=CATALOG,
-        user_data={user_id: {"last_activity": 0.0}},
-    )
-
-
 def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
     event_loop_thread = threading.get_ident()
     calls = []
@@ -72,22 +65,23 @@ def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
             "daily_activity_streak": 3,
         }
 
+    monkeypatch.setattr(achievements, "ACHIEVEMENTS", CATALOG)
     monkeypatch.setattr(achievements, "touch_user_activity", touch)
     monkeypatch.setattr(achievements, "get_user_stats", get_stats)
     query = _Query()
-    legacy = _legacy()
+    user_data = {42: {"last_activity": 0.0}}
 
     _run(
         achievements.show_achievements(
             _Update(query),
             object(),
-            legacy_module=legacy,
+            user_data=user_data,
         )
     )
 
     assert [call[:2] for call in calls] == [("touch", 42), ("stats", 42)]
     assert all(call[2] != event_loop_thread for call in calls)
-    assert legacy.user_data[42]["last_activity"] > 0
+    assert user_data[42]["last_activity"] > 0
     assert query.answers == [(None, False)]
 
     assert len(query.edits) == 1
@@ -101,6 +95,7 @@ def test_achievement_db_touch_and_stats_read_run_off_event_loop(monkeypatch):
 
 
 def test_achievement_screen_handles_missing_user_stats(monkeypatch):
+    monkeypatch.setattr(achievements, "ACHIEVEMENTS", CATALOG)
     monkeypatch.setattr(achievements, "touch_user_activity", lambda _user_id: None)
     monkeypatch.setattr(achievements, "get_user_stats", lambda _user_id: None)
     query = _Query()
@@ -109,7 +104,7 @@ def test_achievement_screen_handles_missing_user_stats(monkeypatch):
         achievements.show_achievements(
             _Update(query),
             object(),
-            legacy_module=_legacy(),
+            user_data={},
         )
     )
 
@@ -128,10 +123,10 @@ def test_achievement_screen_handles_missing_user_stats(monkeypatch):
         {"bad": {"name": "Bad", "icon": "x", "description": "x", "reward": -1}},
     ],
 )
-def test_achievement_catalog_fails_closed_when_authority_is_malformed(catalog):
-    legacy = SimpleNamespace(ACHIEVEMENTS=catalog, user_data={})
+def test_achievement_catalog_fails_closed_when_authority_is_malformed(monkeypatch, catalog):
+    monkeypatch.setattr(achievements, "ACHIEVEMENTS", catalog)
     with pytest.raises(RuntimeError):
-        achievements._achievement_catalog(legacy)
+        achievements._achievement_catalog()
 
 
 def test_production_achievement_callback_uses_controller_not_legacy_handler():
@@ -146,6 +141,7 @@ def test_production_achievement_callback_uses_controller_not_legacy_handler():
 
     assert "import telegram_achievement_controller as achievements" in source
     assert "achievements.show_achievements" in callback_source
-    assert "legacy_module=legacy" in callback_source
+    assert "user_data=quiz.user_data" in callback_source
+    assert "legacy_module=legacy" not in callback_source
     assert "legacy.show_achievements" not in callback_source
     assert "_touch_presentation_callback" not in callback_source

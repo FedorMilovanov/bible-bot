@@ -1,4 +1,4 @@
-"""Production achievement presentation with explicit legacy catalog injection."""
+"""Production achievement presentation backed by the canonical catalog."""
 from __future__ import annotations
 
 import asyncio
@@ -7,35 +7,17 @@ from collections.abc import Mapping
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from achievement_catalog import ACHIEVEMENTS, validate_achievement_catalog
 from database import get_user_stats, touch_user_activity
 
-_REQUIRED_ACHIEVEMENT_FIELDS = {"name", "icon", "description", "reward"}
+
+def _achievement_catalog() -> Mapping[str, Mapping]:
+    """Return the validated canonical achievement catalog authority."""
+    return validate_achievement_catalog(ACHIEVEMENTS)
 
 
-def _achievement_catalog(legacy_module) -> Mapping[str, Mapping]:
-    """Resolve and validate the single existing achievement catalog authority."""
-    catalog = getattr(legacy_module, "ACHIEVEMENTS", None)
-    if not isinstance(catalog, Mapping) or not catalog:
-        raise RuntimeError("Legacy achievement catalog is unavailable")
-
-    for key, achievement in catalog.items():
-        if not isinstance(key, str) or not key:
-            raise RuntimeError("Achievement catalog contains an invalid key")
-        if not isinstance(achievement, Mapping):
-            raise RuntimeError(f"Achievement {key!r} is not a mapping")
-        missing = _REQUIRED_ACHIEVEMENT_FIELDS - set(achievement)
-        if missing:
-            raise RuntimeError(
-                f"Achievement {key!r} is missing required fields: {sorted(missing)}"
-            )
-        if not isinstance(achievement["reward"], int) or achievement["reward"] < 0:
-            raise RuntimeError(f"Achievement {key!r} has an invalid reward")
-    return catalog
-
-
-def _touch_legacy_memory(legacy_module, user_id: int) -> None:
-    """Preserve the legacy in-memory activity timestamp without doing DB I/O."""
-    user_data = getattr(legacy_module, "user_data", None)
+def _touch_memory(user_data, user_id: int) -> None:
+    """Preserve the process-local activity timestamp without doing DB I/O."""
     if not isinstance(user_data, dict):
         return
     entry = user_data.get(user_id)
@@ -43,15 +25,15 @@ def _touch_legacy_memory(legacy_module, user_id: int) -> None:
         entry["last_activity"] = time.time()
 
 
-async def show_achievements(update, context, *, legacy_module):
+async def show_achievements(update, context, *, user_data):
     """Render achievements without running Mongo work on the PTB event loop."""
     del context
     query = update.callback_query
     user_id = query.from_user.id
-    catalog = _achievement_catalog(legacy_module)
+    catalog = _achievement_catalog()
 
     await query.answer()
-    _touch_legacy_memory(legacy_module, user_id)
+    _touch_memory(user_data, user_id)
     await asyncio.to_thread(touch_user_activity, user_id)
     user_stats = await asyncio.to_thread(get_user_stats, user_id) or {}
     unlocked_achievements = user_stats.get("achievements", {})
