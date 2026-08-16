@@ -60,7 +60,8 @@ jobs:
             requirements-dev.txt
             constraints.txt
       - name: Install dependencies
-        run: python -m pip install --only-binary=:all: -c constraints.txt -r requirements-dev.txt
+        run: >-
+          python -m pip install --only-binary=:all: -c constraints.txt -r requirements-dev.txt
       - name: Verify dependency graph
         run: python -m pip check
       - name: Guard tracked tree against secrets
