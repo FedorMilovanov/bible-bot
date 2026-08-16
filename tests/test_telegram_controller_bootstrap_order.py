@@ -10,33 +10,29 @@ ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 
 
-def test_controller_authority_bridges_install_before_any_controller_capable_import():
-    controller_import = PRODUCTION_SOURCE.index("import telegram_controller as quiz")
-    first_controller_capable_import = PRODUCTION_SOURCE.index(
-        "import telegram_activity_controller as activity"
+def test_production_needs_no_legacy_bootstrap_order_anymore():
+    forbidden = (
+        "importlib.import_module(\"bot\")",
+        "legacy =",
+        "controller_legacy_bridge.install_legacy_bridge",
+        "quiz_runtime.install_legacy_bridge",
+        "question_identity.install_legacy_bridge",
+        "answer_history.install_legacy_bridge",
+        "achievement_catalog.install_legacy_bridge",
+        "report_state.install_legacy_bridge",
+        "main_menu.install_legacy_bridge",
+        "import telegram_controller as quiz",
     )
+    for token in forbidden:
+        assert token not in PRODUCTION_SOURCE
 
-    required_installs = (
-        "controller_legacy_bridge.install_legacy_bridge(legacy)",
-        "quiz_runtime.install_legacy_bridge(legacy)",
-        "question_identity.install_legacy_bridge(legacy)",
-        "answer_history.install_legacy_bridge(legacy)",
-        "achievement_catalog.install_legacy_bridge(legacy)",
-        "report_state.install_legacy_bridge(legacy)",
-    )
-    for token in required_installs:
-        position = PRODUCTION_SOURCE.index(token)
-        assert position < first_controller_capable_import
-        assert position < controller_import
-
-    # The main-menu bridge legitimately waits for _miniapp_url to exist; its
-    # controller-facing presentation callables are resolved dynamically later.
+    assert "import telegram_quiz_runtime_controller as quiz" in PRODUCTION_SOURCE
     assert PRODUCTION_SOURCE.index("def _miniapp_url()") < PRODUCTION_SOURCE.index(
-        "main_menu.install_legacy_bridge(legacy, miniapp_url_provider=_miniapp_url)"
+        "main_menu.configure_miniapp_url_provider(_miniapp_url)"
     )
 
 
-def test_report_state_bridge_replaces_exact_canonical_metadata_after_parity():
+def test_report_state_bridge_remains_available_for_standalone_compatibility():
     legacy_labels = dict(report_state.REPORT_TYPE_LABELS)
     legacy = SimpleNamespace(
         REPORT_TYPE=report_state.REPORT_TYPE,

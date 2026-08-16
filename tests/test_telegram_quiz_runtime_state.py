@@ -355,15 +355,11 @@ def test_runtime_state_is_only_process_local_projection_and_has_no_legacy_import
     assert "legacy_module._reset_bad_input = reset_bad_input" in RUNTIME_SOURCE
 
 
-def test_production_installs_runtime_bridge_before_controller_import():
-    runtime_import = PRODUCTION_SOURCE.index(
-        "import telegram_quiz_runtime_state as quiz_runtime"
-    )
-    runtime_install = PRODUCTION_SOURCE.index("quiz_runtime.install_legacy_bridge(legacy)")
-    admin_import = PRODUCTION_SOURCE.index("import telegram_admin_controller as admin")
-    controller_import = PRODUCTION_SOURCE.index("import telegram_controller as quiz")
-
-    assert runtime_import < runtime_install < admin_import < controller_import
+def test_production_uses_canonical_quiz_runtime_without_legacy_runtime_bridge():
+    assert "import telegram_quiz_runtime_controller as quiz" in PRODUCTION_SOURCE
+    assert "quiz_runtime.install_legacy_bridge(legacy)" not in PRODUCTION_SOURCE
+    assert "import telegram_controller as quiz" not in PRODUCTION_SOURCE
+    assert "legacy =" not in PRODUCTION_SOURCE
 
 
 def test_admin_uses_canonical_runtime_mapping_without_importing_controller():

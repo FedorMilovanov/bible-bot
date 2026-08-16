@@ -8,6 +8,7 @@ import question_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
+RUNTIME_SOURCE = (ROOT / "telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
 QUESTION_IDENTITY_SOURCE = (ROOT / "question_identity.py").read_text(encoding="utf-8")
 
 
@@ -73,7 +74,6 @@ def test_bridge_replaces_legacy_helpers_by_exact_identity_after_parity():
     assert legacy.stable_question_id is question_identity.stable_question_id
     assert legacy.get_qid is question_identity.get_qid
 
-    # Reinstall is idempotent because canonical functions satisfy the same probe.
     question_identity.install_legacy_bridge(legacy)
     assert legacy.stable_question_id is question_identity.stable_question_id
     assert legacy.get_qid is question_identity.get_qid
@@ -129,6 +129,7 @@ def test_question_identity_has_no_legacy_import_or_runtime_state():
     assert "Mongo" not in QUESTION_IDENTITY_SOURCE
 
 
-def test_production_composition_root_installs_question_identity_bridge():
-    assert "import question_identity as question_identity" in PRODUCTION_SOURCE
-    assert "question_identity.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
+def test_production_runtime_uses_question_identity_directly_without_bridge():
+    assert "from question_identity import get_qid" in RUNTIME_SOURCE
+    assert "question_identity.install_legacy_bridge(legacy)" not in PRODUCTION_SOURCE
+    assert "legacy =" not in PRODUCTION_SOURCE

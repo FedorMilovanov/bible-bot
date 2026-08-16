@@ -10,7 +10,7 @@ DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 RENDER = (ROOT / "render.yaml").read_text(encoding="utf-8")
 ENTRYPOINT = (ROOT / "production_entrypoint.py").read_text(encoding="utf-8")
 PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
-QUIZ = (ROOT / "telegram_controller.py").read_text(encoding="utf-8")
+QUIZ_RUNTIME = (ROOT / "telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
 
 
 def test_runtime_surfaces_run_safe_bootstrap_into_production_composition_root():
@@ -27,8 +27,8 @@ def test_runtime_surfaces_run_safe_bootstrap_into_production_composition_root():
     )
 
 
-def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
-    ast.parse(QUIZ, filename="telegram_controller.py")
+def test_canonical_quiz_runtime_is_valid_python_and_owns_production_quiz_state():
+    ast.parse(QUIZ_RUNTIME, filename="telegram_quiz_runtime_controller.py")
     for marker in (
         "launch_quiz_attempt(",
         "apply_live_answer_once(",
@@ -36,8 +36,11 @@ def test_quiz_controller_library_is_valid_python_and_owns_quiz_state():
         "finalize_live_persisted_attempt(",
         "cancel_current_incomplete_session(",
         "resolve_session_action(",
+        "user_data = get_user_data()",
     ):
-        assert marker in QUIZ
+        assert marker in QUIZ_RUNTIME
+    assert "import telegram_controller" not in QUIZ_RUNTIME
+    assert "import bot" not in QUIZ_RUNTIME
 
 
 def test_production_composition_imports_with_runtime_dependencies():
@@ -56,7 +59,7 @@ def test_production_composition_imports_with_runtime_dependencies():
             (
                 "import telegram_production as production; "
                 "import telegram_admin_controller as admin; "
-                "import telegram_controller as quiz; "
+                "import telegram_quiz_runtime_controller as quiz; "
                 "import telegram_report_controller as reports; "
                 "import telegram_battle_controller as battles; "
                 "assert callable(production.main); "
@@ -77,46 +80,14 @@ def test_production_composition_imports_with_runtime_dependencies():
     assert result.returncode == 0, result.stderr
 
 
-def test_legacy_import_temporarily_disables_http_and_restores_environment():
-    env = os.environ.copy()
-    env.update(
-        {
-            "ADMIN_USER_ID": "1",
-            "BOT_TOKEN": "123456:TEST_TOKEN",
-            "DISABLE_WEB_SERVER": "true",
-        }
-    )
-    script = r'''
-import os
-import telegram_production as production
-seen = []
-
-def fake_import(name):
-    seen.append((name, os.environ.get("DISABLE_WEB_SERVER")))
-    return object()
-
-production.importlib.import_module = fake_import
-os.environ.pop("DISABLE_WEB_SERVER", None)
-production._import_legacy_presentation()
-assert seen == [("bot", "true")]
-assert "DISABLE_WEB_SERVER" not in os.environ
-
-seen.clear()
-os.environ["DISABLE_WEB_SERVER"] = "false"
-production._import_legacy_presentation()
-assert seen == [("bot", "true")]
-assert os.environ["DISABLE_WEB_SERVER"] == "false"
-'''
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
+def test_production_has_no_legacy_bootstrap_or_giant_controller_import():
+    assert "def _import_legacy_presentation():" not in PRODUCTION
+    assert 'importlib.import_module("bot")' not in PRODUCTION
+    assert "legacy =" not in PRODUCTION
+    assert "install_legacy_bridge(legacy" not in PRODUCTION
+    assert "import telegram_controller" not in PRODUCTION
+    assert "from telegram_controller" not in PRODUCTION
+    assert "import telegram_quiz_runtime_controller as quiz" in PRODUCTION
 
 
 def test_http_server_is_started_only_after_startup_guards_and_handler_setup():

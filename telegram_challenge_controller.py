@@ -8,7 +8,7 @@ import random
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 
-import telegram_controller as quiz
+import telegram_quiz_runtime_controller as quiz
 from database import is_bonus_eligible
 from legacy_retry_policy import LegacyRetryPolicyInvalid, persisted_is_retry
 from legacy_session_action import (

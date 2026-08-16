@@ -67,9 +67,9 @@ def test_production_root_does_not_register_legacy_random_or_nonsharing_battle_cr
         assert marker not in SOURCE
 
 
-def test_production_root_keeps_quiz_report_and_retry_adapters_explicit():
+def test_production_root_uses_canonical_quiz_report_and_retry_adapters():
     required = (
-        "import telegram_controller as quiz",
+        "import telegram_quiz_runtime_controller as quiz",
         "import telegram_report_controller as reports",
         "import telegram_retry_controller as retry",
         "quiz.quiz_inline_answer",
@@ -82,6 +82,10 @@ def test_production_root_keeps_quiz_report_and_retry_adapters_explicit():
     )
     for marker in required:
         assert marker in SOURCE
+
+    assert "import telegram_controller" not in SOURCE
+    assert "from telegram_controller" not in SOURCE
+    assert "import bot" not in SOURCE
 
 
 def test_production_root_does_not_register_ram_retry_source_handler():

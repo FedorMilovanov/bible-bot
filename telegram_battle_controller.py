@@ -10,7 +10,6 @@ import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 
-import bot as legacy
 import telegram_battle_ready_delivery as ready_delivery
 from battle_integrity import (
     BATTLE_DELIVERY_PROTOCOL_OUTBOX,
@@ -19,6 +18,8 @@ from battle_integrity import (
     claim_final_battle,
     record_battle_result,
 )
+from config import MAX_BTN_LEN
+from database import format_time
 from legacy_battle_callback_protocol import (
     LegacyBattleCallbackInvalid,
     build_battle_answer_callback,
@@ -51,9 +52,24 @@ from legacy_battle_session import (
     get_waiting_durable_battles,
     resolve_owned_open_battle_callback,
 )
+from questions import (
+    BATTLE_POOL,
+    intro_part1_questions,
+    intro_part2_questions,
+    intro_part3_questions,
+)
+from quiz_answer_history import build_progress_bar
+from telegram_conversation_states import BATTLE_ANSWERING
 
 logger = logging.getLogger(__name__)
-BATTLE_ANSWERING = legacy.BATTLE_ANSWERING
+
+
+def _battle_pool() -> list[dict]:
+    intro_pool = intro_part1_questions + intro_part2_questions + intro_part3_questions
+    pool = list(BATTLE_POOL) + list(intro_pool)
+    if not pool:
+        return []
+    return random.sample(pool, min(10, len(pool)))
 
 
 def _role_label(battle: dict, role: str) -> str:
@@ -75,13 +91,6 @@ def _cancel_payload(battle_id: str) -> str:
     return payload
 
 
-def _battle_pool() -> list[dict]:
-    pool = list(legacy.BATTLE_POOL) + list(legacy.INTRO_POOL)
-    if not pool:
-        return []
-    return random.sample(pool, min(10, len(pool)))
-
-
 def _menu_markup(user_id: int, active: list[dict], waiting: list[dict]) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("🆕 Создать битву", callback_data="create_battle")]]
     seen: set[str] = set()
@@ -93,10 +102,7 @@ def _menu_markup(user_id: int, active: list[dict], waiting: list[dict]) -> Inlin
         seen.add(battle_id)
         if battle.get("opponent_id") is None:
             rows.append([
-                InlineKeyboardButton(
-                    "⏳ Моя битва ждёт соперника",
-                    callback_data="noop",
-                ),
+                InlineKeyboardButton("⏳ Моя битва ждёт соперника", callback_data="noop"),
                 InlineKeyboardButton("❌", callback_data=_cancel_payload(battle_id)),
             ])
         else:
@@ -126,11 +132,7 @@ async def show_battle_menu(update, context):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        active = await asyncio.to_thread(
-            get_open_durable_battles_for_user,
-            user_id,
-            limit=10,
-        )
+        active = await asyncio.to_thread(get_open_durable_battles_for_user, user_id, limit=10)
         waiting = await asyncio.to_thread(get_waiting_durable_battles, limit=10)
     except (LegacyBattleRecoveryUnavailable, LegacyBattleSessionUnavailable, ValueError):
         await query.answer("⚠️ База битв временно недоступна.", show_alert=True)
@@ -215,8 +217,6 @@ async def join_battle(update, context):
             start_payload_builder=_start_payload,
         )
     except Exception:
-        # Opponent claim and pending marker are already durable. Maintenance
-        # will retry transient delivery failures without rolling back the join.
         logger.warning("creator battle-ready notification remains pending", exc_info=True)
 
 
@@ -296,9 +296,14 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
         await bot.send_message(chat_id=chat_id, text="⚠️ Вопрос битвы повреждён.")
         return
 
-    if any(len(option) > legacy.MAX_BTN_LEN for option in shuffled):
-        options_text = "\n\n" + "\n".join(f"*{i + 1}.* {option}" for i, option in enumerate(shuffled))
-        rows = [[InlineKeyboardButton(str(i + 1), callback_data=cb) for i, cb in enumerate(callbacks)]]
+    if any(len(option) > MAX_BTN_LEN for option in shuffled):
+        options_text = "\n\n" + "\n".join(
+            f"*{i + 1}.* {option}" for i, option in enumerate(shuffled)
+        )
+        rows = [[
+            InlineKeyboardButton(str(i + 1), callback_data=cb)
+            for i, cb in enumerate(callbacks)
+        ]]
     else:
         options_text = ""
         rows = [
@@ -307,7 +312,7 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
         ]
     rows.append([InlineKeyboardButton("⬅️ В меню", callback_data="battle_menu")])
     text = (
-        f"⚔️ *Вопрос {index + 1}/{len(questions)}* {legacy.build_progress_bar(index + 1, len(questions))}\n"
+        f"⚔️ *Вопрос {index + 1}/{len(questions)}* {build_progress_bar(index + 1, len(questions))}\n"
         f"⚡ Быстрее = больше очков!\n\n{question.get('question', '')}{options_text}"
     )
     try:
@@ -368,9 +373,17 @@ async def battle_answer(update, context):
         await query.answer("Эта кнопка битвы устарела.", show_alert=True)
         return
     except (LegacyBattleSessionUnavailable, LegacyBattleProgressUnavailable):
-        await query.answer("⚠️ База битв временно недоступна. Ответ не потерян намеренно — повтори позже.", show_alert=True)
+        await query.answer(
+            "⚠️ База битв временно недоступна. Ответ не потерян намеренно — повтори позже.",
+            show_alert=True,
+        )
         return
-    except (LegacyBattleSessionConflict, LegacyBattleProgressConflict, LegacyBattleProgressInvalid, ValueError):
+    except (
+        LegacyBattleSessionConflict,
+        LegacyBattleProgressConflict,
+        LegacyBattleProgressInvalid,
+        ValueError,
+    ):
         await query.answer("Состояние битвы уже изменилось. Открой меню битв.", show_alert=True)
         return
 
@@ -414,11 +427,20 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str
             time_seconds=result["time_seconds"],
             points=result["points"],
         )
-    except (LegacyBattleProgressUnavailable, LegacyBattleProgressConflict, LegacyBattleProgressInvalid, BattleStoreUnavailable, ValueError):
+    except (
+        LegacyBattleProgressUnavailable,
+        LegacyBattleProgressConflict,
+        LegacyBattleProgressInvalid,
+        BattleStoreUnavailable,
+        ValueError,
+    ):
         logger.warning("battle participant finalization pending for %s", battle_id, exc_info=True)
         await bot.send_message(
             chat_id=chat_id,
-            text="⚠️ Результат вопросов сохранён, но participant finalization пока не подтверждена. Открой «Битвы» и нажми «Продолжить» для безопасного повтора.",
+            text=(
+                "⚠️ Результат вопросов сохранён, но participant finalization пока не подтверждена. "
+                "Открой «Битвы» и нажми «Продолжить» для безопасного повтора."
+            ),
         )
         return
     if not isinstance(battle, dict):
@@ -443,10 +465,12 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str
             "✅ *Ты закончил!*\n\n"
             f"📊 {result['score']}/{result['total']}\n"
             f"⚡ Battle-очки: {result['points']}\n"
-            f"⏱ Время: {legacy.format_time(result['time_seconds'])}\n\n"
+            f"⏱ Время: {format_time(result['time_seconds'])}\n\n"
             "⏳ Ожидание результата соперника…"
         ),
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ К битвам", callback_data="battle_menu")]]),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ К битвам", callback_data="battle_menu")]
+        ]),
         parse_mode="Markdown",
     )
 
@@ -465,10 +489,14 @@ def _result_text(battle: dict) -> str:
         "⚔️ *РЕЗУЛЬТАТЫ БИТВЫ*\n\n"
         f"{headline}\n\n"
         f"👤 *{battle.get('creator_name', 'Игрок')}* — "
-        f"{battle.get('creator_score', 0)}/{total} • ⚡ {creator_points} • ⏱ {legacy.format_time(battle.get('creator_time', 0))}\n"
+        f"{battle.get('creator_score', 0)}/{total} • ⚡ {creator_points} • ⏱ {format_time(battle.get('creator_time', 0))}\n"
         f"👤 *{battle.get('opponent_name', 'Игрок')}* — "
-        f"{battle.get('opponent_score', 0)}/{total} • ⚡ {opponent_points} • ⏱ {legacy.format_time(battle.get('opponent_time', 0))}\n\n"
-        + ("💎 Победителю +5 рейтинговых баллов." if creator_points != opponent_points else "💎 Каждому +2 рейтинговых балла.")
+        f"{battle.get('opponent_score', 0)}/{total} • ⚡ {opponent_points} • ⏱ {format_time(battle.get('opponent_time', 0))}\n\n"
+        + (
+            "💎 Победителю +5 рейтинговых баллов."
+            if creator_points != opponent_points
+            else "💎 Каждому +2 рейтинговых балла."
+        )
     )
 
 
@@ -519,7 +547,9 @@ async def cancel_battle(update, context):
     await query.answer()
     await query.edit_message_text(
         "❌ Ожидание битвы отменено.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ К битвам", callback_data="battle_menu")]]),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ К битвам", callback_data="battle_menu")]
+        ]),
     )
 
 
@@ -542,9 +572,6 @@ async def battle_maintenance_job(context):
     except Exception:
         logger.exception("battle outbox maintenance failed")
     try:
-        await asyncio.to_thread(
-            cleanup_stale_waiting_battles,
-            max_age_minutes=10,
-        )
+        await asyncio.to_thread(cleanup_stale_waiting_battles, max_age_minutes=10)
     except LegacyBattleCleanupUnavailable:
         logger.warning("battle stale cleanup unavailable", exc_info=True)

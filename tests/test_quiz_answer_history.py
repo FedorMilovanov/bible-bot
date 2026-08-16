@@ -8,6 +8,7 @@ import quiz_answer_history
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SOURCE = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
+RUNTIME_SOURCE = (ROOT / "telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
 ANSWER_HISTORY_SOURCE = (ROOT / "quiz_answer_history.py").read_text(encoding="utf-8")
 
 
@@ -186,6 +187,7 @@ def test_answer_history_module_is_pure_and_does_not_import_legacy_or_database():
     assert "telegram" not in ANSWER_HISTORY_SOURCE
 
 
-def test_production_composition_root_installs_answer_history_bridge():
-    assert "import quiz_answer_history as answer_history" in PRODUCTION_SOURCE
-    assert "answer_history.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
+def test_production_runtime_uses_answer_history_directly_without_bridge():
+    assert "from quiz_answer_history import build_progress_bar, is_wrong" in RUNTIME_SOURCE
+    assert "answer_history.install_legacy_bridge(legacy)" not in PRODUCTION_SOURCE
+    assert "legacy =" not in PRODUCTION_SOURCE

@@ -139,12 +139,10 @@ def test_malformed_course_callback_cannot_smuggle_extra_authority():
 
 
 def test_course_launch_acknowledges_callback_even_when_durable_launcher_reports_conflict(monkeypatch):
-    import telegram_controller as quiz
-
     async def fake_launch_attempt(**_kwargs):
         return None
 
-    monkeypatch.setattr(quiz, "_launch_attempt", fake_launch_attempt)
+    monkeypatch.setattr(surface.quiz, "_launch_attempt", fake_launch_attempt)
     query = FakeQuery("course_mode:relaxed:chapter2")
     update = SimpleNamespace(
         callback_query=query,

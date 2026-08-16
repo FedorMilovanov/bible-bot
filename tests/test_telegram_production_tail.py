@@ -124,10 +124,11 @@ def test_error_handler_factory_binds_admin_id():
 def test_production_tail_routes_outside_direct_legacy_surface():
     assert "import telegram_error_controller as errors" in PRODUCTION_SOURCE
     assert "import telegram_report_runtime as report_runtime" in PRODUCTION_SOURCE
-    assert "import telegram_report_state as report_state" in PRODUCTION_SOURCE
     assert "report_runtime.drop_report_draft" in PRODUCTION_SOURCE
-    assert "report_state.install_legacy_bridge(legacy)" in PRODUCTION_SOURCE
     assert "errors.build_error_handler" in PRODUCTION_SOURCE
 
+    assert "import telegram_report_state as report_state" not in PRODUCTION_SOURCE
+    assert "report_state.install_legacy_bridge(legacy)" not in PRODUCTION_SOURCE
     assert "legacy.report_drafts" not in PRODUCTION_SOURCE
     assert "legacy.on_error" not in PRODUCTION_SOURCE
+    assert "legacy =" not in PRODUCTION_SOURCE

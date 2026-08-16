@@ -70,7 +70,7 @@ def test_recipient_snapshot_distinguishes_empty_collection_from_outage(monkeypat
 
 
 def test_non_admin_cannot_accept_broadcast(monkeypatch):
-    monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
+    monkeypatch.setattr(broadcasts, "_admin_user_id", lambda: 1)
     monkeypatch.setattr(
         broadcasts,
         "accept_broadcast_once",
@@ -84,7 +84,7 @@ def test_non_admin_cannot_accept_broadcast(monkeypatch):
 
 
 def test_admin_command_uses_update_id_and_durable_recipient_snapshot(monkeypatch):
-    monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
+    monkeypatch.setattr(broadcasts, "_admin_user_id", lambda: 1)
     monkeypatch.setattr(broadcasts, "get_broadcast", lambda _broadcast_id: None)
     monkeypatch.setattr(broadcasts, "_recipient_ids_strict", lambda: [10, 20])
     monkeypatch.setattr(
@@ -118,7 +118,7 @@ def test_admin_command_uses_update_id_and_durable_recipient_snapshot(monkeypatch
 
 
 def test_same_update_replay_uses_stored_snapshot_without_resnapshotting_users(monkeypatch):
-    monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
+    monkeypatch.setattr(broadcasts, "_admin_user_id", lambda: 1)
     existing = {
         "_id": "telegram_update_77",
         "admin_id": "1",
@@ -154,7 +154,7 @@ def test_same_update_replay_uses_stored_snapshot_without_resnapshotting_users(mo
 
 
 def test_same_update_replay_rejects_different_immutable_content(monkeypatch):
-    monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
+    monkeypatch.setattr(broadcasts, "_admin_user_id", lambda: 1)
     existing = {
         "_id": "telegram_update_77",
         "admin_id": "1",
@@ -173,7 +173,7 @@ def test_same_update_replay_rejects_different_immutable_content(monkeypatch):
 
 
 def test_admin_command_fails_closed_before_delivery_when_snapshot_unavailable(monkeypatch):
-    monkeypatch.setattr(broadcasts.legacy, "ADMIN_USER_ID", 1)
+    monkeypatch.setattr(broadcasts, "_admin_user_id", lambda: 1)
     monkeypatch.setattr(broadcasts, "get_broadcast", lambda _broadcast_id: None)
     monkeypatch.setattr(
         broadcasts,

@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, ChatMigrated, NetworkError, RetryAfter, TimedOut
 
-from utils import safe_truncate
+from telegram_text_safety import safe_truncate
 
 logger = logging.getLogger(__name__)
 

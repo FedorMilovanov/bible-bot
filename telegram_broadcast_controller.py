@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import timedelta
 
 from pymongo.errors import PyMongoError
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 
-import bot as legacy
 from broadcast_integrity import (
     BroadcastStoreUnavailable,
     accept_broadcast_once,
@@ -36,6 +36,13 @@ class BroadcastDrainSummary:
     terminal_failed: int = 0
     deferred: int = 0
     errors: tuple[str, ...] = ()
+
+
+def _admin_user_id() -> int:
+    raw = os.getenv("ADMIN_USER_ID")
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError("ADMIN_USER_ID is required")
+    return int(raw)
 
 
 async def _store_call(function, /, *args, **kwargs):
@@ -165,7 +172,9 @@ async def drain_broadcast_outbox(
             if parent.get("fanout_ready") is not True:
                 await _store_call(ensure_broadcast_fanout, parent)
     except (BroadcastStoreUnavailable, ValueError) as exc:
-        return BroadcastDrainSummary(errors=(f"broadcast-prepare:{type(exc).__name__}:{exc}"[:500],))
+        return BroadcastDrainSummary(
+            errors=(f"broadcast-prepare:{type(exc).__name__}:{exc}"[:500],)
+        )
 
     claimed_count = 0
     delivered_count = 0
@@ -189,7 +198,10 @@ async def drain_broadcast_outbox(
         parent_id = delivery.get("broadcast_id")
         claim_token = delivery.get("claim_token")
         raw_user_id = delivery.get("user_id")
-        if not all(isinstance(value, str) and value for value in (delivery_id, parent_id, claim_token)):
+        if not all(
+            isinstance(value, str) and value
+            for value in (delivery_id, parent_id, claim_token)
+        ):
             errors.append("broadcast-delivery:<invalid>:malformed claimed row")
             break
         affected.add(parent_id)
@@ -335,14 +347,17 @@ async def broadcast_command(update, context):
     message = update.message
     if user is None or message is None:
         return
-    if user.id != legacy.ADMIN_USER_ID:
+    if user.id != _admin_user_id():
         await message.reply_text("❌ Нет доступа.")
         return
 
     raw_text = message.text or ""
     text = raw_text.replace("/broadcast", "", 1).strip()
     if not text:
-        await message.reply_text("Использование: `/broadcast Текст сообщения`", parse_mode="Markdown")
+        await message.reply_text(
+            "Использование: `/broadcast Текст сообщения`",
+            parse_mode="Markdown",
+        )
         return
 
     try:
@@ -365,7 +380,11 @@ async def broadcast_command(update, context):
                 text=text,
             )
     except (BroadcastStoreUnavailable, ValueError):
-        logger.warning("durable broadcast acceptance failed for admin %s", user.id, exc_info=True)
+        logger.warning(
+            "durable broadcast acceptance failed for admin %s",
+            user.id,
+            exc_info=True,
+        )
         await message.reply_text(
             "Broadcast status is unknown. Do not create a new command; retry this command later."
         )

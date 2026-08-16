@@ -3,11 +3,22 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-import bot as legacy
+
+_USER_PREFS: dict[int, dict[str, bool]] = {}
+
+
+def get_pref(user_id: int, key: str, default: bool = True) -> bool:
+    """Read one process-local preference with the historical default semantics."""
+    return _USER_PREFS.get(user_id, {}).get(key, default)
+
+
+def set_pref(user_id: int, key: str, value: bool) -> None:
+    """Set one process-local preference until process restart."""
+    _USER_PREFS.setdefault(user_id, {})[key] = bool(value)
 
 
 def _settings_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    current = bool(legacy.get_pref(user_id, "typewriter", default=True))
+    current = bool(get_pref(user_id, "typewriter", default=True))
     desired = not current
     return InlineKeyboardMarkup(
         [
@@ -23,7 +34,7 @@ def _settings_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 
 async def _render_settings(query, *, user_id: int, changed: bool = False) -> None:
-    current = bool(legacy.get_pref(user_id, "typewriter", default=True))
+    current = bool(get_pref(user_id, "typewriter", default=True))
     if changed:
         state = "включена ✅" if current else "выключена ❌"
         text = (
@@ -65,7 +76,7 @@ async def set_typewriter_handler(update, context):
         await query.answer()
         return
     desired = data == "typewriter_set:1"
-    legacy.set_pref(query.from_user.id, "typewriter", desired)
+    set_pref(query.from_user.id, "typewriter", desired)
     await query.answer()
     await _render_settings(query, user_id=query.from_user.id, changed=True)
 
