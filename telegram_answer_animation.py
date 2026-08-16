@@ -96,20 +96,7 @@ async def animate_answer_buttons(
                     pass
 
     except Exception as exc:
-        logger.debug("_animate_answer_buttons error: %s", exc)
+        logger.debug("animate_answer_buttons error: %s", exc)
 
 
-def validate_legacy_bridge(legacy_module) -> None:
-    """Fail closed unless the transitional animation seam is callable."""
-    legacy_callable = getattr(legacy_module, "_animate_answer_buttons", None)
-    if not callable(legacy_callable):
-        raise TypeError("legacy module must expose callable _animate_answer_buttons")
-
-
-def install_legacy_bridge(legacy_module) -> None:
-    """Replace the transitional animation callable with canonical authority."""
-    validate_legacy_bridge(legacy_module)
-    legacy_module._animate_answer_buttons = animate_answer_buttons
-
-
-__all__ = ["animate_answer_buttons", "install_legacy_bridge", "validate_legacy_bridge"]
+__all__ = ["animate_answer_buttons"]
