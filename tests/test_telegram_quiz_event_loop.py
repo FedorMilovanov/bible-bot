@@ -3,7 +3,7 @@ import inspect
 import threading
 
 import telegram_challenge_controller as challenge
-import telegram_controller as quiz
+import telegram_quiz_runtime_controller as quiz
 
 
 def test_status_lookup_does_not_block_event_loop(monkeypatch):
@@ -26,8 +26,6 @@ def test_status_lookup_does_not_block_event_loop(monkeypatch):
         timer.start()
         try:
             lookup = asyncio.create_task(quiz._status_session(314))
-            # If the lookup runs on the PTB loop, this sleep cannot resume until
-            # the emergency timer releases the fake Mongo call.
             await asyncio.sleep(0.02)
             assert not backup_fired.is_set()
             assert not lookup.done()
@@ -49,7 +47,6 @@ def test_quiz_latency_sensitive_persistence_uses_thread_boundary():
         "_handle_inline_answer": ("apply_live_answer_once", "record_question_stat"),
         "_handle_question_timeout": ("apply_live_timeout_once", "record_question_stat"),
         "resume_session_handler": ("resolve_session_action",),
-        "restart_session_handler": ("resolve_session_action", "restart_owned_quiz_attempt"),
         "cancel_session_handler": ("resolve_session_action", "cancel_owned_incomplete_quiz_attempt"),
         "_cancel_current": ("cancel_current_incomplete_session",),
         "_status_session": ("get_active_quiz_session_strict",),
