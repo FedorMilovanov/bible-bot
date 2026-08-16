@@ -719,16 +719,11 @@ GC_STALE_THRESHOLD = 86400  # 24 часа
 
 
 async def cleanup_stale_userdata(context):
-    """
-    JobQueue task: удаляет из user_data записи с активностью >24ч.
-    Импорт bot.user_data здесь, чтобы избежать кругового импорта.
-    """
-    try:
-        from bot import user_data
-    except ImportError:
-        logger.warning("Cannot import user_data for GC")
-        return
+    """Compatibility GC for the canonical process-local quiz runtime mapping."""
+    del context
+    from telegram_quiz_runtime_state import get_user_data
 
+    user_data = get_user_data()
     now = time.time()
     stale = [
         uid for uid, data in list(user_data.items())
