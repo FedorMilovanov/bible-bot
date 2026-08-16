@@ -2,16 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-import bot as legacy
-from database import get_admin_stats
+from config import GC_STALE_THRESHOLD
+from database import get_admin_stats, get_hardest_questions
 from legacy_battle_cleanup import (
     LegacyBattleCleanupUnavailable,
     cleanup_stale_waiting_battles,
 )
+from telegram_controller import user_data
 
 
 _ADMIN_READ_ACTIONS = {
@@ -20,6 +22,13 @@ _ADMIN_READ_ACTIONS = {
     "admin_broadcast_prompt",
     "admin_back",
 }
+
+
+def _admin_user_id() -> int:
+    raw = os.getenv("ADMIN_USER_ID")
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError("ADMIN_USER_ID is required")
+    return int(raw)
 
 
 def _admin_menu_keyboard() -> InlineKeyboardMarkup:
@@ -60,7 +69,7 @@ def _admin_panel_text(stats: object) -> str:
         f"👥 Всего пользователей: *{stats.get('total_users', 0)}*\n"  # noqa: RUF001
         f"🟢 Онлайн за 24ч: *{stats.get('online_24h', 0)}*\n"
         f"🆕 Новых сегодня: *{stats.get('new_today', 0)}*\n"
-        f"💬 Активных сессий в памяти: *{len(legacy.user_data)}*\n"
+        f"💬 Активных сессий в памяти: *{len(user_data)}*\n"
     )
 
 
@@ -68,7 +77,7 @@ async def admin_command(update, context):
     """Open the production admin panel without blocking the PTB event loop on Mongo."""
     del context
     user_id = update.effective_user.id
-    if user_id != legacy.ADMIN_USER_ID:
+    if user_id != _admin_user_id():
         await update.message.reply_text("❌ У тебя нет доступа к этой команде.")  # noqa: RUF001
         return
 
@@ -82,7 +91,7 @@ async def admin_command(update, context):
 
 def _stale_ram_users(*, now: float) -> list[int]:
     stale: list[int] = []
-    for user_id, data in list(legacy.user_data.items()):
+    for user_id, data in list(user_data.items()):
         if not isinstance(data, dict):
             stale.append(user_id)
             continue
@@ -90,13 +99,13 @@ def _stale_ram_users(*, now: float) -> list[int]:
         if isinstance(last_activity, bool) or not isinstance(last_activity, (int, float)):
             stale.append(user_id)
             continue
-        if now - float(last_activity) > legacy.GC_STALE_THRESHOLD:
+        if now - float(last_activity) > GC_STALE_THRESHOLD:
             stale.append(user_id)
     return stale
 
 
 def _hard_questions_text() -> str:
-    rows = legacy.get_hardest_questions(limit=10) or []
+    rows = get_hardest_questions(limit=10) or []
     if not isinstance(rows, list):
         rows = list(rows)
     lines = ["Hardest questions (top 10):"]
@@ -118,8 +127,8 @@ def _hard_questions_text() -> str:
 
 
 def _active_sessions_text() -> str:
-    lines = [f"Active in-memory sessions: {len(legacy.user_data)}"]
-    for user_id, data in list(legacy.user_data.items())[:20]:
+    lines = [f"Active in-memory sessions: {len(user_data)}"]
+    for user_id, data in list(user_data.items())[:20]:
         if not isinstance(data, dict):
             lines.append(f"{user_id}: malformed record")
             continue
@@ -136,7 +145,7 @@ async def admin_read_callback(update, context):
     del context
     query = update.callback_query
     user_id = query.from_user.id
-    if user_id != legacy.ADMIN_USER_ID:
+    if user_id != _admin_user_id():
         await query.answer("Access denied.", show_alert=True)
         return
 
@@ -179,7 +188,7 @@ async def admin_cleanup(update, context):
     del context
     query = update.callback_query
     user_id = query.from_user.id
-    if user_id != legacy.ADMIN_USER_ID:
+    if user_id != _admin_user_id():
         await query.answer("Access denied.", show_alert=True)
         return
 
@@ -195,7 +204,7 @@ async def admin_cleanup(update, context):
     now = time.time()
     stale = _stale_ram_users(now=now)
     for stale_user_id in stale:
-        legacy.user_data.pop(stale_user_id, None)
+        user_data.pop(stale_user_id, None)
 
     await query.answer()
     await query.edit_message_text(
