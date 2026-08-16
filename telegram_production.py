@@ -237,7 +237,7 @@ async def _review_test_handler(update, context):
 
 async def _about_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer()
     await query.edit_message_text(
         "Bible quiz bot: 1 Peter\n"
@@ -251,21 +251,21 @@ async def _about_callback(update, context):
 
 
 async def _start_test_callback(update, context):
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer()
     await courses.choose_level(update, context, is_callback=True)
 
 
 async def _leaderboard_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer()
     await stats.show_general_leaderboard(query, 0)
 
 
 async def _leaderboard_page_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer()
     try:
         page = int((query.data or "").removeprefix("leaderboard_page_"))
@@ -276,7 +276,7 @@ async def _leaderboard_page_callback(update, context):
 
 async def _my_stats_callback(update, context):
     del context
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer()
     await stats.show_my_stats(query)
 
@@ -291,7 +291,7 @@ async def _achievements_callback(update, context):
 
 async def _coming_soon_callback(update, context):
     """Old deployed Chapter-2 button: redirect to the fresh catalog menu."""
-    query = await activity.touch_presentation(update, legacy_module=legacy)
+    query = await activity.touch_presentation(update, user_data=quiz.user_data)
     await query.answer("Меню курсов обновлено.")
     await courses.choose_level(update, context, is_callback=True)
 

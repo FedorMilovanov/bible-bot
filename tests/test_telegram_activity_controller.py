@@ -14,40 +14,38 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_presentation_touch_preserves_memory_and_moves_db_off_event_loop():
+def test_presentation_touch_preserves_memory_and_moves_db_off_event_loop(monkeypatch):
     event_loop_thread = threading.get_ident()
     db_threads = []
-    legacy = SimpleNamespace(
-        user_data={42: {"last_activity": 1.0}},
-        touch_user_activity=lambda user_id: db_threads.append(
-            (user_id, threading.get_ident())
-        ),
-    )
+    user_data = {42: {"last_activity": 1.0}}
+
+    def persist(user_id):
+        db_threads.append((user_id, threading.get_ident()))
+
+    monkeypatch.setattr(activity, "touch_user_activity", persist)
     query = SimpleNamespace(from_user=SimpleNamespace(id=42))
     update = SimpleNamespace(callback_query=query)
 
-    returned = run(activity.touch_presentation(update, legacy_module=legacy))
+    returned = run(activity.touch_presentation(update, user_data=user_data))
 
     assert returned is query
-    assert legacy.user_data[42]["last_activity"] > 1.0
+    assert user_data[42]["last_activity"] > 1.0
     assert db_threads == [(42, db_threads[0][1])]
     assert db_threads[0][1] != event_loop_thread
 
 
-def test_presentation_touch_still_persists_when_runtime_session_is_absent():
+def test_presentation_touch_still_persists_when_runtime_session_is_absent(monkeypatch):
     calls = []
-    legacy = SimpleNamespace(
-        user_data={},
-        touch_user_activity=lambda user_id: calls.append(user_id),
-    )
+    user_data = {}
+    monkeypatch.setattr(activity, "touch_user_activity", calls.append)
     update = SimpleNamespace(
         callback_query=SimpleNamespace(from_user=SimpleNamespace(id=77))
     )
 
-    run(activity.touch_presentation(update, legacy_module=legacy))
+    run(activity.touch_presentation(update, user_data=user_data))
 
     assert calls == [77]
-    assert legacy.user_data == {}
+    assert user_data == {}
 
 
 def test_nonachievement_presentation_callbacks_use_activity_controller():
@@ -70,5 +68,13 @@ def test_nonachievement_presentation_callbacks_use_activity_controller():
     assert set(functions) == targets
     for callback_source in functions.values():
         assert "await activity.touch_presentation(" in callback_source
-        assert "legacy_module=legacy" in callback_source
+        assert "user_data=quiz.user_data" in callback_source
+        assert "legacy_module=legacy" not in callback_source
         assert "_touch_presentation_callback(update)" not in callback_source
+
+
+def test_activity_controller_has_no_legacy_module_dependency():
+    source = Path("telegram_activity_controller.py").read_text(encoding="utf-8")
+    assert "legacy_module" not in source
+    assert "import bot" not in source
+    assert "from database import touch_user_activity" in source
