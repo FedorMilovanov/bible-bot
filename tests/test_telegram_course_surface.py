@@ -10,7 +10,6 @@ from telegram.ext import ConversationHandler
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
-BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 
 
 class FakeQuery:
@@ -176,11 +175,9 @@ def test_production_registers_all_learning_callbacks_on_catalog_surface():
     assert "CallbackQueryHandler(quiz.intro_start_handler" not in PRODUCTION
 
 
-def test_bot_historical_level_config_is_not_production_authority():
-    # The literal remains transitional standalone code only. Production neither
-    # reads nor patches it: /test, /start course tokens and all course callbacks
-    # enter telegram_course_surface directly.
-    assert "LEVEL_CONFIG = {" in BOT
+def test_course_catalog_surface_is_the_only_production_learning_authority():
     assert "legacy.LEVEL_CONFIG" not in PRODUCTION
     assert 'CommandHandler("test", courses.choose_level)' in PRODUCTION
     assert "courses.start_course_deep_link" in PRODUCTION
+    assert "courses.course_callback" in PRODUCTION
+    assert "courses.course_mode_callback" in PRODUCTION

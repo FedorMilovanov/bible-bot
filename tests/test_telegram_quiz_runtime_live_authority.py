@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 
-CONTROLLER = (
-    Path(__file__).resolve().parents[1] / "telegram_controller.py"
-).read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME = (ROOT / "telegram_quiz_runtime_controller.py").read_text(encoding="utf-8")
+PRODUCTION = (ROOT / "telegram_production.py").read_text(encoding="utf-8")
 
 
 def async_function(name: str) -> str:
     marker = f"async def {name}"
-    start = CONTROLLER.index(marker)
-    next_async = CONTROLLER.find("\nasync def ", start + len(marker))
-    return CONTROLLER[start:] if next_async == -1 else CONTROLLER[start:next_async]
+    start = RUNTIME.index(marker)
+    next_async = RUNTIME.find("\nasync def ", start + len(marker))
+    return RUNTIME[start:] if next_async == -1 else RUNTIME[start:next_async]
 
 
 def _assert_before(source: str, first: str, later: str) -> None:
@@ -19,7 +21,7 @@ def _assert_before(source: str, first: str, later: str) -> None:
         assert source.index(first) < source.index(later)
 
 
-def test_attempt_bound_live_answer_is_the_only_production_path():
+def test_attempt_bound_live_answer_is_the_only_quiz_runtime_path():
     normal_send = async_function("send_question")
     challenge_send = async_function("send_challenge_question")
     render = async_function("_send_current_question")
@@ -33,7 +35,7 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
         "apply_live_timeout_once(",
         "mark_live_question_sent(",
     ):
-        assert marker in CONTROLLER
+        assert marker in RUNTIME
 
     assert "_send_current_question(" in normal_send
     assert "_send_current_question(" in challenge_send
@@ -49,7 +51,7 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
         "set_question_sent_at(",
         "update_quiz_session(",
     ):
-        assert blind_write not in CONTROLLER
+        assert blind_write not in RUNTIME
 
     for mutation in (
         'data["correct_answers"] +=',
@@ -59,8 +61,6 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
         assert mutation not in answer
         assert mutation not in timeout
 
-    # Durable answer/timeout acceptance must happen before non-idempotent UI,
-    # timer cancellation or analytics side effects.
     for later in (
         "_cancel_runtime_timer(",
         "_animate_answer_buttons(",
@@ -76,10 +76,13 @@ def test_attempt_bound_live_answer_is_the_only_production_path():
         assert "if outcome.applied:" in timeout
         assert timeout.index("if outcome.applied:") < timeout.index("record_question_stat(")
 
-    # Shutdown may clean process-local timers, never roll stale RAM into Mongo.
     assert "update_quiz_session(" not in shutdown
 
-    assert 'pattern=r"^qa_' not in CONTROLLER
-    assert 'pattern=r"^cha_' not in CONTROLLER
-    assert 'pattern=r"^qa:"' in CONTROLLER
-    assert 'pattern=r"^cha:"' in CONTROLLER
+
+def test_production_registers_only_attempt_bound_live_callback_protocol():
+    assert 'pattern=r"^qa_"' not in PRODUCTION
+    assert 'pattern=r"^cha_"' not in PRODUCTION
+    assert 'pattern=r"^qa:"' in PRODUCTION
+    assert 'pattern=r"^cha:"' in PRODUCTION
+    assert "CallbackQueryHandler(quiz.quiz_inline_answer" in PRODUCTION
+    assert "CallbackQueryHandler(quiz.challenge_inline_answer" in PRODUCTION

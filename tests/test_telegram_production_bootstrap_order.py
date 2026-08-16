@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import telegram_report_state as report_state
 
@@ -32,22 +31,9 @@ def test_production_needs_no_legacy_bootstrap_order_anymore():
     )
 
 
-def test_report_state_bridge_remains_available_for_standalone_compatibility():
-    legacy_labels = dict(report_state.REPORT_TYPE_LABELS)
-    legacy = SimpleNamespace(
-        REPORT_TYPE=report_state.REPORT_TYPE,
-        REPORT_TEXT=report_state.REPORT_TEXT,
-        REPORT_PHOTO=report_state.REPORT_PHOTO,
-        REPORT_CONFIRM=report_state.REPORT_CONFIRM,
-        REPORT_TYPE_LABELS=legacy_labels,
-        report_drafts={},
-    )
-
-    report_state.install_legacy_bridge(legacy)
-
-    assert legacy.REPORT_TYPE == report_state.REPORT_TYPE
-    assert legacy.REPORT_TEXT == report_state.REPORT_TEXT
-    assert legacy.REPORT_PHOTO == report_state.REPORT_PHOTO
-    assert legacy.REPORT_CONFIRM == report_state.REPORT_CONFIRM
-    assert legacy.REPORT_TYPE_LABELS is report_state.REPORT_TYPE_LABELS
-    assert legacy.report_drafts is report_state.report_drafts
+def test_report_state_is_owned_directly_without_install_bridge():
+    source = Path(report_state.__file__).read_text(encoding="utf-8")
+    assert not hasattr(report_state, "install_legacy_bridge")
+    assert "install_legacy_bridge" not in source
+    assert report_state.REPORT_TYPE_LABELS
+    assert isinstance(report_state.report_drafts, dict)

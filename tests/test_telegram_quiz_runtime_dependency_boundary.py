@@ -5,7 +5,7 @@ from pathlib import Path
 
 os.environ.setdefault("ADMIN_USER_ID", "1")
 
-import telegram_controller as controller
+import telegram_quiz_runtime_controller as controller
 
 
 SOURCE = Path(controller.__file__).read_text(encoding="utf-8")
@@ -15,7 +15,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_controller_uses_canonical_pure_dependencies_instead_of_legacy_proxies():
+def test_runtime_uses_canonical_pure_dependencies_without_legacy_monolith_proxies():
     forbidden = (
         "legacy.get_user_position",
         "legacy.format_time",
@@ -30,6 +30,10 @@ def test_controller_uses_canonical_pure_dependencies_instead_of_legacy_proxies()
         "legacy.safe_edit",
         "legacy.init_user_stats",
         "legacy._touch",
+        "import bot",
+        "from bot import",
+        "import telegram_controller",
+        "from telegram_controller import",
     )
     for token in forbidden:
         assert token not in SOURCE

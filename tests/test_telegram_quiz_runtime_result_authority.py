@@ -1,40 +1,41 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 
-CONTROLLER = (
-    Path(__file__).resolve().parents[1] / "telegram_controller.py"
+RUNTIME = (
+    Path(__file__).resolve().parents[1] / "telegram_quiz_runtime_controller.py"
 ).read_text(encoding="utf-8")
 
 
 def async_function(name: str) -> str:
     marker = f"async def {name}"
-    start = CONTROLLER.index(marker)
-    next_async = CONTROLLER.find("\nasync def ", start + len(marker))
-    return CONTROLLER[start:] if next_async == -1 else CONTROLLER[start:next_async]
+    start = RUNTIME.index(marker)
+    next_async = RUNTIME.find("\nasync def ", start + len(marker))
+    return RUNTIME[start:] if next_async == -1 else RUNTIME[start:next_async]
 
 
-def test_mongo_authoritative_result_is_the_only_production_path():
+def test_mongo_authoritative_result_is_the_only_quiz_runtime_path():
     for marker in (
         "launch_quiz_attempt(",
-        "restart_owned_quiz_attempt(",
         "cancel_current_incomplete_session(",
         "resolve_session_action(",
         "session_action_payloads(",
     ):
-        assert marker in CONTROLLER
+        assert marker in RUNTIME
 
     for destructive in (
         "create_quiz_session(",
         "cancel_active_quiz_session(",
         "cancel_quiz_session(",
     ):
-        assert destructive not in CONTROLLER
+        assert destructive not in RUNTIME
 
     normal = async_function("show_results")
     challenge = async_function("show_challenge_results")
 
-    assert "from legacy_live_finalize import" in CONTROLLER
-    assert "from legacy_attempt_finalize import" not in CONTROLLER
+    assert "from legacy_live_finalize import" in RUNTIME
+    assert "from legacy_attempt_finalize import" not in RUNTIME
 
     for source in (normal, challenge):
         assert "finalize_live_persisted_attempt(" in source

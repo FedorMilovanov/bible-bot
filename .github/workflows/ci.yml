@@ -77,8 +77,8 @@ jobs:
           --extend-per-file-ignores=telegram_course_surface.py:RUF001
           --extend-per-file-ignores=web_api/routes.py:RUF001
           --output-format=github
-      - name: Check legacy core for fatal Python errors
-        run: ruff check bot.py database.py --select=E9,F63,F7,F82 --output-format=github
+      - name: Check database core for fatal Python errors
+        run: ruff check database.py --select=E9,F63,F7,F82 --output-format=github
       - name: Compile Python
         run: python -m compileall -q .
       - name: Run tests

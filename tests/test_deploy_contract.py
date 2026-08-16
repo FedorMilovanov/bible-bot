@@ -41,9 +41,10 @@ def test_production_entrypoint_configures_logging_before_controller_import():
     )
 
 
-def test_readme_documents_local_controller_and_composition_root():
+def test_readme_documents_canonical_entrypoint_and_composition_root():
     readme = read("README.md")
-    assert "python telegram_production.py" in readme
+    assert f"python {PRODUCTION_ENTRYPOINT}" in readme
+    assert "python telegram_production.py" not in readme
     assert "python bot.py" not in readme
     assert "docs/DEPLOYMENT_PREFLIGHTS.md" in readme
     assert "telegram_production.py` — единственный production Telegram composition root" in readme
@@ -85,8 +86,6 @@ def test_production_controller_uses_configurable_transport_with_webhook_shutdown
     assert "run_telegram_application(" in source
     assert "webhook_before_shutdown=quiz._save_all_sessions" in source
     assert "app.run_polling()" not in source
-    # Polling rollback still owns the PTB post_shutdown hook. Webhook mode uses
-    # the explicit ordered hook because it runs Application lifecycle manually.
     assert ".post_shutdown(quiz._save_all_sessions)" in source
 
 

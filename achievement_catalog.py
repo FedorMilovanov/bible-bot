@@ -1,4 +1,4 @@
-"""Canonical achievement catalog and transitional legacy identity bridge."""
+"""Canonical achievement catalog."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -123,17 +123,6 @@ def validate_achievement_catalog(catalog=_DEFAULT_CATALOG) -> Mapping[str, Mappi
         if requirement is not None and not isinstance(requirement, Mapping):
             raise RuntimeError(f"Achievement {key!r} has an invalid requirement")
     return candidate
-
-
-def install_legacy_bridge(legacy_module) -> None:
-    """Point transitional ``bot.py`` achievement reads at canonical authority."""
-    existing = getattr(legacy_module, "ACHIEVEMENTS", None)
-    validate_achievement_catalog(existing)
-    if existing is ACHIEVEMENTS:
-        return
-    if existing != ACHIEVEMENTS:
-        raise RuntimeError("Legacy achievement catalog diverged from canonical catalog")
-    legacy_module.ACHIEVEMENTS = ACHIEVEMENTS
 
 
 validate_achievement_catalog()
