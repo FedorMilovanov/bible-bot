@@ -8,6 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 HEX40_RE = re.compile(r"[0-9a-f]{40}")
 SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}")
 EXACT_PYTHON_RE = re.compile(r"['\"]?(\d+\.\d+\.\d+)['\"]?")
+WRITE_PERMISSION_RE = re.compile(r"([A-Za-z-]+):\s*write")
+WRITE_PERMISSION_ALLOWLIST = {
+    "branch-hygiene.yml": {"actions", "contents"},
+    "codeql.yml": {"security-events"},
+    "codeql-stacked.yml": {"security-events"},
+}
 
 
 def _normalize_name(raw: str) -> str:
@@ -30,12 +36,33 @@ def _parse_pinned_requirements(path: Path) -> dict[str, str]:
     return pins
 
 
+def _workflow_write_permission_violations(
+    workflow: Path, lines: list[str]
+) -> list[str]:
+    violations: list[str] = []
+    allowed = WRITE_PERMISSION_ALLOWLIST.get(workflow.name, set())
+    for lineno, raw in enumerate(lines, 1):
+        stripped = raw.strip()
+        if stripped == "permissions: write-all":
+            violations.append(
+                f"{workflow}:{lineno}: permissions: write-all is forbidden"
+            )
+            continue
+        match = WRITE_PERMISSION_RE.fullmatch(stripped)
+        if match and match.group(1) not in allowed:
+            violations.append(
+                f"{workflow}:{lineno}: write permission is not allowlisted: {stripped}"
+            )
+    return violations
+
+
 def collect_violations(root: Path = ROOT) -> list[str]:
     violations: list[str] = []
     workflows = sorted((root / ".github" / "workflows").glob("*.yml"))
 
     for workflow in workflows:
         lines = workflow.read_text(encoding="utf-8").splitlines()
+        violations.extend(_workflow_write_permission_violations(workflow, lines))
         for lineno, raw in enumerate(lines, 1):
             stripped = raw.strip()
             if stripped.startswith("uses:") or stripped.startswith("- uses:"):
