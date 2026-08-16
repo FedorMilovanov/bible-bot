@@ -132,6 +132,18 @@ def test_no_python_file_can_import_retired_runtime_roots():
     assert violations == []
 
 
+def test_no_python_file_defines_a_monolith_bridge_installer():
+    violations = []
+    for path in _python_files():
+        relative = path.relative_to(ROOT)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "install_legacy_bridge":
+                violations.append(f"{relative}:{node.lineno}: {node.name}")
+
+    assert violations == []
+
+
 def test_repository_operational_text_cannot_launch_retired_runtime():
     violations = []
     for path in _operational_text_files():
