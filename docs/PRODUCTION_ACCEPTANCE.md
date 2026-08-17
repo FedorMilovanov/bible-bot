@@ -2,7 +2,7 @@
 
 This repository reaches **100% production acceptance** only when both phases below exit `0` against the exact deployed revision. CI alone is not production acceptance.
 
-The runner is read-only. It does not merge, deploy, mutate MongoDB, call Telegram `setWebhook`/`deleteWebhook`, expose secrets, or create temporary workflows.
+The runner is read-only. It does not merge, deploy, mutate MongoDB, call Telegram `setWebhook`/`deleteWebhook`, change BotFather/Main Mini App provider state, expose secrets, or create temporary workflows.
 
 ## Phase 1 — before deploy
 
@@ -46,14 +46,17 @@ Exit `0` requires all of the following:
 - `/telegram/ready` returns HTTP 200 JSON with `status=ready` and `transport=webhook`;
 - `/meta` reports exactly `EXPECTED_DEPLOY_SHA`, preventing a green smoke against an older Render build;
 - the retention preflight is green **without** `bootstrap_pending`;
-- Telegram `getWebhookInfo` matches the exact URL, single connection and allowed-update contract with no current unsafe delivery error.
+- Telegram `getWebhookInfo` matches the exact URL, single connection and allowed-update contract with no current unsafe delivery error;
+- Telegram `getMe` reports `has_main_web_app=true` for the production bot, proving the BotFather-owned Main Mini App / Launch App provider state is enabled.
 
-The runner never prints `BOT_TOKEN`.
+The Main Mini App check is read-only. `has_main_web_app=false` is a known unsafe provider state and returns exit `1`; an unavailable or malformed Telegram response returns exit `2`. The check prints only normalized `{username, has_main_web_app}` state or a generic redacted error and never prints `BOT_TOKEN`.
 
 ## Final manual smoke
 
 Machine checks do not replace user-visible behavior. Before calling the rollout 100% accepted, exercise the exact deployed revision through:
 
+- the bot profile `Launch App` action and the default private-chat Menu Button;
+- `?startapp=v1_site_app__home` and the reviewed contextual launches `v1_site_ch3__chapter3` / `v1_site_ch4__chapter4`;
 - `/start`, normal quiz answer and result;
 - timed/speed timeout path;
 - Challenge 20;
