@@ -51,9 +51,9 @@ RETENTION_DAYS = 90
 TTL_INDEX_NAME = "miniapp_launch_attribution_retention"
 SOURCE_TIME_INDEX_NAME = "miniapp_launch_attribution_source_time"
 
-# Return CTAs are intentionally sparse. We only expose destinations whose
-# canonical public URL is known here; chapter/provider sources get no guessed
-# or blanket link.
+# Return CTAs are intentionally sparse. Every URL here is a reviewed canonical
+# public surface. Provider sources and chapter sources without a proven article
+# remain absent instead of receiving a guessed or blanket return link.
 _RETURN_CONTEXT = {
     "site_app": {
         "kind": "site",
@@ -64,6 +64,16 @@ _RETURN_CONTEXT = {
         "kind": "site",
         "label": "Вернуться на сайт",
         "url": "https://gospod-bog.ru/",
+    },
+    "site_ch3": {
+        "kind": "site",
+        "label": "Вернуться к статье",
+        "url": "https://gospod-bog.ru/hard-texts/duhi-v-temnice-noi-kreshchenie-pobeda/",
+    },
+    "site_ch4": {
+        "kind": "site",
+        "label": "Вернуться к статье",
+        "url": "https://gospod-bog.ru/hard-texts/blagovestie-mertvym-1-petra-4-5-6/",
     },
 }
 
