@@ -4,6 +4,7 @@ import json
 import time
 from urllib.parse import parse_qsl, urlencode
 
+import database
 import web_api
 from web_api import auth
 
@@ -61,6 +62,7 @@ def test_launch_endpoint_ignores_client_source_and_uses_signed_start_param(
     token = "123456:TEST_TOKEN"
     monkeypatch.setenv("BOT_TOKEN", token)
     monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(database, "db", object())
     monkeypatch.setattr(web_api, "persist_launch_attribution", lambda **_: True)
 
     app = web_api.create_app()
@@ -103,6 +105,7 @@ def test_attribution_persistence_failure_does_not_break_signed_context(
 ):
     token = "123456:TEST_TOKEN"
     monkeypatch.setenv("BOT_TOKEN", token)
+    monkeypatch.setattr(database, "db", object())
 
     def fail_persistence(**_kwargs):
         raise RuntimeError("simulated telemetry outage")
