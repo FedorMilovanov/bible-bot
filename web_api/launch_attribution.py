@@ -6,50 +6,63 @@ user identifiers are deliberately outside the API contract.
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from pymongo import ASCENDING
 
-logger = logging.getLogger(__name__)
-
 SOURCE_KEYS = frozenset(
     {
         "site_app",
+        "site_home",
+        "site_ch1",
         "site_ch2",
-        "site_library",
+        "site_ch3",
+        "site_ch4",
+        "site_ch5",
         "tg_pin",
-        "tg_menu",
-        "yt_desc",
-        "yt_comment",
-        "vk_post",
-        "vk_menu",
+        "tg_profile",
+        "tg_ch1",
+        "tg_ch2",
+        "tg_ch3",
+        "tg_ch4",
+        "tg_ch5",
+        "yt_profile",
+        "yt_ch1",
+        "yt_ch2",
+        "yt_ch3",
+        "yt_ch4",
+        "yt_ch5",
+        "vk_pin",
+        "vk_ch1",
+        "vk_ch2",
+        "vk_ch3",
+        "vk_ch4",
+        "vk_ch5",
     }
 )
-DESTINATION_PATTERN = re.compile(r"^(home|chapter[1-5]|level_[a-z0-9_]{1,40})$")
-COMPOSITE_PATTERN = re.compile(r"^v1_([a-z0-9_]{2,32})__([a-z0-9_]{1,48})$")
+SAFE_TOKEN = re.compile(r"^[a-z0-9_]{1,48}$")
+COMPOSITE_PATTERN = re.compile(r"^v1_([a-z0-9_]{1,48})__([a-z0-9_]{1,48})$")
+UNKNOWN_VERSION_PATTERN = re.compile(r"^v[0-9]+_")
 
 COLLECTION_NAME = "miniapp_launch_attributions"
 RETENTION_DAYS = 90
 TTL_INDEX_NAME = "miniapp_launch_attribution_retention"
 SOURCE_TIME_INDEX_NAME = "miniapp_launch_attribution_source_time"
 
+# Return CTAs are intentionally sparse. We only expose destinations whose
+# canonical public URL is known here; chapter/provider sources get no guessed
+# or blanket link.
 _RETURN_CONTEXT = {
     "site_app": {
         "kind": "site",
         "label": "Вернуться на сайт",
         "url": "https://gospod-bog.ru/app/",
     },
-    "site_library": {
-        "kind": "library",
-        "label": "Вернуться в библиотеку",
-        "url": "https://gospod-bog.ru/",
-    },
-    "site_ch2": {
-        "kind": "library",
-        "label": "Вернуться к чтению",
+    "site_home": {
+        "kind": "site",
+        "label": "Вернуться на сайт",
         "url": "https://gospod-bog.ru/",
     },
 }
@@ -77,26 +90,34 @@ def parse_launch_param(value: str | None) -> LaunchContext:
     """Parse the canonical launch contract without trusting browser state."""
     raw = (value or "").strip()
     if not raw:
-        return LaunchContext("none", None, None)
+        return LaunchContext("empty", None, None)
 
     match = COMPOSITE_PATTERN.fullmatch(raw)
     if match:
         source, destination = match.groups()
-        if source not in SOURCE_KEYS or not DESTINATION_PATTERN.fullmatch(destination):
+        if source not in SOURCE_KEYS or not SAFE_TOKEN.fullmatch(destination):
             return LaunchContext("invalid", None, None)
         return LaunchContext("v1", source, destination)
 
-    # Any token that presents itself as versioned must fail closed. It must not
-    # fall through to legacy routing, including unknown future versions.
-    if raw.startswith("v"):
+    # A token presenting an unsupported numbered protocol version must never
+    # fall through to the legacy destination path.
+    if UNKNOWN_VERSION_PATTERN.match(raw):
         return LaunchContext("invalid", None, None)
 
-    if DESTINATION_PATTERN.fullmatch(raw):
+    # Legacy launch tokens remain routing-compatible but are never attributed.
+    # Unsafe legacy strings are rejected rather than reflected back to the UI.
+    if SAFE_TOKEN.fullmatch(raw):
         return LaunchContext("legacy", None, raw)
     return LaunchContext("invalid", None, None)
 
 
-def _event_key(*, user_id: int, auth_date: int, query_id: str | None, context: LaunchContext) -> str:
+def _event_key(
+    *,
+    user_id: int,
+    auth_date: int,
+    query_id: str | None,
+    context: LaunchContext,
+) -> str:
     """Return a stable retry/replay key without persisting Telegram identity."""
     material = "\x00".join(
         (
@@ -125,11 +146,21 @@ def ensure_launch_attribution_indexes(database) -> None:
 
     indexes = collection.index_information()
     ttl = indexes.get(TTL_INDEX_NAME, {})
-    if ttl.get("key") != [("retention.expires_at", ASCENDING)] or ttl.get("expireAfterSeconds") != 0:
-        raise RuntimeError("launch attribution retention index does not match required spec")
+    if (
+        ttl.get("key") != [("retention.expires_at", ASCENDING)]
+        or ttl.get("expireAfterSeconds") != 0
+    ):
+        raise RuntimeError(
+            "launch attribution retention index does not match required spec"
+        )
     source_time = indexes.get(SOURCE_TIME_INDEX_NAME, {})
-    if source_time.get("key") != [("source", ASCENDING), ("first_seen_at", ASCENDING)]:
-        raise RuntimeError("launch attribution source/time index does not match required spec")
+    if source_time.get("key") != [
+        ("source", ASCENDING),
+        ("first_seen_at", ASCENDING),
+    ]:
+        raise RuntimeError(
+            "launch attribution source/time index does not match required spec"
+        )
 
 
 def persist_launch_attribution(
