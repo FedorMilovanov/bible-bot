@@ -45,6 +45,7 @@ PREDEPLOY_SCRIPTS = (
 POSTDEPLOY_SCRIPTS = (
     "scripts/check_retention_indexes.py",
     "scripts/check_telegram_webhook.py",
+    "scripts/check_telegram_main_app.py",
 )
 
 

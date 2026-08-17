@@ -3,8 +3,8 @@
 
 Exit codes:
   0 - Main Mini App is enabled
-  1 - provider state could not be established
-  2 - Telegram is reachable but Main Mini App is not enabled
+  1 - Telegram is reachable but Main Mini App is not enabled
+  2 - provider state could not be established
 
 The script only calls getMe. It never mutates bot/provider state and never
 prints BOT_TOKEN.
@@ -16,8 +16,8 @@ import os
 from urllib.request import Request, urlopen
 
 ENABLED = 0
-UNAVAILABLE = 1
-DISABLED = 2
+DISABLED = 1
+UNAVAILABLE = 2
 
 
 def _fetch_status(bot_token: str, *, timeout: float = 10.0) -> dict[str, object]:

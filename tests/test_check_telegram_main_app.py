@@ -31,6 +31,13 @@ class _Response:
         return json.dumps(self._payload).encode("utf-8")
 
 
+def test_exit_codes_match_production_acceptance_semantics():
+    script = _load_script_module()
+    assert script.ENABLED == 0
+    assert script.DISABLED == 1
+    assert script.UNAVAILABLE == 2
+
+
 def test_fetch_status_normalizes_successful_get_me(monkeypatch):
     script = _load_script_module()
     requested = {}
@@ -88,7 +95,7 @@ def test_main_requires_token_without_contacting_provider(monkeypatch, capsys):
 
 @pytest.mark.parametrize(
     ("has_main_web_app", "expected_exit"),
-    [(True, 0), (False, 2)],
+    [(True, 0), (False, 1)],
 )
 def test_main_returns_provider_state_exit_code(
     monkeypatch, capsys, has_main_web_app, expected_exit
