@@ -1,10 +1,35 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const {
   parseStartParam,
   readStartParam,
   install,
 } = require('../../miniapp/launch_params.js');
+
+const fixtures = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'launch_params.json'), 'utf8'),
+);
+
+test('canonical launch fixtures match JavaScript parser', () => {
+  for (const fixture of fixtures) {
+    const parsed = parseStartParam(fixture.raw);
+    assert.deepEqual(
+      {
+        kind: parsed.kind,
+        source: parsed.source,
+        destination: parsed.destination,
+      },
+      {
+        kind: fixture.kind,
+        source: fixture.source,
+        destination: fixture.destination,
+      },
+      fixture.raw || '<empty>',
+    );
+  }
+});
 
 test('legacy destination remains untouched for backward compatibility', () => {
   assert.deepEqual(parseStartParam('chapter2'), {
@@ -36,11 +61,13 @@ test('v1 parameter carries both reviewed source and destination', () => {
   });
 });
 
-test('unknown source and malformed versioned values fail closed', () => {
+test('unknown source, unknown version, and malformed values fail closed', () => {
   assert.equal(parseStartParam('v1_unknown__chapter2').kind, 'invalid');
+  assert.equal(parseStartParam('v2_site_ch2__chapter2').kind, 'invalid');
   assert.equal(parseStartParam('v1_site_ch2_chapter2').kind, 'invalid');
   assert.equal(parseStartParam('v1_site_ch2__chapter2__extra').kind, 'invalid');
   assert.equal(parseStartParam('v1_site_ch2__Chapter 2').kind, 'invalid');
+  assert.equal(parseStartParam('../chapter2').kind, 'invalid');
 });
 
 test('Telegram start parameter wins over browser fallback start parameter', () => {
@@ -92,9 +119,9 @@ test('home destination removes routing token so existing app stays on home', () 
   assert.equal(location.searchParams.get('foo'), 'bar');
 });
 
-test('malformed versioned token is removed instead of falling through to level_ prefix logic', () => {
+test('malformed versioned token is removed instead of falling through to legacy logic', () => {
   const { location, history } = fakeNavigation(
-    'https://example.test/app?tgWebAppStartParam=v1_bad__chapter2',
+    'https://example.test/app?tgWebAppStartParam=v2_bad__chapter2',
   );
 
   const context = install(location, history);
