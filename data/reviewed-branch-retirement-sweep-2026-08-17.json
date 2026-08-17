@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "authority": "BIBLE-BOT-REVIEWED-BRANCH-RETIREMENT-SWEEP-ARCHIVE-2026-08-17",
+  "status": "ARCHIVED_AFTER_SUCCESSFUL_SWEEP",
+  "cleanup_authority": false,
+  "source_prs": [118, 119],
+  "reviewed_retirement_source_pr": 118,
+  "replacement_basis": {
+    "pr": 106,
+    "sha": "09ae51774c74c7cc78f2aae4748020b7218750ad"
+  },
+  "sweep": {
+    "workflow": "Branch Hygiene",
+    "run_id": 32066983954,
+    "successful_attempt": 1,
+    "reviewed_historical_refs_deleted": 38
+  },
+  "follow_up_cleanup": {
+    "run_id": 32066983954,
+    "successful_attempt": 2,
+    "purpose": "Remove two temporary same-tree alias refs created during the retirement lane."
+  },
+  "post_sweep_main_sha": "77b2f13cfcfbb9a14c5fff3f15870c018de158de",
+  "post_sweep_branch_inventory": ["main"],
+  "policy": {
+    "records_are_audit_evidence_only": true,
+    "records_must_not_authorize_future_ref_deletion": true,
+    "future_cleanup_requires_current_github_graph_or_new_reviewed_authority": true
+  },
+  "provider_writes": 0
+}
