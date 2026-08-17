@@ -1,0 +1,15 @@
+[
+  {"raw":"","kind":"empty","source":null,"destination":null},
+  {"raw":"chapter2","kind":"legacy","source":null,"destination":"chapter2"},
+  {"raw":"level_nero","kind":"legacy","source":null,"destination":"level_nero"},
+  {"raw":"v1_site_app__home","kind":"v1","source":"site_app","destination":"home"},
+  {"raw":"v1_tg_pin__chapter2","kind":"v1","source":"tg_pin","destination":"chapter2"},
+  {"raw":"v1_yt_ch4__level_nero","kind":"v1","source":"yt_ch4","destination":"level_nero"},
+  {"raw":"v2_site_app__home","kind":"invalid","source":null,"destination":null},
+  {"raw":"v1_unknown__home","kind":"invalid","source":null,"destination":null},
+  {"raw":"v1_site_app_home","kind":"invalid","source":null,"destination":null},
+  {"raw":"v1_site_app__home__extra","kind":"invalid","source":null,"destination":null},
+  {"raw":"v1_site_app__https://evil.example","kind":"invalid","source":null,"destination":null},
+  {"raw":"../home","kind":"invalid","source":null,"destination":null},
+  {"raw":"Chapter 2","kind":"invalid","source":null,"destination":null}
+]
