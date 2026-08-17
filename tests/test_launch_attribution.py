@@ -57,18 +57,30 @@ def test_python_parser_matches_shared_javascript_contract_fixtures():
         }, fixture["raw"]
 
 
-def test_return_context_is_only_exposed_for_known_safe_site_sources():
-    site = parse_launch_param("v1_site_app__home").public_dict()
+def test_return_context_is_only_exposed_for_reviewed_site_sources():
+    app = parse_launch_param("v1_site_app__home").public_dict()
+    chapter3 = parse_launch_param("v1_site_ch3__chapter3").public_dict()
+    chapter4 = parse_launch_param("v1_site_ch4__chapter4").public_dict()
     telegram = parse_launch_param("v1_tg_pin__home").public_dict()
-    chapter = parse_launch_param("v1_site_ch2__chapter2").public_dict()
+    unreviewed_chapter = parse_launch_param("v1_site_ch2__chapter2").public_dict()
 
-    assert site["return_context"] == {
+    assert app["return_context"] == {
         "kind": "site",
         "label": "Вернуться на сайт",
         "url": "https://gospod-bog.ru/app/",
     }
+    assert chapter3["return_context"] == {
+        "kind": "site",
+        "label": "Вернуться к статье",
+        "url": "https://gospod-bog.ru/hard-texts/duhi-v-temnice-noi-kreshchenie-pobeda/",
+    }
+    assert chapter4["return_context"] == {
+        "kind": "site",
+        "label": "Вернуться к статье",
+        "url": "https://gospod-bog.ru/hard-texts/blagovestie-mertvym-1-petra-4-5-6/",
+    }
     assert telegram["return_context"] is None
-    assert chapter["return_context"] is None
+    assert unreviewed_chapter["return_context"] is None
 
 
 def test_persistence_is_idempotent_minimized_and_has_fixed_retention():
