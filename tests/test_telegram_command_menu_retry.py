@@ -22,6 +22,8 @@ class Bot:
         current_menu_button=None,
         menu_read_error=None,
         menu_write_error=None,
+        has_main_web_app=True,
+        username="testbot",
     ):
         self.command_error = command_error
         self.current_menu_button = current_menu_button or MenuButtonCommands()
@@ -30,6 +32,10 @@ class Bot:
         self.command_calls = []
         self.menu_read_calls = 0
         self.menu_write_calls = []
+        self.bot = SimpleNamespace(
+            username=username,
+            has_main_web_app=has_main_web_app,
+        )
 
     async def set_my_commands(self, commands):
         self.command_calls.append(commands)
@@ -110,6 +116,37 @@ def test_already_correct_miniapp_menu_button_is_not_rewritten():
     assert run(retry.sync_public_commands_once(context, ("menu",), retry_callback)) is True
     assert context.bot.menu_read_calls == 1
     assert context.bot.menu_write_calls == []
+    assert queue.calls == []
+
+
+def test_missing_main_mini_app_is_warning_only(caplog):
+    queue = JobQueue()
+    context = SimpleNamespace(
+        bot=Bot(has_main_web_app=False, username="milovanovaibot"),
+        job_queue=queue,
+    )
+
+    with caplog.at_level("WARNING"):
+        assert run(retry.sync_public_commands_once(context, ("menu",), retry_callback)) is True
+
+    assert "Main Mini App is not configured for @milovanovaibot" in caplog.text
+    assert context.bot.command_calls == [("menu",)]
+    assert context.bot.menu_read_calls == 0
+    assert queue.calls == []
+
+
+def test_configured_main_mini_app_is_logged_as_verified(caplog):
+    queue = JobQueue()
+    context = SimpleNamespace(
+        bot=Bot(has_main_web_app=True, username="milovanovaibot"),
+        job_queue=queue,
+    )
+
+    with caplog.at_level("INFO"):
+        assert run(retry.sync_public_commands_once(context, ("menu",), retry_callback)) is True
+
+    assert "Main Mini App verified for @milovanovaibot" in caplog.text
+    assert context.bot.command_calls == [("menu",)]
     assert queue.calls == []
 
 
