@@ -6,18 +6,18 @@ const {
 } = require('../../miniapp/launch_context_ui.js');
 
 test('only exact reviewed site return URLs are accepted', () => {
-  assert.deepEqual(
-    normalizeReturnContext({
-      kind: 'site',
-      label: 'Вернуться на сайт',
-      url: 'https://gospod-bog.ru/app/',
-    }),
-    {
-      kind: 'site',
-      label: 'Вернуться на сайт',
-      url: 'https://gospod-bog.ru/app/',
-    },
-  );
+  const reviewed = [
+    ['Вернуться на сайт', 'https://gospod-bog.ru/app/'],
+    ['Вернуться к статье', 'https://gospod-bog.ru/hard-texts/duhi-v-temnice-noi-kreshchenie-pobeda/'],
+    ['Вернуться к статье', 'https://gospod-bog.ru/hard-texts/blagovestie-mertvym-1-petra-4-5-6/'],
+  ];
+
+  for (const [label, url] of reviewed) {
+    assert.deepEqual(
+      normalizeReturnContext({ kind: 'site', label, url }),
+      { kind: 'site', label, url },
+    );
+  }
 
   for (const value of [
     null,
@@ -25,6 +25,7 @@ test('only exact reviewed site return URLs are accepted', () => {
     { kind: 'site', label: 'Back', url: 'https://evil.example/' },
     { kind: 'site', label: 'Back', url: 'javascript:alert(1)' },
     { kind: 'site', label: '', url: 'https://gospod-bog.ru/' },
+    { kind: 'site', label: 'Back', url: 'https://gospod-bog.ru/hard-texts/unreviewed/' },
   ]) {
     assert.equal(normalizeReturnContext(value), null);
   }
