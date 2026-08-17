@@ -4,7 +4,7 @@
   "reviewed_against_main_sha": "485f1192edca40bbc490a663d67fd942f55d542a",
   "cleanup_authority": true,
   "replacement_basis": {
-    "sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+    "sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
     "pr": 106,
     "summary": "Merged canonical runtime retirement; current main is a descendant."
   },
@@ -12,229 +12,229 @@
     {
       "branch": "agent/achievement-catalog-authority",
       "retired_tip_sha": "90b10c594aa83c0ba2c9bffad2387bcea80a2c15",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/achievement-presentation-boundary",
       "retired_tip_sha": "fe0c38fbccc32d63f282e333a3b18417b908dcba",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/activity-legacy-module-decomposition",
       "retired_tip_sha": "c4ea49cfccc86cf9f135e3d8725dc56fce240a5f",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/admin-command-boundary",
       "retired_tip_sha": "f347f25cfcc7584b21f55ed09def807b5a6cba68",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/admin-legacy-module-decomposition",
       "retired_tip_sha": "e98c21be3ecafd49ba7c9d2815d17678cb636dae",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/answer-button-animation-boundary",
       "retired_tip_sha": "616d5ea2742ec00162c86de902d0c78b728abe35",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/answer-history-authority",
       "retired_tip_sha": "9aa73b356fde078b941c068a8cd40babe9860806",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/bad-input-runtime-authority",
       "retired_tip_sha": "8f4dbb3d52e460afb35b30fe2077544b57373459",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/canonical-runtime-mapping-ownership",
       "retired_tip_sha": "fae09a99ca178b3bdb030834b09681510ed2648f",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/challenge-bonus-boundary",
       "retired_tip_sha": "b2578b133cf129c13f0f47a5a8a1317f38e86678",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/challenge-question-identity-boundary",
       "retired_tip_sha": "670d1f04ab51c35c9f241832b7e2253694327068",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/controller-canonical-import-order",
       "retired_tip_sha": "8089d1e95191feac4717a26fb4bca663a52cc998",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/controller-legacy-metadata-authority",
       "retired_tip_sha": "69335450aea683f9079ac7a3fd4df332823ae1c9",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/controller-no-legacy-import",
       "retired_tip_sha": "7cc11808cfd18b2219b41bd5d07dc2870ed992ac",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/controller-pure-dependency-decomposition",
       "retired_tip_sha": "5683a0f3291a8c1af724aac192c8322c9679d480",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/controller-runtime-seam",
       "retired_tip_sha": "ca74e36d63b89888f220a5606c4c4eaf7afd64e1",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/course-conversation-state-boundary",
       "retired_tip_sha": "6fdc707c4768f3504a049a189ac8e3107523bd86",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/final-quiz-controller-decouple",
       "retired_tip_sha": "63b1bdcd1c73964d198d2c7dbf9213429649df04",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/final-result-menu-boundary",
       "retired_tip_sha": "7cbd8b70b06c8c96c82f593f1ef849b890c587c2",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/freeze-production-quiz-surface",
       "retired_tip_sha": "6edc0eb652fb92b090f0b9dacad469eb9e9f9154",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/intro-presentation-boundary",
       "retired_tip_sha": "ba87c81cec7a50d78b2ad9e1aae76f2384bf46d5",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/main-menu-runtime-authority",
       "retired_tip_sha": "bdbb371b071f6a2f44be6ba555c80902644e8696",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/presentation-activity-boundary",
       "retired_tip_sha": "1c1fa709fa0fdad07756bb26ca70ef5b2eb1ba17",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/production-boundary-integration-rehearsal",
       "retired_tip_sha": "409f0c217c32340ed5b5e57e073dc7471a1da469",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/production-tail-boundary",
       "retired_tip_sha": "1564a3b2b34f3ba4b2e127037335ec2868e11cf6",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/question-identity-authority",
       "retired_tip_sha": "2665e36640a80ef0a57668bd73a42c10200cf1f7",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/quiz-progress-authority",
       "retired_tip_sha": "422d7410f90f1e6d31ef92ccae5e208000b5b014",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/quiz-runtime-state-access",
       "retired_tip_sha": "a77f14a62f43b82f7821ff46d1ec8f579716ddf7",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/recover-canonical-runtime-ownership",
       "retired_tip_sha": "91812dc1b807565018ca90c6c9a316315a2e17a8",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/regular-restart-controller-boundary",
       "retired_tip_sha": "91707ae7766988f00a06c2ab1a613af72e6cc6ef",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/remove-bot-production-startup",
       "retired_tip_sha": "31fbbb3fb426601fdd5e076e77d84693d3cef370",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/report-controller-legacy-decomposition",
       "retired_tip_sha": "9ee7938927f706d4192329745ec162c8e5f71b7a",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/report-draft-state-decomposition",
       "retired_tip_sha": "2bf395c0b481f73f74c1ef61ee002e5a75b082ed",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/restrict-controller-legacy-runtime",
       "retired_tip_sha": "6edc0eb652fb92b090f0b9dacad469eb9e9f9154",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/review-presentation-boundary",
       "retired_tip_sha": "111b7da1d0df09af82ee2139ca2d1284edfbecf9",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/runtime-gc-boundary",
       "retired_tip_sha": "7d0551683c8648d5c6d2c07fea1ed95da69868d5",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "agent/static-presentation-boundary",
       "retired_tip_sha": "f02fab0c214ab68e2e471d5c46e4b76e3d20caab",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Reviewed historical stacked/refactor ref; superseded by the canonical integrated runtime and merged runtime retirement."
     },
     {
       "branch": "audit/legacy-file-deletion-rehearsal",
       "retired_tip_sha": "ab45bb66233413c3c1692cba593194409f611601",
-      "replacement_sha": "09ae51774c74e058b60288c3c94f54af28593ff3",
+      "replacement_sha": "09ae51774c74c7cc78f2aae4748020b7218750ad",
       "rationale": "Closed diagnostic deletion rehearsal; superseded by merged runtime retirement and the current canonical architecture."
     }
   ]
