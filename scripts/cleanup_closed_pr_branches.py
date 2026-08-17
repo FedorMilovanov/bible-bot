@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Delete stale service-owned work branches without losing unique history.
 
-Automatic cleanup uses only reproducible GitHub facts:
+Automatic cleanup uses reproducible GitHub facts first:
 
 1. the current ref SHA exactly matches the head of a same-repository PR that was
    merged into the current default branch;
@@ -10,21 +10,25 @@ Automatic cleanup uses only reproducible GitHub facts:
 3. every branch-side changed path is byte-for-byte represented in the captured
    default-branch tree.
 
-A merely closed PR is never deletion authority. A PR merged into another branch
-is not deletion authority for the default branch. Historical semantic review
-manifests are audit evidence only and are deliberately not read by this script.
+A narrow reviewed-retirement manifest may authorize deletion only after those
+generic proofs fail. Its entries pin an exact branch tip and a replacement
+commit that must still be reachable from the captured default branch. Open PR
+heads and bases always block cleanup. Historical audit archives remain
+non-authoritative and are deliberately not read by this script.
 
 Only ``agent/``, ``release/``, ``dependabot/``, ``hardening/``, ``retire/`` and
-``audit/`` refs are eligible. Open PRs always block cleanup. Every mutable ref
-used by a default-branch-dependent proof is re-read immediately before DELETE.
-The script never force-updates a ref.
+``audit/`` refs are eligible. Every candidate ref is re-read immediately before
+DELETE, and default-branch-dependent proofs are invalidated if main moves. The
+script never force-updates a ref.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections import defaultdict
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -41,6 +45,10 @@ ELIGIBLE_PREFIXES = (
 )
 PAGE_SIZE = 100
 _MAX_COMPARE_FILES = 300
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+RETIREMENT_MANIFEST_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "reviewed-branch-retirements.json"
+)
 
 
 def _eligible_ref(ref: str, *, default_branch: str) -> bool:
@@ -87,6 +95,60 @@ def _open_head_refs(open_pulls: list[dict], *, repository: str) -> set[str]:
         if head_repo.get("full_name") == repository and ref:
             refs.add(ref)
     return refs
+
+
+def _open_base_refs(open_pulls: list[dict], *, repository: str) -> set[str]:
+    refs: set[str] = set()
+    for pull in open_pulls:
+        base = pull.get("base") or {}
+        base_repo = base.get("repo") or {}
+        ref = str(base.get("ref") or "")
+        if base_repo.get("full_name") == repository and ref:
+            refs.add(ref)
+    return refs
+
+
+def _load_reviewed_retirements(
+    path: Path = RETIREMENT_MANIFEST_PATH,
+) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        raise ValueError("reviewed retirement manifest schema is invalid")
+
+    entries = raw.get("retirements")
+    if not isinstance(entries, list):
+        raise ValueError("reviewed retirement manifest entries are invalid")
+
+    result: dict[str, dict[str, str]] = {}
+    for item in entries:
+        if not isinstance(item, dict):
+            raise ValueError("reviewed retirement entry is invalid")
+
+        branch = str(item.get("branch") or "").strip()
+        retired_tip_sha = str(item.get("retired_tip_sha") or "").strip()
+        replacement_sha = str(item.get("replacement_sha") or "").strip()
+        rationale = str(item.get("rationale") or "").strip()
+
+        if not branch or any(char in branch for char in "*?["):
+            raise ValueError("reviewed retirement branch must be explicit")
+        if branch in result:
+            raise ValueError(f"duplicate reviewed retirement branch: {branch}")
+        if not _SHA_RE.fullmatch(retired_tip_sha):
+            raise ValueError(f"invalid retired tip SHA for {branch}")
+        if not _SHA_RE.fullmatch(replacement_sha):
+            raise ValueError(f"invalid replacement SHA for {branch}")
+        if not rationale:
+            raise ValueError(f"missing retirement rationale for {branch}")
+
+        result[branch] = {
+            "retired_tip_sha": retired_tip_sha,
+            "replacement_sha": replacement_sha,
+            "rationale": rationale,
+        }
+    return result
 
 
 class GitHubApi:
@@ -226,7 +288,11 @@ class GitHubApi:
         self.request("DELETE", f"/repos/{self.repository}/git/refs/heads/{encoded}")
 
 
-def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
+def cleanup(
+    api: GitHubApi,
+    *,
+    reviewed_retirements: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[str], list[str]]:
     metadata = api.repository_metadata()
     default_branch = str(metadata.get("default_branch") or "main")
     default_sha = api.ref_sha(default_branch)
@@ -236,13 +302,16 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
     closed = api.pulls("closed")
     opened = api.pulls("open")
     branches = api.branches()
+    if reviewed_retirements is None:
+        reviewed_retirements = _load_reviewed_retirements()
 
     merged_default_shas = _merged_default_head_shas(
         closed,
         repository=api.repository,
         default_branch=default_branch,
     )
-    open_refs = _open_head_refs(opened, repository=api.repository)
+    open_heads = _open_head_refs(opened, repository=api.repository)
+    open_bases = _open_base_refs(opened, repository=api.repository)
     candidate_refs = sorted(
         {
             str(branch.get("name") or "")
@@ -257,8 +326,11 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
     deleted: list[str] = []
     skipped: list[str] = []
     for ref in candidate_refs:
-        if ref in open_refs:
+        if ref in open_heads:
             skipped.append(f"{ref}: open PR exists")
+            continue
+        if ref in open_bases:
+            skipped.append(f"{ref}: open PR base exists")
             continue
 
         current_sha = api.ref_sha(ref)
@@ -268,6 +340,8 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
         merged_default_match = current_sha in merged_default_shas.get(ref, set())
         ancestry_match = False
         exact_content_match = False
+        reviewed_match = False
+
         if not merged_default_match:
             ancestry_match = api.is_ancestor(current_sha, default_sha)
             if not ancestry_match:
@@ -275,10 +349,22 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
                     current_sha, default_sha
                 )
                 if not exact_content_match:
-                    skipped.append(
-                        f"{ref}: unique content not proven in {default_branch}"
-                    )
-                    continue
+                    retirement = reviewed_retirements.get(ref)
+                    if retirement is None:
+                        skipped.append(
+                            f"{ref}: unique content not proven in {default_branch}"
+                        )
+                        continue
+                    if current_sha != retirement["retired_tip_sha"]:
+                        skipped.append(f"{ref}: reviewed retirement SHA mismatch")
+                        continue
+                    replacement_sha = retirement["replacement_sha"]
+                    if not api.is_ancestor(replacement_sha, default_sha):
+                        skipped.append(
+                            f"{ref}: reviewed replacement not in {default_branch}"
+                        )
+                        continue
+                    reviewed_match = True
 
         # Re-read immediately before deletion. Never force-update a moved ref.
         confirmed_sha = api.ref_sha(ref)
@@ -286,7 +372,7 @@ def cleanup(api: GitHubApi) -> tuple[list[str], list[str]]:
             skipped.append(f"{ref}: ref moved during cleanup")
             continue
 
-        if ancestry_match or exact_content_match:
+        if ancestry_match or exact_content_match or reviewed_match:
             confirmed_default_sha = api.ref_sha(default_branch)
             if confirmed_default_sha != default_sha:
                 skipped.append(
