@@ -31,6 +31,7 @@ def test_main_keyboard_preserves_base_callbacks():
     keyboard = menu.main_keyboard()
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == _EXPECTED_CALLBACKS
     assert all(row[0].web_app is None for row in keyboard.inline_keyboard)
+    assert menu.current_miniapp_url() is None
 
 
 def test_main_keyboard_prepends_miniapp_without_changing_base_callbacks():
@@ -41,13 +42,20 @@ def test_main_keyboard_prepends_miniapp_without_changing_base_callbacks():
     first = keyboard.inline_keyboard[0][0]
     assert first.text == "🚀 Открыть приложение"
     assert first.web_app.url == "https://example.test/app"
+    assert menu.current_miniapp_url() == "https://example.test/app"
     assert [row[0].callback_data for row in keyboard.inline_keyboard[1:]] == _EXPECTED_CALLBACKS
+
+
+def test_miniapp_url_provider_is_normalized_for_all_consumers():
+    menu.configure_miniapp_url_provider(lambda: "  https://example.test/app  ")
+    assert menu.current_miniapp_url() == "https://example.test/app"
 
 
 def test_blank_miniapp_url_is_treated_as_unconfigured():
     menu.configure_miniapp_url_provider(lambda: "   ")
     keyboard = menu.main_keyboard()
     assert [row[0].callback_data for row in keyboard.inline_keyboard] == _EXPECTED_CALLBACKS
+    assert menu.current_miniapp_url() is None
 
 
 def test_invalid_provider_is_rejected():
