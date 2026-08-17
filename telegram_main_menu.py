@@ -31,7 +31,8 @@ def configure_miniapp_url_provider(provider: MiniAppUrlProvider | None) -> None:
     _miniapp_url_provider = provider
 
 
-def _miniapp_url() -> str | None:
+def current_miniapp_url() -> str | None:
+    """Return the normalized configured Mini App URL, if one is available."""
     if _miniapp_url_provider is None:
         return None
     value = _miniapp_url_provider()
@@ -43,7 +44,7 @@ def _miniapp_url() -> str | None:
 def main_keyboard() -> InlineKeyboardMarkup:
     """Render the production main menu from one canonical button declaration."""
     rows = []
-    url = _miniapp_url()
+    url = current_miniapp_url()
     if url:
         rows.append(
             [
