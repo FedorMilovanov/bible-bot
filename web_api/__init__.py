@@ -9,8 +9,9 @@ from flask import g, jsonify, request
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
-from .auth import get_user_from_request
+from .auth import get_user_from_request, get_verified_init_data_from_request
 from .db_hardening import ensure_miniapp_indexes
+from .launch_attribution import parse_launch_param, persist_launch_attribution
 from .rate_limit import GLOBAL_API_LIMITER
 from .routes import create_app as _create_routes_app
 from .telegram_transport import (
@@ -36,6 +37,7 @@ _RATE_LIMITS = {
     ("POST", "/api/quiz/answer"): (180, 60),
     ("GET", "/api/me"): (60, 60),
     ("GET", "/api/leaderboard"): (60, 60),
+    ("GET", "/api/launch-context"): (60, 60),
 }
 _QUESTION_ENDPOINT_LIMIT = (30, 60)
 _QUESTION_RATE_SCOPE = "/api/questions/*"
@@ -65,6 +67,40 @@ def create_app():
                 "environment": os.getenv("APP_ENV", "production"),
             }
         )
+
+    @app.get("/api/launch-context")
+    def _launch_context():
+        """Return launch context derived only from Telegram-HMAC-verified data."""
+        verified = get_verified_init_data_from_request()
+        if not verified:
+            return jsonify({"error": "telegram authentication required"}), 401
+
+        context = parse_launch_param(verified.start_param)
+        payload = context.public_dict()
+        payload["attribution_persisted"] = None
+
+        if context.kind == "v1":
+            try:
+                import database as database_module
+
+                database = getattr(database_module, "db", None)
+                if database is None:
+                    raise RuntimeError("MongoDB is not configured")
+                payload["attribution_persisted"] = persist_launch_attribution(
+                    database=database,
+                    user_id=verified.user["id"],
+                    auth_date=verified.auth_date,
+                    query_id=verified.query_id,
+                    context=context,
+                )
+            except Exception:
+                # Attribution is non-authoritative telemetry. A persistence or
+                # index failure must never damage signed launch routing or quiz
+                # authority, and no initData value is logged here.
+                logger.exception("Mini App launch attribution persistence failed")
+                payload["attribution_persisted"] = False
+
+        return jsonify(payload)
 
     @app.get("/telegram/ready")
     def _telegram_ready():

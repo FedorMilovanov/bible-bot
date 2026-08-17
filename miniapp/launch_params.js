@@ -8,6 +8,7 @@
   const VERSION_PREFIX = 'v1_';
   const COMPOSITE_SEPARATOR = '__';
   const SAFE_TOKEN = /^[a-z0-9_]{1,48}$/;
+  const UNKNOWN_VERSION = /^v[0-9]+_/;
 
   const ALLOWED_SOURCES = new Set([
     'site_app',
@@ -42,6 +43,10 @@
     return typeof raw === 'string' ? raw.trim() : '';
   }
 
+  function invalid(value) {
+    return Object.freeze({ kind: 'invalid', source: null, destination: null, raw: value });
+  }
+
   function parseStartParam(raw) {
     const value = normalizeRaw(raw);
     if (!value) {
@@ -49,19 +54,20 @@
     }
 
     if (!value.startsWith(VERSION_PREFIX)) {
+      if (UNKNOWN_VERSION.test(value) || !SAFE_TOKEN.test(value)) return invalid(value);
       return Object.freeze({ kind: 'legacy', source: null, destination: value, raw: value });
     }
 
     const payload = value.slice(VERSION_PREFIX.length);
     const separatorIndex = payload.indexOf(COMPOSITE_SEPARATOR);
     if (separatorIndex <= 0 || separatorIndex !== payload.lastIndexOf(COMPOSITE_SEPARATOR)) {
-      return Object.freeze({ kind: 'invalid', source: null, destination: null, raw: value });
+      return invalid(value);
     }
 
     const source = payload.slice(0, separatorIndex);
     const destination = payload.slice(separatorIndex + COMPOSITE_SEPARATOR.length);
     if (!ALLOWED_SOURCES.has(source) || !SAFE_TOKEN.test(destination)) {
-      return Object.freeze({ kind: 'invalid', source: null, destination: null, raw: value });
+      return invalid(value);
     }
 
     return Object.freeze({ kind: 'v1', source, destination, raw: value });
