@@ -8,6 +8,8 @@
   const SAFE_RETURN_URLS = new Set([
     'https://gospod-bog.ru/',
     'https://gospod-bog.ru/app/',
+    'https://gospod-bog.ru/hard-texts/duhi-v-temnice-noi-kreshchenie-pobeda/',
+    'https://gospod-bog.ru/hard-texts/blagovestie-mertvym-1-petra-4-5-6/',
   ]);
 
   function normalizeReturnContext(value) {
