@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "retired_workflows": [
+    {"id": 330696854, "path": ".github/workflows/apply-webhook-launcher-patch.yml", "name": "Apply webhook launcher patch"},
+    {"id": 331084699, "path": ".github/workflows/oneshot-bonus-contract-v3.yml", "name": "One-shot bonus contract v3"},
+    {"id": 331078803, "path": ".github/workflows/oneshot-bonus-receipt-state.yml", "name": "One-shot bonus receipt state"},
+    {"id": 331082912, "path": ".github/workflows/oneshot-bonus-receipt-v2.yml", "name": "One-shot bonus receipt v2"},
+    {"id": 331091062, "path": ".github/workflows/oneshot-bonus-wrapper-compat.yml", "name": "One-shot bonus wrapper compatibility"},
+    {"id": 331086729, "path": ".github/workflows/oneshot-bonus-wrappers-v4.yml", "name": "One-shot bonus wrappers v4"},
+    {"id": 330998221, "path": ".github/workflows/oneshot-callback-robustness.yml", "name": "One-shot callback robustness"},
+    {"id": 331093764, "path": ".github/workflows/oneshot-fix-bonus-contract-test.yml", "name": "One-shot bonus API contract test cleanup"},
+    {"id": 330991119, "path": ".github/workflows/oneshot-integrity-patch.yml", "name": "One-shot integrity patch"},
+    {"id": 330974563, "path": ".github/workflows/oneshot-legacy-correctness.yml", "name": ".github/workflows/oneshot-legacy-correctness.yml"},
+    {"id": 331022610, "path": ".github/workflows/oneshot-random-stats-key.yml", "name": "One-shot random stats key"},
+    {"id": 331013380, "path": ".github/workflows/oneshot-random-unify.yml", "name": "One-shot random flow unification"},
+    {"id": 330963188, "path": ".github/workflows/oneshot-remove-legacy-signals.yml", "name": "One-shot remove legacy signal handlers"},
+    {"id": 331005508, "path": ".github/workflows/oneshot-restore-database.yml", "name": "One-shot restore database persistence edit"},
+    {"id": 331017660, "path": ".github/workflows/oneshot-session-none.yml", "name": "One-shot disabled session return"},
+    {"id": 330802612, "path": ".github/workflows/patch-battle-boundaries.yml", "name": "One-shot battle boundary patch"},
+    {"id": 330800213, "path": ".github/workflows/patch-battle-consistency.yml", "name": "One-shot battle consistency patch"},
+    {"id": 330806993, "path": ".github/workflows/patch-battle-delivery.yml", "name": "One-shot battle delivery patch"},
+    {"id": 330805217, "path": ".github/workflows/patch-battle-recovery.yml", "name": "One-shot battle recovery patch"},
+    {"id": 330809962, "path": ".github/workflows/patch-session-authorization.yml", "name": "One-shot session authorization patch"}
+  ]
+}

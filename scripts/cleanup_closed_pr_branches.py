@@ -14,9 +14,10 @@ A merely closed PR is never deletion authority. A PR merged into another branch
 is not deletion authority for the default branch. Historical semantic review
 manifests are audit evidence only and are deliberately not read by this script.
 
-Only ``agent/``, ``release/`` and ``dependabot/`` refs are eligible. Open PRs
-always block cleanup. Every mutable ref used by a default-branch-dependent proof
-is re-read immediately before DELETE. The script never force-updates a ref.
+Only ``agent/``, ``release/``, ``dependabot/``, ``hardening/``, ``retire/`` and
+``audit/`` refs are eligible. Open PRs always block cleanup. Every mutable ref
+used by a default-branch-dependent proof is re-read immediately before DELETE.
+The script never force-updates a ref.
 """
 from __future__ import annotations
 
@@ -30,7 +31,14 @@ from urllib.request import Request, urlopen
 
 API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
-ELIGIBLE_PREFIXES = ("agent/", "release/", "dependabot/")
+ELIGIBLE_PREFIXES = (
+    "agent/",
+    "release/",
+    "dependabot/",
+    "hardening/",
+    "retire/",
+    "audit/",
+)
 PAGE_SIZE = 100
 _MAX_COMPARE_FILES = 300
 
