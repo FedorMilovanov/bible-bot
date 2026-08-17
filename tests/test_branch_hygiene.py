@@ -2,6 +2,7 @@ from scripts.cleanup_closed_pr_branches import (
     GitHubApi,
     _eligible_ref,
     _merged_default_head_shas,
+    _merged_default_merge_shas,
     _open_head_refs,
     cleanup,
 )
@@ -18,9 +19,11 @@ def _pull(
     base_repo=REPO,
     base_ref="main",
     merged=True,
+    merge_sha="main-sha",
 ):
     return {
         "merged_at": "2026-08-15T00:00:00Z" if merged else None,
+        "merge_commit_sha": merge_sha if merged else None,
         "head": {
             "ref": ref,
             "sha": sha,
@@ -59,6 +62,21 @@ def test_merged_head_map_requires_same_repo_default_branch_merge():
     )
 
     assert result == {"agent/good": {"aaa"}}
+
+
+def test_merged_merge_map_pins_head_to_merge_commit():
+    pulls = [
+        _pull("agent/good", "aaa", merge_sha="merge-aaa"),
+        _pull("agent/no-merge-sha", "bbb", merge_sha=""),
+        _pull("agent/staging", "ccc", base_ref="staging", merge_sha="merge-ccc"),
+        _pull("agent/fork", "ddd", head_repo="someone/fork", merge_sha="merge-ddd"),
+    ]
+
+    assert _merged_default_merge_shas(
+        pulls,
+        repository=REPO,
+        default_branch="main",
+    ) == {("agent/good", "aaa"): {"merge-aaa"}}
 
 
 def test_open_refs_only_include_same_repository_heads():
@@ -204,6 +222,19 @@ def test_cleanup_deletes_exact_head_of_pr_merged_into_main():
 
     assert deleted == ["agent/merged"]
     assert skipped == []
+
+
+def test_cleanup_does_not_trust_merged_head_if_merge_commit_left_current_main():
+    api = FakeApi(
+        current={"agent/merged": "aaa"},
+        closed_pulls=[_pull("agent/merged", "aaa", merge_sha="retired-main")],
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/merged: unique content not proven in main"]
 
 
 def test_closed_but_unmerged_pr_is_not_deletion_authority():
@@ -375,6 +406,23 @@ def test_cleanup_rechecks_sha_immediately_before_exact_content_delete():
     assert deleted == []
     assert api.deleted == []
     assert skipped == ["agent/race: ref moved during cleanup"]
+
+
+def test_cleanup_refuses_merged_pr_delete_if_main_moves_after_proof():
+    api = FakeApi(
+        current={"agent/merged": "aaa"},
+        closed_pulls=[_pull("agent/merged", "aaa")],
+        second_reads={
+            "main": ["main-sha", "new-main"],
+            "agent/merged": ["aaa", "aaa"],
+        },
+    )
+
+    deleted, skipped = cleanup(api)
+
+    assert deleted == []
+    assert api.deleted == []
+    assert skipped == ["agent/merged: main moved during content proof"]
 
 
 def test_cleanup_refuses_ancestor_delete_if_main_moves_after_proof():

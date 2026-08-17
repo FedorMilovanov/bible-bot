@@ -4,7 +4,8 @@
 Automatic cleanup uses reproducible GitHub facts first:
 
 1. the current ref SHA exactly matches the head of a same-repository PR that was
-   merged into the current default branch;
+   merged into the current default branch, and that PR's merge commit is still
+   reachable from the captured default-branch SHA;
 2. GitHub proves the current ref SHA is already an ancestor of the captured
    default-branch SHA;
 3. every branch-side changed path is byte-for-byte represented in the captured
@@ -83,6 +84,40 @@ def _merged_default_head_shas(
         if not _eligible_ref(ref, default_branch=default_branch) or not sha:
             continue
         result[ref].add(sha)
+    return dict(result)
+
+
+def _merged_default_merge_shas(
+    closed_pulls: list[dict],
+    *,
+    repository: str,
+    default_branch: str,
+) -> dict[tuple[str, str], set[str]]:
+    """Map exact merged PR heads to merge commits that must remain in current main."""
+    result: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for pull in closed_pulls:
+        if not pull.get("merged_at"):
+            continue
+
+        head = pull.get("head") or {}
+        head_repo = head.get("repo") or {}
+        base = pull.get("base") or {}
+        base_repo = base.get("repo") or {}
+        ref = str(head.get("ref") or "")
+        head_sha = str(head.get("sha") or "")
+        merge_sha = str(pull.get("merge_commit_sha") or "")
+
+        if head_repo.get("full_name") != repository:
+            continue
+        if base_repo.get("full_name") != repository:
+            continue
+        if base.get("ref") != default_branch:
+            continue
+        if not _eligible_ref(ref, default_branch=default_branch):
+            continue
+        if not head_sha or not merge_sha:
+            continue
+        result[(ref, head_sha)].add(merge_sha)
     return dict(result)
 
 
@@ -305,7 +340,7 @@ def cleanup(
     if reviewed_retirements is None:
         reviewed_retirements = _load_reviewed_retirements()
 
-    merged_default_shas = _merged_default_head_shas(
+    merged_default_merge_shas = _merged_default_merge_shas(
         closed,
         repository=api.repository,
         default_branch=default_branch,
@@ -337,7 +372,11 @@ def cleanup(
         if current_sha is None:
             continue
 
-        merged_default_match = current_sha in merged_default_shas.get(ref, set())
+        merge_shas = merged_default_merge_shas.get((ref, current_sha), set())
+        merged_default_match = any(
+            merge_sha == default_sha or api.is_ancestor(merge_sha, default_sha)
+            for merge_sha in merge_shas
+        )
         ancestry_match = False
         exact_content_match = False
         reviewed_match = False
@@ -372,7 +411,7 @@ def cleanup(
             skipped.append(f"{ref}: ref moved during cleanup")
             continue
 
-        if ancestry_match or exact_content_match or reviewed_match:
+        if merged_default_match or ancestry_match or exact_content_match or reviewed_match:
             confirmed_default_sha = api.ref_sha(default_branch)
             if confirmed_default_sha != default_sha:
                 skipped.append(
