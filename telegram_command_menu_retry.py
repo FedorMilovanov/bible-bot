@@ -1,4 +1,4 @@
-"""Retry policy for the idempotent Telegram public command/menu sync."""
+"""Retry policy for the idempotent Telegram public command/menu/profile sync."""
 from __future__ import annotations
 
 import logging
@@ -9,6 +9,7 @@ from telegram import MenuButtonWebApp, WebAppInfo
 from telegram.error import RetryAfter
 
 import telegram_main_menu as main_menu
+import telegram_public_profile as public_profile
 from telegram_delivery_retry import retry_after_seconds
 from telegram_provider_status import main_mini_app_status
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class CommandMenuRetryUnavailable(RuntimeError):
-    """The public Telegram menu sync cannot reschedule after RetryAfter."""
+    """The public Telegram surface sync cannot reschedule after RetryAfter."""
 
 
 def _desired_menu_button() -> MenuButtonWebApp | None:
@@ -54,19 +55,19 @@ async def sync_public_commands_once(
     commands: Sequence[Any],
     retry_callback: Callable[[Any], Awaitable[Any]],
 ) -> bool:
-    """Synchronize commands and the default Mini App menu button once.
+    """Synchronize commands, public profile and default Mini App menu button once.
 
-    The Mini App button is read/compare/write so an already-correct Telegram
-    provider state is left untouched. RetryAfter from any Bot API step is
+    Public profile and Mini App menu state are read/compare/write so already-correct
+    Telegram provider state is left untouched. RetryAfter from any Bot API step is
     rescheduled instead of being lost until restart.
 
-    Returns ``True`` when the public command/menu surface is synchronized and
-    ``False`` when a single future retry was scheduled. Non-rate-limit failures
-    deliberately propagate so the production root keeps its existing logging
-    policy.
+    Returns ``True`` when the public Telegram surface is synchronized and ``False``
+    when a single future retry was scheduled. Non-rate-limit failures deliberately
+    propagate so the production root keeps its existing logging policy.
     """
     try:
         await context.bot.set_my_commands(commands)
+        await public_profile.sync_public_profile(context.bot)
         desired_button = _desired_menu_button()
         if desired_button is not None:
             current_button = await context.bot.get_chat_menu_button()
@@ -76,7 +77,7 @@ async def sync_public_commands_once(
         job_queue = getattr(context, "job_queue", None)
         if job_queue is None:
             raise CommandMenuRetryUnavailable(
-                "public command/menu RetryAfter cannot be rescheduled without JobQueue"
+                "public Telegram surface RetryAfter cannot be rescheduled without JobQueue"
             ) from exc
         delay = retry_after_seconds(exc)
         job_queue.run_once(retry_callback, when=delay)
