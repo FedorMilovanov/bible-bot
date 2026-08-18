@@ -2,6 +2,14 @@
 
 Telegram-бот и Telegram Mini App для изучения 1-го послания Петра: курсы по главам, исторический контекст, Challenge 20, PvP-битвы, статистика, достижения и лидерборды.
 
+## Production identity
+
+- сайт / индексируемая посадочная: `https://gospod-bog.ru/app/`
+- Telegram: `https://t.me/milovanovaibot` (`@milovanovaibot`)
+- каноническое имя профиля: **Библейский тренажёр — 1 Петра**
+
+Production startup идемпотентно синхронизирует публичное имя, short description, description и default Menu Button через read/compare/write. Main Mini App / Launch App и его preview media остаются BotFather-owned provider surfaces и проверяются отдельно.
+
 ## Архитектура
 
 В проекте один deployable-сервис и один production bootstrap:
@@ -56,8 +64,9 @@ Production startup fail-closed проверяет обязательную ко�
 
 После запуска:
 
-- бот: `https://t.me/<BOT_USERNAME>`
-- Mini App: `http://localhost:8080/`
+- production landing: `https://gospod-bog.ru/app/`
+- production bot: `https://t.me/milovanovaibot`
+- локальная Mini App: `http://localhost:8080/`
 - liveness: `http://localhost:8080/live`
 - Mongo readiness: `http://localhost:8080/ready`
 - Telegram readiness: `http://localhost:8080/telegram/ready`
@@ -87,7 +96,9 @@ Production route: `POST /telegram/webhook`.
 
 ## Telegram Mini App
 
-После деплоя укажи `BOT_USERNAME` и HTTPS-адрес сервиса. В `@BotFather` настрой **Menu Button** на этот HTTPS URL.
+После деплоя укажи `BOT_USERNAME` и HTTPS-адрес сервиса. Production startup синхронизирует default private-chat Menu Button на canonical Mini App URL только при несовпадении provider state. Main Mini App / профильная **Launch App**-кнопка и preview media настраиваются в `@BotFather`; postdeploy acceptance отдельно требует `getMe.has_main_web_app=true`.
+
+Тот же startup job синхронизирует canonical public bot name, short description и description для default и `ru` locale через read/compare/write. Уже корректный provider state не переписывается.
 
 Клиент использует Telegram CSS variables для цветов и safe-area. Для `prefers-reduced-motion` отключаются лишние анимации.
 
@@ -205,6 +216,7 @@ Docker image запускает `production_entrypoint.py`. Transport опред
 - `telegram_broadcast_controller.py` — durable broadcast control
 - `telegram_settings_controller.py` — settings surface
 - `telegram_admin_controller.py` — recovery-safe production admin operations
+- `telegram_public_profile.py` — canonical Telegram public identity and idempotent profile reconciliation
 - `web_api/telegram_transport.py` — polling/webhook lifecycle и Waitress→PTB queue bridge
 - `database.py` — MongoDB primitives и compatibility storage helpers
 - `session_integrity.py`, `battle_integrity.py`, `report_integrity.py` — durable safety boundaries
@@ -213,7 +225,7 @@ Docker image запускает `production_entrypoint.py`. Transport опред
 - `keep_alive.py` — Waitress/HTTP lifecycle внутри процесса
 - `web_api/` — auth, HTTP routes, rate limiting, Mini App DB invariants и server-authoritative quiz API
 - `miniapp/` — HTML/CSS/JS клиент
-- `scripts/check_*.py` — read-only deployment/data-safety preflights
+- `scripts/check_*.py` — read-only deployment/data-safety/provider preflights
 - `utils.py` — PNG/GIF результатов
 - `tests/` — behavior, authority, storage, deploy и regression contracts
 - `.github/workflows/ci.yml` — actionlint/dependency/secret guards, Ruff, compile, pytest, Mini App JS, production Docker/import/Mongo smoke
