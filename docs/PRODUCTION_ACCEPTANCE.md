@@ -50,7 +50,7 @@ Exit `0` requires all of the following:
 - the retention preflight is green **without** `bootstrap_pending`;
 - Telegram `getWebhookInfo` matches the exact URL, single connection and allowed-update contract with no current unsafe delivery error;
 - Telegram `getMe` reports `has_main_web_app=true` for the production bot, proving the BotFather-owned Main Mini App / Launch App provider state is enabled;
-- Telegram `getMyName`, `getMyShortDescription` and `getMyDescription` match the canonical public profile for both the default provider locale and dedicated `ru` locale.
+- Telegram `getMyName`, `getMyShortDescription` and `getMyDescription` match the canonical public profile for the default provider query and the `ru` provider query.
 
 The Main Mini App and public-profile checks are read-only. A reachable mismatch is a known unsafe provider state and returns exit `1`; an unavailable or malformed Telegram response returns exit `2`. The profile checker reports only normalized locale/field mismatch names and never prints `BOT_TOKEN`, provider request URLs or secret-bearing errors.
 
