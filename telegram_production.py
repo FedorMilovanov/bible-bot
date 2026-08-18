@@ -244,7 +244,7 @@ async def _leaderboard_page_callback(update, context):
         page = int((query.data or "").removeprefix("leaderboard_page_"))
     except (TypeError, ValueError):
         return
-    await stats.show_general_leaderboard(query, 0)
+    await stats.show_general_leaderboard(query, page)
 
 
 async def _my_stats_callback(update, context):
