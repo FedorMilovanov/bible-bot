@@ -2,7 +2,7 @@
 
 This repository reaches **100% production acceptance** only when both phases below exit `0` against the exact deployed revision. CI alone is not production acceptance.
 
-The runner is read-only. It does not merge, deploy, mutate MongoDB, call Telegram `setWebhook`/`deleteWebhook`, change BotFather/Main Mini App provider state, expose secrets, or create temporary workflows.
+The runner is read-only. It does not merge, deploy, mutate MongoDB, call Telegram `setWebhook`/`deleteWebhook`, change BotFather/Main Mini App provider state, change the public bot profile, expose secrets, or create temporary workflows.
 
 ## Phase 1 — before deploy
 
@@ -30,6 +30,8 @@ Checks-gated auto-deploy does not remove the merge authorization boundary: it me
 
 Record the exact 40-hex revision actually deployed. Do not infer it from branch names.
 
+The production startup owns one intentionally mutable public Telegram surface in addition to the existing command/Menu Button sync: the canonical bot name, short description and description for the default and `ru` locales. That reconciliation is read/compare/write and therefore performs **zero public-profile writes when provider state already matches the canonical contract**. It does not own Main Mini App profile/media configuration, webhook state or any other BotFather surface.
+
 ## Phase 2 — after deploy
 
 Run from an authorized environment containing `BOT_TOKEN` and either `RENDER_EXTERNAL_URL` or `TELEGRAM_WEBHOOK_BASE_URL`. Set `EXPECTED_DEPLOY_SHA` to the exact 40-hex revision intended to be live:
@@ -47,15 +49,17 @@ Exit `0` requires all of the following:
 - `/meta` reports exactly `EXPECTED_DEPLOY_SHA`, preventing a green smoke against an older Render build;
 - the retention preflight is green **without** `bootstrap_pending`;
 - Telegram `getWebhookInfo` matches the exact URL, single connection and allowed-update contract with no current unsafe delivery error;
-- Telegram `getMe` reports `has_main_web_app=true` for the production bot, proving the BotFather-owned Main Mini App / Launch App provider state is enabled.
+- Telegram `getMe` reports `has_main_web_app=true` for the production bot, proving the BotFather-owned Main Mini App / Launch App provider state is enabled;
+- Telegram `getMyName`, `getMyShortDescription` and `getMyDescription` match the canonical public profile for both the default provider locale and dedicated `ru` locale.
 
-The Main Mini App check is read-only. `has_main_web_app=false` is a known unsafe provider state and returns exit `1`; an unavailable or malformed Telegram response returns exit `2`. The check prints only normalized `{username, has_main_web_app}` state or a generic redacted error and never prints `BOT_TOKEN`.
+The Main Mini App and public-profile checks are read-only. A reachable mismatch is a known unsafe provider state and returns exit `1`; an unavailable or malformed Telegram response returns exit `2`. The profile checker reports only normalized locale/field mismatch names and never prints `BOT_TOKEN`, provider request URLs or secret-bearing errors.
 
 ## Final manual smoke
 
 Machine checks do not replace user-visible behavior. Before calling the rollout 100% accepted, exercise the exact deployed revision through:
 
 - the bot profile `Launch App` action and the default private-chat Menu Button;
+- visible bot profile name, short description and full description in Telegram;
 - `?startapp=v1_site_app__home` and the reviewed contextual launches `v1_site_ch3__chapter3` / `v1_site_ch4__chapter4`;
 - `/start`, normal quiz answer and result;
 - timed/speed timeout path;
