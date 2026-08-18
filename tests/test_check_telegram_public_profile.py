@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -8,7 +11,8 @@ import pytest
 import telegram_public_profile as profile
 
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "check_telegram_public_profile.py"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = ROOT / "scripts" / "check_telegram_public_profile.py"
 
 
 def _load_script_module():
@@ -39,6 +43,24 @@ def test_exit_codes_match_production_acceptance_semantics():
     assert script.SAFE == 0
     assert script.UNSAFE == 1
     assert script.UNAVAILABLE == 2
+
+
+def test_standalone_script_loads_canonical_contract_from_repo_root():
+    env = os.environ.copy()
+    env.pop("BOT_TOKEN", None)
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH)],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert completed.returncode == 2
+    assert json.loads(completed.stdout) == {"error": "BOT_TOKEN is required"}
+    assert completed.stderr == ""
 
 
 def test_fetch_value_uses_read_only_provider_method_and_locale(monkeypatch):
