@@ -13,10 +13,16 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from telegram_public_profile import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from telegram_public_profile import (  # noqa: E402
     PUBLIC_BOT_DESCRIPTION,
     PUBLIC_BOT_NAME,
     PUBLIC_BOT_SHORT_DESCRIPTION,
