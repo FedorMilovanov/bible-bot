@@ -7,6 +7,7 @@ import os
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
+    CallbackContext,
     CallbackQueryHandler,
     CommandHandler,
     ConversationHandler,
@@ -126,6 +127,11 @@ async def _sync_public_command_menu_job(context):
         )
     except Exception:
         logger.warning("Telegram public command menu sync failed", exc_info=True)
+
+
+async def _sync_public_command_menu_post_init(application):
+    """Run initial provider reconciliation explicitly during PTB startup."""
+    await _sync_public_command_menu_job(CallbackContext(application))
 
 
 async def _start(update, context):
@@ -273,6 +279,7 @@ def main() -> None:
     app = (
         Application.builder()
         .token(token)
+        .post_init(_sync_public_command_menu_post_init)
         .post_shutdown(quiz._save_all_sessions)
         .build()
     )
@@ -437,7 +444,6 @@ def main() -> None:
         )
     )
 
-    app.job_queue.run_once(_sync_public_command_menu_job, when=0)
     app.job_queue.run_repeating(
         _cleanup_stale_userdata_job,
         interval=maintenance.GC_INTERVAL,

@@ -249,6 +249,13 @@ async def _call_shutdown_hook(
         await result
 
 
+async def _call_post_init(application) -> None:
+    """Run PTB's configured post-init hook in the custom webhook lifecycle."""
+    callback = getattr(application, "post_init", None)
+    if callback is not None:
+        await callback(application)
+
+
 async def _deactivate_bridge_before_stop(application) -> None:
     drained = await TELEGRAM_WEBHOOK_BRIDGE.deactivate_and_drain(application)
     if not drained:
@@ -284,6 +291,7 @@ async def _run_webhook_application(
     started = False
     try:
         async with application:
+            await _call_post_init(application)
             configured = await application.bot.set_webhook(
                 url=webhook_url,
                 allowed_updates=WEBHOOK_ALLOWED_UPDATES,
