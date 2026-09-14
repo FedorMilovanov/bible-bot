@@ -75,7 +75,7 @@ VOICE = {
     "P": ("страдательн", "пассивн", "пассив", "passive", "pass."),
 }
 MOOD = {
-    "I": ("изъявительн", "индикатив", "indicative", "ind."),
+    "I": ("изъявительн", "изъяв.", "индикатив", "indicative", "ind."),
     "D": ("повелительн", "повелит.", "императив", "imperative", "impv."),
     "S": ("сослагательн", "сослаг.", "субжунктив", "субъюнктив", "конъюнктив", "subjunctive", "subj."),
     "O": ("оптатив", "желат.", "желательное", "optative", "opt."),
@@ -92,16 +92,16 @@ NUMBER = {
     "P": ("мн. ч.", "мн. числ", "множественн", "plural", "pl."),
 }
 CASE = {
-    "N": ("именительн", "nominative", "nom."),
-    "G": ("родительн", "genitive", "gen."),
-    "D": ("дательн", "dative", "dat."),
-    "A": ("винительн", "accusative", "acc."),
-    "V": ("звательн", "vocative", "voc."),
+    "N": ("именительн", "именит.", "nominative", "nom."),
+    "G": ("родительн", "родит.", "genitive", "gen."),
+    "D": ("дательн", "дат.", "dative", "dat."),
+    "A": ("винительн", "винит.", "accusative", "acc."),
+    "V": ("звательн", "зват.", "vocative", "voc."),
 }
 GENDER = {
-    "M": ("мужск", "masculine", "masc."),
-    "F": ("женск", "feminine", "fem."),
-    "N": ("средн", "neuter", "neut."),
+    "M": ("мужск", "м. род", "masculine", "masc."),
+    "F": ("женск", "ж. род", "feminine", "fem."),
+    "N": ("средн", "ср. род", "neuter", "neut."),
     "N+": ("общий род",),
 }
 # Part of speech is compared against the corpus part-of-speech column, so a card
