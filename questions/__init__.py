@@ -38,6 +38,7 @@ from .option_balance_review import apply_option_balance
 from .option_order_review import apply_option_order
 from .project_position_label import apply_project_position_label
 from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
+from . import review_composition_2026_09 as _review_composition_2026_09
 from .source_registry import SOURCE_CATALOG
 
 

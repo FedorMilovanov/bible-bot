@@ -23,3 +23,6 @@ Thumbs.db
 # Runtime output
 *.log
 *.pid
+
+# Pinned Research release checked out by the release-integrity workflow
+.release-research/

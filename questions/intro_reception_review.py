@@ -16,8 +16,9 @@ a modern control).
 Cards that really do rest on the letter keep their type and here name their
 passage. Nothing else changes: no stem, option, key, explanation or source list.
 
-The module is merged per field in ``questions/ranking_policy.REVIEW_LAYERS``, so
-its two keys never drop a reviewed field from an earlier layer.
+The module is merged per field in
+``questions/review_composition_2026_09.REVIEW_LAYERS``, so its two keys never
+drop a reviewed field from an earlier layer.
 """
 
 from __future__ import annotations

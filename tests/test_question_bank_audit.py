@@ -18,7 +18,8 @@ from pathlib import Path
 from questions import POOL_REGISTRY
 from questions.intro_balance_review import BALANCED_DISTRACTORS, apply_intro_balance
 from questions.option_balance_review import BALANCED_OPTIONS
-from questions.ranking_policy import REVIEW_LAYERS, REVIEW_OVERRIDES
+from questions.content_truth_review import REVIEW_OVERRIDES
+from questions.review_composition_2026_09 import REVIEW_LAYERS
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGET_PATH = ROOT / "data" / "question-quality-budget.json"
