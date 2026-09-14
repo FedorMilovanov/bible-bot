@@ -56,6 +56,7 @@ KNOWN_INFO: frozenset[tuple[str, str, str]] = frozenset(
         ("parse.multi_form_card", "chapter3", "ch3_ot_202"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_302"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_305"),
+        ("parse.multi_form_card", "chapter3", "ch3_gr_306"),
         ("parse.multi_form_card", "chapter3", "ch3_disp_005"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_307"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_308"),
