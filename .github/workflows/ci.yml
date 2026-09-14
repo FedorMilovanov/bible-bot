@@ -86,6 +86,9 @@ jobs:
           --extend-per-file-ignores=scripts/audit_question_quality.py:RUF001
           --extend-per-file-ignores=scripts/verify_lxx_evidence.py:RUF001
           --extend-per-file-ignores=scripts/verify_greek_evidence.py:RUF001
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF001
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF002
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF003
           --extend-per-file-ignores=telegram_course_surface.py:RUF001
           --extend-per-file-ignores=web_api/routes.py:RUF001
           --output-format=github

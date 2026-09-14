@@ -146,6 +146,52 @@ ABSURD_DISTRACTOR_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
+# Learner-facing text is Russian. The sigla of the witnesses the course teaches
+# (LXX, MT, SBLGNT, ECM, NA28, CBGM), the corpora it names (MorphGNT), the source
+# names a lesson is allowed to name (Latin spellings of the scholars and journals
+# the catalog carries), the Latin name of a debated doctrine the course is teaching
+# ("cessationism"), Roman numerals and the corpus' own eight-column parse tags are
+# all part of a Russian grammar lesson. Anything else in Latin script is the
+# authoring pipeline showing through, so it is counted per pool.
+ALLOWED_LATIN_WORDS = frozenset(
+    {
+        # Primary texts, corpora and databases whose canonical name is Latin.
+        "LXX", "MT", "SBLGNT", "ECM", "dECM", "NA", "NA28", "CBGM", "MorphGNT",
+        "Pleiades", "ORBIS", "STEP", "Vaticanus", "Sinaiticus", "Alexandrinus",
+        # Journals and reference works the source catalog cites.
+        "TMSJ", "TGC", "UBS", "JETS", "NTS", "JBL", "IBR",
+        # Bible translations: sigla, not prose.
+        "ESV", "LSB", "NIV", "NASB", "KJV", "NKJV", "NRSV",
+        # The Latin name of the debated doctrine a lesson is teaching.
+        "cessationism",
+        # Surnames of the scholars the course names, transliterated in the same
+        # sentence. Keeping the Latin spelling lets a reader find the literature.
+        "Achtemeier", "Atkinson", "Best", "Bigg", "Carson", "Cole", "Cross",
+        "Davids", "Donelson", "Elliott", "Fee", "Goppelt", "Grudem", "Hengel",
+        "Horrell", "Jobes", "Kelly", "MacArthur", "Marcar", "Michaels", "Moo",
+        "Schreiner", "Selwyn", "Storms", "Williams",
+    }
+)
+# A token is a run of Latin letters and digits that contains at least one letter,
+# so a corpus tag ("2AAD-P--") is seen whole and a bare number is not a word.
+LATIN_WORD = re.compile(r"(?=[A-Za-z0-9\-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9\-]{1,}")
+PARSE_TAG = re.compile(r"^[0-9APMIDXFSON-]{8}$")
+# A tag written with its leading dash ("-XPPNPM-") is one token in the text, so the
+# tags are masked out before the Latin scan instead of being matched token-wise.
+PARSE_TAG_IN_TEXT = re.compile(r"(?<![\w-])[0-9APMIDXFSON-]{8}(?![\w-])")
+ROMAN_NUMERAL = re.compile(r"^[IVXLC]+$")
+# A parenthetical that also carries a Russian gloss explains its Latin, so the
+# gloss itself is not the pipeline showing through: "(лат. viae — дороги)".
+PARENTHETICAL = re.compile(r"\(([^()]*)\)")
+# Notes written for the reviewer, not for the learner: a wording pass left one in
+# the text ("the old automatic glosses in this question were broken").
+INTERNAL_NOTE_MARKERS = re.compile(
+    r"старый вариант|прежн\w+ вариант|был сломан|были поврежден\w+|"
+    r"автоматическ\w+ глосс\w*|повреждён\w+ и дублировал\w+|чернов\w+ вариант|"
+    r"внутренн\w+ заметк",
+    re.IGNORECASE,
+)
+
 # Absolute-certainty words are legitimate for direct text facts but unacceptable
 # inside a card the course itself calls contested. The rule is sentence-scoped and
 # negation-aware so that "это не доказывает" is not mistaken for an overclaim.
@@ -284,6 +330,9 @@ class AuditReport:
     def by_severity(self, severity: str) -> list[Finding]:
         return [finding for finding in self.findings if finding.severity == severity]
 
+    def by_check(self, check_id: str) -> list[Finding]:
+        return [finding for finding in self.findings if finding.check_id == check_id]
+
     def pool_findings(self, pool: str, severity: str | None = None) -> list[Finding]:
         return [
             finding
@@ -313,6 +362,30 @@ def _normalize(text: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     return {token for token in _normalize(text).split() if len(token) > 3}
+
+
+def _latin_jargon(*texts: str) -> list[str]:
+    """Latin-script words that a Russian lesson has not explained.
+
+    The corpus' parse tags are masked out first (a tag written as "-XPPNPM-" is one
+    token), then every parenthetical that also carries Cyrillic - a gloss such as
+    "(лат. viae - дороги)" or "(NIV, ESV, LSB)". What is left must be a siglum, a
+    database name, a scholar's Latin spelling or a Roman numeral.
+    """
+
+    blob = PARSE_TAG_IN_TEXT.sub(" ", " ".join(str(text) for text in texts))
+    for span in PARENTHETICAL.findall(blob):
+        if re.search(r"[\u0400-\u04ff]", span):
+            blob = blob.replace(span, " ")
+    return sorted(
+        {
+            word
+            for word in LATIN_WORD.findall(blob)
+            if word not in ALLOWED_LATIN_WORDS
+            and not PARSE_TAG.match(word)
+            and not ROMAN_NUMERAL.match(word)
+        }
+    )
 
 
 def _visible(card: dict) -> tuple[str, str, str]:
@@ -667,6 +740,28 @@ def _audit_language(card: dict, pool: str) -> list[Finding]:
                     )
                 )
                 break
+    jargon = sorted(set(_latin_jargon(question, options, explanation)))
+    if jargon:
+        findings.append(
+            Finding(
+                "language.latin_jargon",
+                INFO,
+                pool,
+                item,
+                f"Latin-script words outside the allowed register: {jargon[:4]}",
+            )
+        )
+    note = INTERNAL_NOTE_MARKERS.search(f"{question} {options} {explanation}")
+    if note:
+        findings.append(
+            Finding(
+                "language.internal_note",
+                BLOCKER,
+                pool,
+                item,
+                f"a note written for the reviewer reaches the learner: {note.group(0)!r}",
+            )
+        )
     anchored = bool(re.search(r"1\s*Пет|Петра", question))
     if TRIVIA_MARKERS.search(question) and not anchored:
         findings.append(
@@ -894,14 +989,16 @@ def _budget_counts(report: AuditReport) -> dict[str, dict[str, int]]:
 
 
 def citation_verification() -> list[str]:
-    """Rendered status of the two corpus-backed Greek checks.
+    """Rendered status of the corpus-backed checks of the bank's own claims.
 
     The report measures the bank's own claims; this section answers the prior
-    question - were the Greek quotations ever compared with the text? The offline
-    halves of both checkers are cheap, so the report runs them and prints what
-    they see. ``scripts/verify_greek_evidence.py`` covers 1 Peter against the
-    vendored MorphGNT excerpt; ``scripts/verify_lxx_evidence.py`` covers the Old
-    Testament quotations against the citation record of the last corpus run.
+    question - were they ever compared with the text? The offline halves of the
+    checkers are cheap, so the report runs them and prints what they see.
+    ``scripts/verify_greek_evidence.py`` covers 1 Peter against the vendored
+    MorphGNT excerpt; ``scripts/verify_lxx_evidence.py`` covers the Old Testament
+    quotations against the citation record of the last corpus run;
+    ``scripts/verify_parse_claims.py`` compares the parse answer each grammar card
+    keys with the morphology row of the form it quotes.
     """
     from scripts.verify_greek_evidence import (
         EVIDENCE_PATH,
@@ -910,6 +1007,8 @@ def citation_verification() -> list[str]:
         check_quoted_forms,
     )
     from scripts.verify_lxx_evidence import FINGERPRINTS_PATH, check_fingerprints
+    from scripts.verify_parse_claims import audit as parse_claim_findings
+    from scripts.verify_parse_claims import coverage as parse_claim_coverage
 
     lines: list[str] = []
     evidence = Evidence.load(EVIDENCE_PATH)
@@ -941,6 +1040,20 @@ def citation_verification() -> list[str]:
             "  - корпус LXX не вендорится (CC BY-NC-SA/CCAT): хранится запись ссылок и хеш "
             "цитат, `data/ot-citation-fingerprints.json`."
         )
+    parse_rows = parse_claim_findings()
+    parse_stats = parse_claim_coverage()
+    parse_blocking = [finding for finding in parse_rows if finding.severity == "blocking"]
+    parse_manual = [finding for finding in parse_rows if finding.severity == "info"]
+    lines.append(
+        f"- Разбор форм: **{parse_stats['cards_with_parse_claim']}** карточек, у которых ключевой "
+        f"вариант утверждает разбор, сверены с **{parse_stats['corpus_rows']}** строками MorphGNT; "
+        f"расхождений — **{len(parse_blocking)}**."
+    )
+    lines.append(
+        "  - вне машинной сверки: **"
+        f"{len(parse_manual)}** карточек (несколько форм в одном вопросе или форма не названа); "
+        "`scripts/verify_parse_claims.py`, тесты `tests/test_parse_claims.py`."
+    )
     return lines
 
 
@@ -1219,11 +1332,19 @@ def render_markdown(report: AuditReport, *, budget: dict[str, Any] | None = None
     info_checks = Counter(
         finding.check_id for finding in report.by_severity(INFO)
     )
+    jargon_pools = Counter(
+        finding.pool for finding in report.by_check("language.latin_jargon")
+    )
     lines.append(
-        "3. Все прочие находки — INFO-контекст, а не дефекты ("
+        "3. INFO-находки вне пятой главы — контекст, а не дефекты, кроме одной семьи ("
         + ", ".join(f"`{check}` {count}" for check, count in sorted(info_checks.items()))
-        + "): базовые recall-карточки для простых пользователей, метки/ссылки в вариантах, "
-        "для которых выравнивание длины меняло бы сам проверяемый факт, и производные уровни."
+        + "). `language.latin_jargon` — это латиница в тексте для учащихся: "
+        + ", ".join(f"`{pool}` {count}" for pool, count in sorted(jargon_pools.items()))
+        + ". Третью главу локализует параллельная полоса (её строки вне этой ветки), "
+        "пятая ждёт выпускного repin; в остальных пулах счётчик нулевой. Базовые "
+        "recall-карточки для простых пользователей, метки/ссылки в вариантах, для которых "
+        "выравнивание длины меняло бы сам проверяемый факт, и производные уровни — "
+        "осознанный INFO-контекст."
     )
     lines.append(
         "4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` "
