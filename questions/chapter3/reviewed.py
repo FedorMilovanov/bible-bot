@@ -13,6 +13,7 @@ from . import (
     CHAPTER3_SOURCE_CATALOGS,
     CHAPTER3_STAGING_QUESTIONS,
 )
+from ..option_balance_review import apply_option_balance
 
 # No card is silently deleted at this checkpoint. Future editorial removals must
 # be explicit IDs here so staging-vs-reviewed drift stays auditable.
@@ -41,7 +42,9 @@ def _review_copy(item: dict) -> dict:
         reviewed["competitive"] = False
     if reviewed["claim_type"] in {"greek", "history", "application"}:
         reviewed["competitive"] = False
-    return reviewed
+    # The 2026-09 plain-Russian localization lives in the lane sources; the
+    # learner-side option-balance pass keeps correct-answer shape cues out.
+    return apply_option_balance(reviewed)
 
 
 _REVIEWED_SOURCE_ITEMS = [

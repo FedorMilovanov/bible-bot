@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from ..option_balance_review import apply_option_balance
 from .authoring import CHAPTER4_STAGING_QUESTIONS
+from .learner_clarifications import apply_learner_clarifications
 
 # Explicit product quarantine. A non-empty set is allowed only if excluded from
 # the reviewed product aggregate and represented in release audit/dispositions.
@@ -22,7 +24,10 @@ def _review_copy(item: dict) -> dict:
         if "SBLGNT" not in question or "ECM/NA28" not in question:
             reviewed["question"] = f"{question} (SBLGNT vs ECM/NA28)"
     reviewed["competitive"] = False
-    return reviewed
+    # Learner-facing wording and option balance are the last passes: the reviewed
+    # claim, the keyed answer and the verse anchor stay sealed.
+    apply_learner_clarifications(reviewed)
+    return apply_option_balance(reviewed)
 
 
 CHAPTER4_REVIEWED_QUESTIONS = [

@@ -17,6 +17,7 @@ its id here, and any new leak fails the gate.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 from questions import POOL_REGISTRY
@@ -25,6 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _AUDIT_PATH = _REPO_ROOT / "scripts" / "audit_question_quality.py"
 _spec = importlib.util.spec_from_file_location("audit_question_quality", _AUDIT_PATH)
 audit = importlib.util.module_from_spec(_spec)
+sys.modules["audit_question_quality"] = audit
 _spec.loader.exec_module(audit)
 
 REVIEWED_CHAPTER_POOLS = ("chapter2", "chapter3", "chapter4", "chapter5")
@@ -32,16 +34,7 @@ REVIEWED_CHAPTER_POOLS = ("chapter2", "chapter3", "chapter4", "chapter5")
 # Cards still containing internal pipeline vocabulary at the 2026-09 audit.
 # Shrink-only: delete an id when the card is localized/released, never add one
 # without a tracked editorial release (see the audit report).
-PIPELINE_JARGON_GRANDFATHER: frozenset[str] = frozenset({
-    # Chapter 3 jargon debt cleared 2026-09-14: all ch3 cards localized.
-    # Chapter 4 is a sealed reviewed release; its five leaks are retired via
-    # the next reviewed release (digest repin), not edited in place.
-    "ch4_course_003",
-    "ch4_hist_001",
-    "ch4_syn_001",
-    "ch4_tc_001",
-    "ch4_tc_003",
-})
+PIPELINE_JARGON_GRANDFATHER: frozenset[str] = frozenset()  # retired 2026-09-14
 
 
 def _user_text(card: dict) -> str:
@@ -57,9 +50,10 @@ def _pipeline_leak_ids() -> dict[str, str]:
     for pool_key in REVIEWED_CHAPTER_POOLS:
         for card in POOL_REGISTRY[pool_key]:
             text = _user_text(card)
-            for term in audit.PIPELINE_TERMS:
-                if term in text:
-                    leaks[str(card["id"])] = term
+            import re as _re
+            for name, pattern in audit.PIPELINE_MARKERS.items():
+                if _re.search(pattern, text, _re.IGNORECASE):
+                    leaks[str(card["id"])] = name
                     break
     return leaks
 

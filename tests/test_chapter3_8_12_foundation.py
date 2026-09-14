@@ -127,7 +127,7 @@ def test_morphgnt_anchor_forms_are_exact():
 def test_psalm_quote_is_sustained_adaptation_and_exact_differences_are_pinned():
     classification = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_201")
     correct = classification["options"][classification["correct"]]
-    assert "пространная цитата с адаптацией" in correct.casefold()
+    assert "пространная цитата с адаптацией" in correct.casefold()  # noqa: RUF001
     assert "Пс. 33:13\u201317 LXX" in correct
     assert "Пс. 34:12\u201316 в нумерации масоретского текста" in correct
     assert "дослов" not in correct.casefold()

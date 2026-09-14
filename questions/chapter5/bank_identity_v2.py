@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-AGENT3_RAW_BANK_GIT_BLOB_SHA = "628dcdc51d941505a2800551b22c9baf94e43d76"
+AGENT3_RAW_BANK_GIT_BLOB_SHA = "1dbe41b5d296ef9a2738f68f3fef807fde030dce"
 CANONICAL_RELEASE_BANK_GIT_BLOB_SHA = "364c76b853271148a5018a3edb342034685edc9b"
 # Backward-compatible name now identifies the actual canonical runtime surface.
 PRODUCT_BANK_GIT_BLOB_SHA = CANONICAL_RELEASE_BANK_GIT_BLOB_SHA

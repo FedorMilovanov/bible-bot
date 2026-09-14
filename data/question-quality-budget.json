@@ -1,0 +1,63 @@
+{
+  "accepted_blockers": {},
+  "counts": {
+    "depth.recall_only": {
+      "chapter2": 3,
+      "chapter3": 1,
+      "chapter4": 1,
+      "chapter5": 3,
+      "easy_p1": 1,
+      "easy_p2": 1,
+      "geography": 2
+    },
+    "levels.derived_tiers_only": {
+      "chapter2": 1,
+      "chapter3": 1,
+      "chapter4": 1,
+      "chapter5": 1,
+      "easy_p1": 1,
+      "easy_p2": 1,
+      "geography": 1,
+      "hard_p1": 1,
+      "hard_p2": 1,
+      "intro1": 1,
+      "intro2": 1,
+      "intro3": 1,
+      "linguistics_ch1": 1,
+      "linguistics_ch1_2": 1,
+      "linguistics_ch1_3": 1,
+      "medium_p1": 1,
+      "medium_p2": 1,
+      "nero": 1,
+      "practical_p1": 1,
+      "practical_p2": 1,
+      "tms_deep": 1
+    },
+    "metadata.source_quorum": {
+      "chapter5": 6
+    },
+    "wiseness.correct_longest": {
+      "chapter2": 1,
+      "chapter5": 1,
+      "geography": 1,
+      "linguistics_ch1_2": 1
+    },
+    "wiseness.option_shape_spread": {
+      "chapter2": 7,
+      "chapter4": 1,
+      "chapter5": 1,
+      "easy_p1": 5,
+      "easy_p2": 4,
+      "geography": 3,
+      "hard_p1": 1,
+      "hard_p2": 1,
+      "linguistics_ch1": 1,
+      "linguistics_ch1_3": 2,
+      "medium_p1": 3,
+      "nero": 1,
+      "practical_p1": 1
+    }
+  },
+  "note": "Ratchet budget for scripts/audit_question_quality.py. Counts may only shrink; refresh with --write-budget after a reviewed fix.",
+  "schema_version": 1
+}
