@@ -166,10 +166,12 @@ ALLOWED_LATIN_WORDS = frozenset(
         "cessationism",
         # Surnames of the scholars the course names, transliterated in the same
         # sentence. Keeping the Latin spelling lets a reader find the literature.
-        "Achtemeier", "Atkinson", "Best", "Bigg", "Carson", "Cole", "Cross",
+        "Achtemeier", "Atkinson", "Best", "Bigg", "Byrley", "Carson", "Cole", "Cross",
         "Davids", "Donelson", "Elliott", "Fee", "Goppelt", "Grudem", "Hengel",
         "Horrell", "Jobes", "Kelly", "MacArthur", "Marcar", "Michaels", "Moo",
-        "Schreiner", "Selwyn", "Storms", "Williams",
+        "Richards", "Schreiner", "Selwyn", "Stanojevic", "Storms", "Williams",
+        # Canonical sigla and titles intentionally kept searchable as printed.
+        "LSJ", "NET", "Codex", "Editio", "Critica", "Maior",
     }
 )
 # A token is a run of Latin letters and digits that contains at least one letter,
@@ -178,7 +180,7 @@ LATIN_WORD = re.compile(r"(?=[A-Za-z0-9\-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9\-]{1,}
 PARSE_TAG = re.compile(r"^[0-9APMIDXFSON-]{8}$")
 # A tag written with its leading dash ("-XPPNPM-") is one token in the text, so the
 # tags are masked out before the Latin scan instead of being matched token-wise.
-PARSE_TAG_IN_TEXT = re.compile(r"(?<![\w-])[0-9APMIDXFSON-]{8}(?![\w-])")
+PARSE_TAG_IN_TEXT = re.compile(r"(?<![\w-])(?:[A-Z]{1,2}-\s*)?[0-9APMIDXFSON-]{8}(?![\w-])")
 ROMAN_NUMERAL = re.compile(r"^[IVXLC]+$")
 # A parenthetical that also carries a Russian gloss explains its Latin, so the
 # gloss itself is not the pipeline showing through: "(лат. viae — дороги)".
