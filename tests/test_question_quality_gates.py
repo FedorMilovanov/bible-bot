@@ -33,34 +33,9 @@ REVIEWED_CHAPTER_POOLS = ("chapter2", "chapter3", "chapter4", "chapter5")
 # Shrink-only: delete an id when the card is localized/released, never add one
 # without a tracked editorial release (see the audit report).
 PIPELINE_JARGON_GRANDFATHER: frozenset[str] = frozenset({
-    "ch3_app_001",
-    "ch3_app_002",
-    "ch3_app_003",
-    "ch3_app_004",
-    "ch3_app_102",
-    "ch3_app_105",
-    "ch3_disp_001",
-    "ch3_disp_002",
-    "ch3_disp_003",
-    "ch3_disp_004",
-    "ch3_disp_006",
-    "ch3_disp_101",
-    "ch3_disp_104",
-    "ch3_disp_105",
-    "ch3_disp_106",
-    "ch3_disp_201",
-    "ch3_hist_107",
-    "ch3_ot_002",
-    "ch3_ot_003",
-    "ch3_ot_004",
-    "ch3_ot_005",
-    "ch3_ot_102",
-    "ch3_ot_105",
-    "ch3_theol_001",
-    "ch3_theol_003",
-    "ch3_theol_004",
-    "ch3_theol_005",
-    "ch3_theol_302",
+    # Chapter 3 jargon debt cleared 2026-09-14: all ch3 cards localized.
+    # Chapter 4 is a sealed reviewed release; its five leaks are retired via
+    # the next reviewed release (digest repin), not edited in place.
     "ch4_course_003",
     "ch4_hist_001",
     "ch4_syn_001",
