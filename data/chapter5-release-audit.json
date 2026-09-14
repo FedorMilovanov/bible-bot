@@ -167,6 +167,20 @@
     },
     "uniqueOptionSurfaces": 288
   },
+  "semanticReadbackPass4": {
+    "status": "COMPLETE_LANGUAGE_MICRO_REPIN_2026_09",
+    "scope": "learner-language cleanup after reconciliation; one non-key Chapter-5 distractor localized from English textual-criticism jargon to Russian",
+    "authoringBankGitBlobSha": "7a02ccdef4f1089e66a9df263bca683f2b1f0d51",
+    "previousAuthoringBankGitBlobSha": "1dbe41b5d296ef9a2738f68f3fef807fde030dce",
+    "canonicalProjectionBlobSha": "364c76b853271148a5018a3edb342034685edc9b",
+    "projectionModified": false,
+    "localizedCards": ["w3q_068"],
+    "authoritativeSurfaceModified": false,
+    "correctIndexModified": false,
+    "claimMetadataModified": false,
+    "sourcesModified": false,
+    "researchAuthorityModified": false
+  },
   "releaseGates": {
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},

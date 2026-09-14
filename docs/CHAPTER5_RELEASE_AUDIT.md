@@ -136,6 +136,24 @@ authority pins were not weakened.
   citation fingerprints are green; the accepted Greek-debt set is unchanged
   (`w3q_075` ἑστήκατε, `w3q_144` ἐκκλησία).
 
+## Fourth readback — learner-language micro-repin (reconciliation, 2026-09)
+
+The reconciliation audit found one residual English textual-criticism phrase in a
+**wrong option** of `w3q_068`: `variant units`. It was localized to the Russian
+`текстовых единицах` through the same authoring-bank repin boundary rather than
+through a post-review runtime overlay.
+
+- New raw authoring-bank Git blob: **`7a02ccdef4f1089e66a9df263bca683f2b1f0d51`**.
+- Previous raw blob: `1dbe41b5d296ef9a2738f68f3fef807fde030dce`.
+- The canonical projection source `questions/chapter5/bank.py` is unchanged
+  (`364c76b853271148a5018a3edb342034685edc9b`).
+- Only a non-key distractor surface changed. The keyed answer, explanation,
+  question, correct index, claim type/confidence/position, source subset,
+  Research authority, ranking disposition and `competitive=False` invariant
+  are unchanged.
+- No new evidence was invented and no Research edge was added; the six
+  Research-bound source-quorum majors remain governed by the existing ratchet.
+
 ## Exact-head release evidence policy
 
 The tracked release content is complete: both semantic readbacks are closed, both post-green findings are repaired, all 32 prototypes are reconciled, and the frozen product-bank blob is pinned. Exact final PR SHA and CI/Security/CodeQL run evidence intentionally live in PR #29 metadata and GitHub checks rather than in this tracked document: embedding the document's own final SHA would itself create a new commit and invalidate that SHA. Agent 5 should therefore verify the exact PR head recorded in PR #29 and require CI, Security Audit and CodeQL to be green on that same head before integration. The PR remains Draft, and `main` remains untouched until that downstream integration decision.
