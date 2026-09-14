@@ -134,7 +134,7 @@ def test_corrected_options_cite_the_sblgnt_reading():
     assert not any("ἐλευθέρους" in option for option in ch2)
     # 3:19 has πνεύμασιν; the answer may not call the lemma the form.
     ch3 = bank["ch3_disp_001"]
-    assert "πνεύμασιν (lemma πνεῦμα)" in str(ch3["options"][ch3["correct"]])
+    assert "πνεύμασιν (лемма πνεῦμα)" in str(ch3["options"][ch3["correct"]])
 
 
 def test_metadata_claims_do_not_rest_on_pool_aggregates():

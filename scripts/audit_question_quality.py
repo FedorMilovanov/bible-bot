@@ -392,6 +392,7 @@ def _latin_jargon(*texts: str) -> list[str]:
             for word in LATIN_WORD.findall(blob)
             if word.strip("-") not in ALLOWED_LATIN_WORDS
             and not PARSE_TAG.match(word)
+            and not re.fullmatch(r"(?:[ACDNPV]|R[A-Z]?)-?", word)
             and not ROMAN_NUMERAL.match(word.strip("-"))
         }
     )
