@@ -76,7 +76,7 @@ VOICE = {
 }
 MOOD = {
     "I": ("изъявительн", "индикатив", "indicative", "ind."),
-    "D": ("повелительн", "императив", "imperative", "impv."),
+    "D": ("повелительн", "повелит.", "императив", "imperative", "impv."),
     "S": ("сослагательн", "субжунктив", "субъюнктив", "конъюнктив", "subjunctive", "subj."),
     "O": ("оптатив", "optative", "opt."),
     "N": ("инфинитив", "infinitive", "inf."),
@@ -118,6 +118,15 @@ POS = {
     "P": ("предлог", "preposition", "prep."),
     "RA": ("артикль", "article", "art.", "определённый артикль"),
     "R": ("местоимен", "pronoun", "pron."),
+}
+
+# MorphGNT distinguishes pronoun subtypes in the POS column. A personal,
+# demonstrative and relative pronoun can share case/number/gender without being
+# interchangeable distractors, so the checker must preserve that distinction.
+PRONOUN_KIND = {
+    "RP": ("личн", "personal"),
+    "RD": ("указательн", "demonstrative"),
+    "RR": ("относительн", "relative"),
 }
 
 FEATURE_TABLES = (
@@ -230,6 +239,11 @@ def _claimed_features(text: str) -> dict[str, str]:
         if any(_marker_hit(marker, lowered) for marker in markers):
             claimed["pos"] = letter
             break
+    for code, markers in PRONOUN_KIND.items():
+        if any(_marker_hit(marker, lowered) for marker in markers):
+            claimed["pronoun_kind"] = code
+            claimed["pos"] = "R"
+            break
     # "средний" alone is a gender; the voice needs the word "залог" (or English).
     if "voice" in claimed and claimed["voice"] == "M" and not re.search(r"залог|middle voice", lowered):
         claimed.pop("voice")
@@ -322,10 +336,16 @@ def _candidate_forms(text: str, *, min_length: int = 3) -> list[str]:
     return seen
 
 
-def _pos_ok(row: dict, claimed_pos: str | None) -> bool:
+def _pos_ok(
+    row: dict,
+    claimed_pos: str | None,
+    claimed_pronoun_kind: str | None = None,
+) -> bool:
     if claimed_pos is None:
         return True
     pos = str(row.get("pos") or "")
+    if claimed_pronoun_kind is not None:
+        return pos.startswith(claimed_pronoun_kind)
     if claimed_pos == "V":
         return pos.startswith("V")
     if claimed_pos == "R":
@@ -334,11 +354,11 @@ def _pos_ok(row: dict, claimed_pos: str | None) -> bool:
 
 
 def _row_matches(row: dict, claimed: dict[str, str], lemma: str | None) -> bool:
-    if not _pos_ok(row, claimed.get("pos")):
+    if not _pos_ok(row, claimed.get("pos"), claimed.get("pronoun_kind")):
         return False
     code = _features_of_parse_code(row["parse"])
     for name, letter in claimed.items():
-        if name == "pos":
+        if name in {"pos", "pronoun_kind"}:
             continue
         corpus_letter = code.get(name, "-")
         if corpus_letter in ("-", ""):
@@ -352,11 +372,19 @@ def _row_matches(row: dict, claimed: dict[str, str], lemma: str | None) -> bool:
 
 def _specified_conflicts(row: dict, claimed: dict[str, str]) -> list[str]:
     code = _features_of_parse_code(row["parse"])
-    return [
+    conflicts = [
         f"{name}: card {claimed[name]!r} vs corpus {code[name]!r}"
         for name in claimed
-        if name != "pos" and code.get(name) not in ("-", "") and code[name] != claimed[name]
+        if name not in {"pos", "pronoun_kind"}
+        and code.get(name) not in ("-", "")
+        and code[name] != claimed[name]
     ]
+    pronoun_kind = claimed.get("pronoun_kind")
+    if pronoun_kind and not str(row.get("pos") or "").startswith(pronoun_kind):
+        conflicts.append(
+            f"pronoun_kind: card {pronoun_kind!r} vs corpus {str(row.get('pos') or '')!r}"
+        )
+    return conflicts
 
 
 def audit_card(card: dict, pool: str, corpus: dict[tuple[str, str], list[dict]]) -> list[Finding]:

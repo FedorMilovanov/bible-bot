@@ -14,8 +14,9 @@ Two things are pinned beyond the counts:
 * the mutations the checker has to catch - a wrong feature, a wrong lemma, and a
   distractor that restates the corpus parse as a bare label.
 
-Chapter-3 wording is being localized on another branch; nothing here rewrites a
-card. Every claim below is read from the reviewed pools as they are.
+Chapter-3 wording is localized in the reviewed source layers on this branch;
+nothing here rewrites a card. Every claim below is read from the effective
+reviewed pools as they are.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 # Verified coverage. ``cards_with_parse_claim`` counts the cards whose keyed option
 # states morphology for a form that resolves to a corpus row and whose anchor names
 # a 1 Peter verse.
-VERIFIED_CARDS = 101
+VERIFIED_CARDS = 103
 CORPUS_ROWS = 1134
 
 # Cards the checker reports as context instead of verifying, with the reason. A new
@@ -51,7 +52,7 @@ KNOWN_INFO: frozenset[tuple[str, str, str]] = frozenset(
         ("parse.multi_form_card", "chapter3", "ch3_ot_202"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_302"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_305"),
-        ("parse.multi_form_card", "chapter3", "ch3_gr_306"),
+        ("parse.multi_form_card", "chapter3", "ch3_disp_005"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_307"),
         ("parse.multi_form_card", "chapter3", "ch3_gr_308"),
         ("parse.multi_form_card", "chapter3", "ch3_app_301"),
@@ -221,10 +222,31 @@ def test_a_sentence_about_a_form_is_not_a_second_parse_label():
     checker = _checker()
     card = _cards_by_id()["ch3_disp_001"]
     distractor = str(card["options"][0])
-    assert "dat. neut. pl." in distractor
+    distractor_claim = checker._claimed_features(distractor)
+    assert distractor_claim.get("case") == "D"
+    assert distractor_claim.get("number") == "P"
+    assert distractor_claim.get("gender") == "N"
     assert not checker._label_shaped(distractor)
     assert checker._label_shaped("Noun, nom. neut. sg.")
     # The keyed option of a Russian parse card is a label too; it is read from the
     # bank rather than retyped here, so the test cannot drift from the wording.
     russian = _cards_by_id()["ch4_gr_001"]
     assert checker._label_shaped(str(russian["options"][russian["correct"]]))
+
+
+def test_pronoun_subtypes_do_not_collapse_into_duplicate_parse_answers():
+    """Case/number/gender agreement does not erase relative-vs-personal pronoun type."""
+
+    checker = _checker()
+    corpus = checker.load_corpus()
+    card = _cards_by_id()["ch3_gr_010"]
+    keyed = checker._claimed_features(str(card["options"][card["correct"]]))
+    personal = checker._claimed_features(str(card["options"][0]))
+    assert keyed.get("pronoun_kind") == "RR"
+    assert personal.get("pronoun_kind") == "RP"
+    findings = checker.audit_card(card, "chapter3", corpus)
+    assert not [
+        finding
+        for finding in findings
+        if finding.check_id == "parse.distractor_matches_corpus"
+    ], findings

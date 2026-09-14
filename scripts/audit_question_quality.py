@@ -1475,6 +1475,13 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("question-quality budget exceeded:")
             for check_id, pool, current, allowed in over[:40]:
                 print(f"  {check_id} / {pool}: {current} > {allowed}")
+                offenders = [
+                    finding
+                    for finding in report.findings
+                    if finding.check_id == check_id and finding.pool == pool
+                ][:4]
+                for finding in offenders:
+                    print(f"    - {finding.item_id}: {finding.message}")
             if len(over) > 40:
                 print(f"  … {len(over) - 40} more")
             return 1
