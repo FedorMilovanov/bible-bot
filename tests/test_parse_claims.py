@@ -32,7 +32,7 @@ CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 # Verified coverage. ``cards_with_parse_claim`` counts the cards whose keyed option
 # states morphology for a form that resolves to a corpus row and whose anchor names
 # a 1 Peter verse.
-VERIFIED_CARDS = 103
+VERIFIED_CARDS = 108
 CORPUS_ROWS = 1134
 
 # Cards the checker reports as context instead of verifying, with the reason. A new
@@ -47,6 +47,10 @@ KNOWN_INFO: frozenset[tuple[str, str, str]] = frozenset(
         ("parse.card_without_form", "chapter5", "ch5_w3q_069"),
         ("parse.card_without_form", "chapter5", "ch5_w3q_126"),
         ("parse.card_without_form", "chapter5", "ch5_w3q_142"),
+        ("parse.card_without_form", "chapter3", "ch3_theol_201"),
+        ("parse.card_without_form", "chapter5", "ch5_w3q_112"),
+        ("parse.card_without_form", "hard_p1", "hard_deep_04"),
+        ("parse.card_without_form", "hard_p2", "hard17_03"),
         # Several forms are parsed at once ("what do παυσάτω, ἐκκλινάτω ... share").
         ("parse.multi_form_card", "chapter3", "ch3_gr_111"),
         ("parse.multi_form_card", "chapter3", "ch3_ot_202"),
@@ -58,6 +62,8 @@ KNOWN_INFO: frozenset[tuple[str, str, str]] = frozenset(
         ("parse.multi_form_card", "chapter3", "ch3_app_301"),
         ("parse.multi_form_card", "chapter5", "ch5_w3q_084"),
         ("parse.multi_form_card", "chapter5", "ch5_w3q_085"),
+        ("parse.multi_form_card", "linguistics_ch1_2", "ling2_04"),
+        ("parse.multi_form_card", "linguistics_ch1_3", "ling3_14"),
     }
 )
 
@@ -212,26 +218,27 @@ def test_a_label_distractor_cannot_restate_the_corpus_parse():
 
 
 def test_a_sentence_about_a_form_is_not_a_second_parse_label():
-    """ch3_disp_001 quotes the correct dat. neut. pl. inside an overreach.
-
-    The option states the same morphology as the key and is still wrong, because
-    what it asserts is that the morphology decides the interpretation. The checker
-    must not report it as a competing parse answer: only a bare label competes.
-    """
+    """A prose overclaim may quote a correct parse without becoming a second key."""
 
     checker = _checker()
-    card = _cards_by_id()["ch3_disp_001"]
-    distractor = str(card["options"][0])
-    distractor_claim = checker._claimed_features(distractor)
-    assert distractor_claim.get("case") == "D"
-    assert distractor_claim.get("number") == "P"
-    assert distractor_claim.get("gender") == "N"
-    assert not checker._label_shaped(distractor)
-    assert checker._label_shaped("Noun, nom. neut. sg.")
-    # The keyed option of a Russian parse card is a label too; it is read from the
-    # bank rather than retyped here, so the test cannot drift from the wording.
-    russian = _cards_by_id()["ch4_gr_001"]
-    assert checker._label_shaped(str(russian["options"][russian["correct"]]))
+    corpus = checker.load_corpus()
+    card = copy.deepcopy(_cards_by_id()["ch3_gr_010"])
+    keyed = str(card["options"][card["correct"]])
+    prose = (
+        keyed
+        + ", поэтому один этот морфологический разбор якобы обязательно решает "
+          "референт ἐν ᾧ и всю хронологию 3:19"
+    )
+    assert checker._claimed_features(prose) == checker._claimed_features(keyed)
+    assert checker._label_shaped(keyed)
+    assert not checker._label_shaped(prose)
+    card["options"][0] = prose
+    findings = checker.audit_card(card, "chapter3", corpus)
+    assert not [
+        finding
+        for finding in findings
+        if finding.check_id == "parse.distractor_matches_corpus"
+    ], findings
 
 
 def test_pronoun_subtypes_do_not_collapse_into_duplicate_parse_answers():

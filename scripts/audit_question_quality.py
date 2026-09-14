@@ -1479,7 +1479,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                     finding
                     for finding in report.findings
                     if finding.check_id == check_id and finding.pool == pool
-                ][:4]
+                ][:50]
                 for finding in offenders:
                     print(f"    - {finding.item_id}: {finding.message}")
             if len(over) > 40:
