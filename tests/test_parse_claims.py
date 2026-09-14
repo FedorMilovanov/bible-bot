@@ -222,18 +222,18 @@ def test_a_sentence_about_a_form_is_not_a_second_parse_label():
 
     checker = _checker()
     corpus = checker.load_corpus()
-    card = copy.deepcopy(_cards_by_id()["ch3_gr_010"])
+    card = copy.deepcopy(_cards_by_id()["ch4_gr_005"])
     keyed = str(card["options"][card["correct"]])
     prose = (
         keyed
         + ", поэтому один этот морфологический разбор якобы обязательно решает "
-          "референт ἐν ᾧ и всю хронологию 3:19"
+          "всю интерпретацию стиха"
     )
     assert checker._claimed_features(prose) == checker._claimed_features(keyed)
     assert checker._label_shaped(keyed)
     assert not checker._label_shaped(prose)
     card["options"][0] = prose
-    findings = checker.audit_card(card, "chapter3", corpus)
+    findings = checker.audit_card(card, "chapter4", corpus)
     assert not [
         finding
         for finding in findings

@@ -169,7 +169,10 @@ ALLOWED_LATIN_WORDS = frozenset(
         "Achtemeier", "Atkinson", "Best", "Bigg", "Byrley", "Carson", "Cole", "Cross",
         "Davids", "Donelson", "Elliott", "Fee", "Goppelt", "Grudem", "Hengel",
         "Horrell", "Jobes", "Kelly", "MacArthur", "Marcar", "Michaels", "Moo",
-        "Richards", "Schreiner", "Selwyn", "Stanojevic", "Storms", "Williams",
+        "Richards", "Schreiner", "Selwyn", "Stanojevic", "Stanojevi", "Storms", "Williams",
+        "Hallstrom", "Breed", "Strawbridge", "Abbott-Smith", "Milligan", "Moulton",
+        # Named scholarly platforms / source titles intentionally kept searchable.
+        "Perseus", "Scaife", "Coniugalia", "praecepta",
         # Canonical sigla and titles intentionally kept searchable as printed.
         "LSJ", "NET", "Codex", "Editio", "Critica", "Maior",
     }
@@ -177,10 +180,14 @@ ALLOWED_LATIN_WORDS = frozenset(
 # A token is a run of Latin letters and digits that contains at least one letter,
 # so a corpus tag ("2AAD-P--") is seen whole and a bare number is not a word.
 LATIN_WORD = re.compile(r"(?=[A-Za-z0-9\-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9\-]{1,}")
-PARSE_TAG = re.compile(r"^[0-9APMIDXFSON-]{8}$")
-# A tag written with its leading dash ("-XPPNPM-") is one token in the text, so the
-# tags are masked out before the Latin scan instead of being matched token-wise.
-PARSE_TAG_IN_TEXT = re.compile(r"(?<![\w-])(?:[A-Z]{1,2}-\s*)?[0-9APMIDXFSON-]{8}(?![\w-])")
+PARSE_TAG = re.compile(r"^(?=.*-)[0-9A-Z-]{7,10}$")
+# MorphGNT prints POS + an eight-column code in several shapes, for example
+# "V- 3AAD-S--", "RR ----DSN-", "N- ----GSF-" and "-APPGPM-". Mask the complete
+# code before the Latin-word scan; otherwise valid corpus notation becomes fake jargon.
+PARSE_TAG_IN_TEXT = re.compile(
+    r"(?<![\w-])(?:[A-Z]{1,2}-?\s*)?"
+    r"(?=[0-9A-Z-]{7,10}(?![\w-]))(?=[0-9A-Z-]*-)[0-9A-Z-]{7,10}(?![\w-])"
+)
 ROMAN_NUMERAL = re.compile(r"^[IVXLC]+$")
 # A parenthetical that also carries a Russian gloss explains its Latin, so the
 # gloss itself is not the pipeline showing through: "(лат. viae — дороги)".
@@ -383,9 +390,9 @@ def _latin_jargon(*texts: str) -> list[str]:
         {
             word
             for word in LATIN_WORD.findall(blob)
-            if word not in ALLOWED_LATIN_WORDS
+            if word.strip("-") not in ALLOWED_LATIN_WORDS
             and not PARSE_TAG.match(word)
-            and not ROMAN_NUMERAL.match(word)
+            and not ROMAN_NUMERAL.match(word.strip("-"))
         }
     )
 
