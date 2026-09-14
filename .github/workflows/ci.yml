@@ -83,6 +83,12 @@ jobs:
           --extend-per-file-ignores=course_catalog.py:RUF001
           --extend-per-file-ignores=course_catalog.py:UP035
           --extend-per-file-ignores=course_catalog.py:RUF022
+          --extend-per-file-ignores=scripts/audit_question_quality.py:RUF001
+          --extend-per-file-ignores=scripts/verify_lxx_evidence.py:RUF001
+          --extend-per-file-ignores=scripts/verify_greek_evidence.py:RUF001
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF001
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF002
+          --extend-per-file-ignores=scripts/verify_parse_claims.py:RUF003
           --extend-per-file-ignores=telegram_course_surface.py:RUF001
           --extend-per-file-ignores=web_api/routes.py:RUF001
           --output-format=github
@@ -92,6 +98,8 @@ jobs:
         run: python -m compileall -q .
       - name: Run tests
         run: pytest -q
+      - name: Audit production question quality
+        run: python scripts/audit_question_quality.py --check
       - name: Check Mini App JavaScript syntax
         run: |
           node --check miniapp/flow_guard.js

@@ -43,6 +43,62 @@ For historically or exegetically disputed claims use reputable independent schol
 
 If quorum is not met, lower confidence, mark the item contested and non-competitive, or do not publish it.
 
+## Machine-checked Greek evidence
+
+A parsing or quotation claim is checked against the corpus, not against memory:
+
+- `scripts/verify_greek_evidence.py` verifies every `morphgnt` metadata claim of
+  the bank (form, parse, lemma) and every Greek form quoted in the stem of a
+  1 Peter-anchored `text`/`greek` card.
+- `data/morphgnt-1peter-evidence.json` holds the corpus rows those claims rest
+  on. It is an excerpt of the upstream MorphGNT/SBLGNT file and records the
+  upstream URL, the SHA-256 of the file it was read from, and the row counts, so
+  the table can be re-derived.
+- `tests/test_greek_evidence.py` runs the check offline and pins the editorial
+  corrections that came out of it (a genitive read as a dative, a nominative read
+  as a dative plural, `κάλυμμα` for `ἐπικάλυμμα`, `τιμία` for `τιμίῳ`, a
+  nominative title for the dative of 4:19, and two option-level citations).
+
+Review-time refresh, after fetching `81-1Pe-morphgnt.txt`:
+
+```bash
+python scripts/verify_greek_evidence.py --corpus /path/to/81-1Pe-morphgnt.txt
+python scripts/verify_greek_evidence.py --corpus /path/to/81-1Pe-morphgnt.txt --write-evidence
+```
+
+Attribution. The vendored excerpt is a small verbatim selection of the upstream rows and
+records its citation (Tauber, J. K., ed. (2017) *MorphGNT: SBLGNT Edition*, v6.12,
+DOI 10.5281/zenodo.376200) and the upstream licence split: the SBLGNT text is subject to
+the SBLGNT EULA, the parsing and lemmatization are released under CC BY-SA 3.0. It is the
+only vendored corpus - precisely because the Old Testament dataset's terms do not allow
+the same treatment. Review both files if the project ever changes licence or starts
+charging for the course.
+
+Matching tolerates the two differences that do not change the form being cited:
+a word quoted out of its sentence carries an acute where the running text has a
+grave, and a movable nu may be printed or dropped. Accents that mark a different
+form (the circumflex of `διασπορᾶς`, breathing marks) are not tolerated, and a
+form the corpus does not contain is reported.
+
+### Old Testament / LXX quotations
+
+The other half of the bank's Greek is quoted from the Septuagint, so it is checked
+the same way, against a Rahlfs 1935 corpus:
+
+- `scripts/verify_lxx_evidence.py --corpus <text> --versification <map>` reads
+  every Old Testament reference off a card (the anchor plus inline citations such
+  as `Притч. 3:25`), loads those verses, and reports Greek that is in neither the
+  cited verses nor 1 Peter. An option that names a reference and quotes next to it
+  is checked against that reference, which is how a misattributed quotation shows
+  up.
+- The corpus text is **not** vendored: the upstream dataset is CC BY-NC-SA 4.0 and
+  derives from CCAT material with its own access terms. What is committed is
+  `data/ot-citation-fingerprints.json` - the references each card cites, the
+  SHA-256 of the Greek it quotes, and the SHA-256 of the corpus the run used.
+- `tests/test_ot_citations.py` runs offline: if the Greek of one of those cards
+  changed, it fails and asks for a fresh corpus run, so a citation cannot drift
+  away from the text it was verified against.
+
 ## Required metadata
 
 Every canonical production item must resolve:

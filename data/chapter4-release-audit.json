@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "status": "CHAPTER4_V2_SECOND_ADVERSARIAL_PASS_COMPLETE",
+  "status": "CHAPTER4_V3_PLAIN_RUSSIAN_LOCALIZATION_RELEASE_COMPLETE",
   "lineage": {
     "bible_bot_base_sha": "e4dea87d7348ee940bc628f7f8d53379e05a5a3a",
     "research_repository": "FedorMilovanov/Research",
@@ -137,5 +137,25 @@
     "Chapter 4 Research Handoff v2"
   ],
   "merge_authorized": false,
-  "main_mutated": false
+  "main_mutated": false,
+  "third_localization_pass": {
+    "audit_file": "data/chapter4-localization-pass-v3.json",
+    "status": "COMPLETE",
+    "pass_review_id": "ch4-plain-russian-localization-release-v3",
+    "base_exact_head": "c4dea4cd6a07c5549bbf397df4aef6fb56e029e4",
+    "required_cards": 52,
+    "reviewed_cards": 52,
+    "finding_cards_before_fix": 22,
+    "finding_categories": {
+      "ENGLISH_GRAMMAR_ABBREVIATION": 5,
+      "PIPELINE_JARGON": 5,
+      "THIN_EXPLANATION": 2,
+      "UNTRANSLATED_ENGLISH_TERM": 13
+    },
+    "revised_cards": 22,
+    "review_record_id_prefix": "ch4prv3_",
+    "changed_cards_received_new_review_record_ids": true,
+    "keyed_answers_research_claims_and_gameplay_unchanged": true,
+    "open_findings": 0
+  }
 }

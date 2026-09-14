@@ -121,6 +121,66 @@
     "claim_source_depth_lane_scoped", "research_minimum_source_sets_preserved",
     "historical_holds_audit_visible", "wave3n_effective_closures_control_production"
   ],
+  "semanticReadbackPass3": {
+    "status": "COMPLETE_REPIN_2026_09",
+    "scope": "wiseness/wording realignment of all ratcheted non-info Chapter-5 debt; distractors rewritten, correct slots and claim metadata untouched",
+    "authoringBankGitBlobSha": "1dbe41b5d296ef9a2738f68f3fef807fde030dce",
+    "canonicalProjectionBlobSha": "364c76b853271148a5018a3edb342034685edc9b",
+    "projectionModified": false,
+    "realignedCards": 60,
+    "metaStemRewrites": [
+      "w3q_080",
+      "w3q_106",
+      "w3q_111"
+    ],
+    "mixedScriptFixes": {
+      "w3q_049": "Cyrillic «те» inside Greek ποιμάνατε in the explanation corrected to ποιμάνατε"
+    },
+    "closedBlockerDebt": [
+      "w3q_050",
+      "w3q_075",
+      "w3q_111",
+      "w3q_125",
+      "w3q_127",
+      "w3q_143"
+    ],
+    "postPassAudit": {
+      "blocker": 0,
+      "major": 6,
+      "minor": 0,
+      "majorCheck": "metadata.source_quorum"
+    },
+    "remainingMajorCards": [
+      "w3q_054",
+      "w3q_063",
+      "w3q_065",
+      "w3q_080",
+      "w3q_111",
+      "w3q_112"
+    ],
+    "remainingMajorReason": "Final Research v2 claims carry a single reviewed source edge; a second edge requires a new vendored Research release and cannot be added from the product repository.",
+    "correctIndex": {
+      "0": 18,
+      "1": 18,
+      "2": 18,
+      "3": 18
+    },
+    "uniqueOptionSurfaces": 288
+  },
+  "semanticReadbackPass4": {
+    "status": "COMPLETE_LANGUAGE_MICRO_REPIN_2026_09",
+    "scope": "learner-language cleanup after reconciliation; one non-key Chapter-5 distractor localized from English textual-criticism jargon to Russian",
+    "authoringBankGitBlobSha": "7a02ccdef4f1089e66a9df263bca683f2b1f0d51",
+    "previousAuthoringBankGitBlobSha": "1dbe41b5d296ef9a2738f68f3fef807fde030dce",
+    "canonicalProjectionBlobSha": "364c76b853271148a5018a3edb342034685edc9b",
+    "projectionModified": false,
+    "localizedCards": ["w3q_068"],
+    "authoritativeSurfaceModified": false,
+    "correctIndexModified": false,
+    "claimMetadataModified": false,
+    "sourcesModified": false,
+    "researchAuthorityModified": false
+  },
   "releaseGates": {
     "firstGreenHead": "54a8d2d69209b4e900a7ed6e1134365cc9b9b4f8",
     "firstGreen": {"ci": "SUCCESS", "securityAudit": "SUCCESS", "codeql": "SUCCESS"},

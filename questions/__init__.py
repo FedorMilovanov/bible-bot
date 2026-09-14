@@ -25,6 +25,7 @@ from .chapter3.ranking_authority import CHAPTER3_RANKING_AUTHORIZED_IDS
 from .chapter3.reviewed import CHAPTER3_REVIEWED_QUESTIONS
 from .chapter4.reviewed import CHAPTER4_REVIEWED_QUESTIONS
 from .chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
+from .chapter1_tms_deep import CHAPTER1_TMS_DEEP as _raw_tms_deep
 from .content_truth import RANKING_QUARANTINE_IDS, curate_pool
 from .content_truth_review import apply_review_overrides
 from .intro import (
@@ -32,12 +33,25 @@ from .intro import (
     intro_part2_questions as _raw_intro2,
     intro_part3_questions as _raw_intro3,
 )
+from .intro_balance_review import apply_intro_balance
+from .option_balance_review import apply_option_balance
+from .option_order_review import apply_option_order
+from .project_position_label import apply_project_position_label
 from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
+from . import review_composition_2026_09 as _review_composition_2026_09
 from .source_registry import SOURCE_CATALOG
 
 
 def _canonical(raw: list[dict], key: str) -> list[dict]:
-    return apply_review_overrides(curate_pool(raw, pool_key=key))
+    reviewed = apply_review_overrides(curate_pool(raw, pool_key=key))
+    # Learner-facing option balance is the last wording pass: it replaces
+    # distractors only and never touches the reviewed correct option.
+    return [
+        apply_option_order(
+            apply_option_balance(apply_intro_balance(apply_project_position_label(question)))
+        )
+        for question in reviewed
+    ]
 
 
 # Production-facing canonical leaf pools. Raw chapter1.py/intro.py remain an
@@ -58,6 +72,7 @@ geography_questions = _canonical(_raw_geography, "geography")
 intro_part1_questions = _canonical(_raw_intro1, "intro1")
 intro_part2_questions = _canonical(_raw_intro2, "intro2")
 intro_part3_questions = _canonical(_raw_intro3, "intro3")
+tms_deep_questions = _canonical(_raw_tms_deep, "tms_deep")
 
 # Chapters 2-5 cross the product boundary only through reviewed aggregates.
 # Their normal-learning pools remain non-scoring through questions.pool_policy.
@@ -88,6 +103,7 @@ _POOLS: dict[str, list[dict]] = {
     "intro1": intro_part1_questions,
     "intro2": intro_part2_questions,
     "intro3": intro_part3_questions,
+    "tms_deep": tms_deep_questions,
     "chapter2": chapter2_questions,
     "chapter3": chapter3_questions,
     "chapter4": chapter4_questions,
@@ -317,6 +333,7 @@ __all__ = [
     "intro_part1_questions",
     "intro_part2_questions",
     "intro_part3_questions",
+    "tms_deep_questions",
     "chapter2_questions",
     "chapter3_questions",
     "chapter4_questions",

@@ -1,11 +1,16 @@
 """Production lifecycle exports for 1 Peter Chapter 4."""
 
 from .authoring import CHAPTER4_STAGING_QUESTIONS, answer_position_counts
+from .localization_pass import apply_localization_card_revisions
 from .second_pass_revisions import apply_second_pass_card_revisions
 
 # Required second adversarial content pass is sequenced after first-green exact
 # head 2f9ae1cb... and before the reviewed/ranking product boundary is built.
 apply_second_pass_card_revisions(CHAPTER4_STAGING_QUESTIONS)
+
+# Third content-pass release: plain-Russian localization, sealed with new
+# ch4prv3_ review-record IDs/content digests (base head c4dea4c...).
+apply_localization_card_revisions(CHAPTER4_STAGING_QUESTIONS)
 
 # Preserve compatibility for modules that import questions.chapter4.review_registry:
 # changed cards now resolve to their post-green immutable record IDs/digests.

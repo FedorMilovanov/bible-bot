@@ -1,0 +1,507 @@
+{
+  "schema_version": 3,
+  "audit_id": "CHAPTER4-PLAIN-RUSSIAN-LOCALIZATION-RELEASE-V3",
+  "pass_review_id": "ch4-plain-russian-localization-release-v3",
+  "base_exact_head": "c4dea4cd6a07c5549bbf397df4aef6fb56e029e4",
+  "prior_pass": "chapter4-second-adversarial-content-pass-v2",
+  "reviewer": {
+    "reviewer_id": "chapter4-plain-russian-localization-release-agent",
+    "reviewer_role": "independent_reader_voice_localization_review"
+  },
+  "cards_reviewed": 52,
+  "finding_cards_before_fix": 22,
+  "finding_categories": {
+    "ENGLISH_GRAMMAR_ABBREVIATION": 5,
+    "PIPELINE_JARGON": 5,
+    "THIN_EXPLANATION": 2,
+    "UNTRANSLATED_ENGLISH_TERM": 13
+  },
+  "open_findings": 0,
+  "invariants_preserved": {
+    "keyed_answers_unchanged": true,
+    "research_claims_and_edges_unchanged": true,
+    "confidence_position_claim_type_unchanged": true,
+    "learning_only_non_competitive": true,
+    "absolute_certainty_distractors_absent": true,
+    "severe_answer_length_cueing_cases": 0,
+    "correct_option_longest_after": 29
+  },
+  "checks_applied_to_every_record": [
+    "stem_correct",
+    "four_distinct_plausible_options",
+    "one_unambiguous_best_answer",
+    "explanation_within_evidence",
+    "no_pipeline_jargon",
+    "no_untranslated_english_terms",
+    "no_english_grammar_abbreviations",
+    "no_absolute_certainty_distractor",
+    "project_position_not_disguised_as_neutral",
+    "edition_flattening_absent",
+    "morphology_to_exegesis_laundering_absent"
+  ],
+  "records": [
+    {
+      "product_card_id": "ch4_text_001",
+      "product_review_record_id": "ch4prv2_ch4_text_001_80e6ba918afa",
+      "product_card_content_digest_sha256": "80e6ba918afa9a733c0625b9c2ff63eddf1240192bde07f16c8183a796b10e46",
+      "research_claim_id": "w3q_001",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_gr_001",
+      "product_review_record_id": "ch4prv3_ch4_gr_001_6133cf6e316f",
+      "product_card_content_digest_sha256": "6133cf6e316fe5d0da4da5bc1337c5d836fd36c332114f32c43641cc0260c3c4",
+      "research_claim_id": "w3q_003",
+      "finding_codes_before_fix": [
+        "ENGLISH_GRAMMAR_ABBREVIATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_002",
+      "product_review_record_id": "ch4prv2_ch4_text_002_dac12365508f",
+      "product_card_content_digest_sha256": "de6c2e050a3466edd3d02fc76ca008d7eeabbc0eb854a619941667f31b38aeff",
+      "research_claim_id": "w3q_005",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_003",
+      "product_review_record_id": "ch4prv2_ch4_text_003_f20fe1f7fba1",
+      "product_card_content_digest_sha256": "675ac2beb5f8bb459383f6123456d5171186e7336fd5766bf020d62aa97167e0",
+      "research_claim_id": "w3q_008",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_gr_002",
+      "product_review_record_id": "ch4prv3_ch4_gr_002_4a4726799feb",
+      "product_card_content_digest_sha256": "4a4726799febc2aee2fa8ac01cb5664a6091c9aff7955bf915f6bec61251c66a",
+      "research_claim_id": "w3q_011",
+      "finding_codes_before_fix": [
+        "ENGLISH_GRAMMAR_ABBREVIATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_004",
+      "product_review_record_id": "ch4prv2_ch4_text_004_7a60693f9960",
+      "product_card_content_digest_sha256": "e3fabddb9c5d4c2a858f4445a68718b9ff5e91a5b634666d60f6774f5ed12822",
+      "research_claim_id": "w3q_016",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_005",
+      "product_review_record_id": "ch4prv2_ch4_text_005_f196560668fb",
+      "product_card_content_digest_sha256": "26d70df7d466c4c9a02d0e5a08f48a3ccb1b83e696cb164f39ef055e5341c16c",
+      "research_claim_id": "w3q_018",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_ot_001",
+      "product_review_record_id": "ch4prv3_ch4_ot_001_d0e7784b3fb7",
+      "product_card_content_digest_sha256": "d0e7784b3fb7dbafad6ab13e429e347546e0f05d2df8ae45e079c9046f216e9e",
+      "research_claim_id": "w3q_019",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_006",
+      "product_review_record_id": "ch4prv3_ch4_text_006_e7c31fcfdb94",
+      "product_card_content_digest_sha256": "e7c31fcfdb94a1f8efac0b950341a2ba09f858065ee0644e4e0f8eb278e05d40",
+      "research_claim_id": "w3q_021",
+      "finding_codes_before_fix": [
+        "THIN_EXPLANATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_007",
+      "product_review_record_id": "ch4prv2_ch4_text_007_21aa15da10c7",
+      "product_card_content_digest_sha256": "bbc8117114fd453689ba576f4e450ef4c3c47822298d307464cbf7e30c5b8038",
+      "research_claim_id": "w3q_023",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_gr_003",
+      "product_review_record_id": "ch4prv2_ch4_gr_003_bdbfb5e31110",
+      "product_card_content_digest_sha256": "bdbfb5e311109c6fdbf5e4b7b53a6353734109c137b13884686ee713ebb11e02",
+      "research_claim_id": "w3q_029",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_008",
+      "product_review_record_id": "ch4prv2_ch4_text_008_48451cb15551",
+      "product_card_content_digest_sha256": "73d3c6dd8182f7e9392924dacb915ecd11c968c5f47485778f3e21d4cc75b71a",
+      "research_claim_id": "w3q_030",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_009",
+      "product_review_record_id": "ch4prv2_ch4_text_009_1c864b85e921",
+      "product_card_content_digest_sha256": "cdd99ce0eb2a667fb7f872429ec2509bf793fe92844081fde1d0b0e553bfbae3",
+      "research_claim_id": "w3q_032",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_010",
+      "product_review_record_id": "ch4prv2_ch4_text_010_b821eff88965",
+      "product_card_content_digest_sha256": "056ee49fd446fa9ca1e54210a7c5cc39a0b9350cc4b5a025c6ddf7496ee6c0d7",
+      "research_claim_id": "w3q_034",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_ot_002",
+      "product_review_record_id": "ch4prv2_ch4_ot_002_fb61f489fa4f",
+      "product_card_content_digest_sha256": "e5153b7d69ff47a539d3fc4e8b657196be28c0987ea9f1e93f32f8f317c74f12",
+      "research_claim_id": "w3q_039",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_theol_001",
+      "product_review_record_id": "ch4prv3_ch4_theol_001_104ca654e305",
+      "product_card_content_digest_sha256": "104ca654e3051631c5016ecbba1344de21fe7e03673ec3e09c2fa836d9a79a80",
+      "research_claim_id": "w3q_041",
+      "finding_codes_before_fix": [
+        "THIN_EXPLANATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_disputed_001",
+      "product_review_record_id": "ch4prv3_ch4_disputed_001_373507b86f2a",
+      "product_card_content_digest_sha256": "373507b86f2a7161cf62be94c47057121e2a1297979471dc7e940808b43e1366",
+      "research_claim_id": "w3q_004",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_syn_001",
+      "product_review_record_id": "ch4prv3_ch4_syn_001_2e33c544e74d",
+      "product_card_content_digest_sha256": "2e33c544e74df0bcc454433003b0ce532a152cd61edb07c2fc9c64c687b64873",
+      "research_claim_id": "w3q_009",
+      "finding_codes_before_fix": [
+        "PIPELINE_JARGON"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_disputed_002",
+      "product_review_record_id": "ch4prv2_ch4_disputed_002_a0cfedc0aa6d",
+      "product_card_content_digest_sha256": "a0cfedc0aa6d41e1c05ad24ea067177f609131c0736254b9492cd3cbc94c3a3b",
+      "research_claim_id": "w3q_012",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_course_001",
+      "product_review_record_id": "ch4prv2_ch4_course_001_e918e18d4541",
+      "product_card_content_digest_sha256": "e918e18d454146be95edde0241c47637f2738056cd4e01846a6405d2308d393f",
+      "research_claim_id": "w3q_013",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_disputed_003",
+      "product_review_record_id": "ch4prv2_ch4_disputed_003_5d2d1efe100c",
+      "product_card_content_digest_sha256": "5d2d1efe100c83fc8ebcd04871c0c728103bc15da01980b0fc97ce0f1150eb97",
+      "research_claim_id": "w3q_014",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_course_002",
+      "product_review_record_id": "ch4prv3_ch4_course_002_0828740833df",
+      "product_card_content_digest_sha256": "0828740833df1c8b62518c1a27d87104ddd6cd4e87aeea4f3ed0dc82bf289aba",
+      "research_claim_id": "w3q_017",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_disputed_004",
+      "product_review_record_id": "ch4prv2_ch4_disputed_004_c2a597bed270",
+      "product_card_content_digest_sha256": "c2a597bed270f63e1753e8a38b803b648a64ac0c0a97c0d7ed0776744a85f35a",
+      "research_claim_id": "w3q_020",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_hist_001",
+      "product_review_record_id": "ch4prv3_ch4_hist_001_14383875977b",
+      "product_card_content_digest_sha256": "14383875977b6fa3e31ecf90af0da5eecbf1f5693e5b8ca6f931f4c2d974f5ed",
+      "research_claim_id": "w3q_022",
+      "finding_codes_before_fix": [
+        "PIPELINE_JARGON"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_disputed_005",
+      "product_review_record_id": "ch4prv2_ch4_disputed_005_28157dfdbb55",
+      "product_card_content_digest_sha256": "f6717f35cbfc99d99b22f265f966fd89d47d135d0a6b47cf13b3448bbae42b01",
+      "research_claim_id": "w3q_025",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_course_003",
+      "product_review_record_id": "ch4prv3_ch4_course_003_79f89b3b716c",
+      "product_card_content_digest_sha256": "79f89b3b716c7559b62bc839256983fd3ebbfb9cfb7654fa2ed49102c644a77d",
+      "research_claim_id": "w3q_027",
+      "finding_codes_before_fix": [
+        "PIPELINE_JARGON",
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_disputed_006",
+      "product_review_record_id": "ch4prv3_ch4_disputed_006_87c576876859",
+      "product_card_content_digest_sha256": "87c5768768594fb3861f8cd1def9f9b328699ada905794405e79dabec53eac1e",
+      "research_claim_id": "w3q_033",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_hist_002",
+      "product_review_record_id": "ch4prv2_ch4_hist_002_899cff312f3a",
+      "product_card_content_digest_sha256": "2a30913b31b3da09fc58612a7301382dc32bf31401deb8ed535c4a5b797dc167",
+      "research_claim_id": "w3q_035",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_tc_001",
+      "product_review_record_id": "ch4prv3_ch4_tc_001_4d616016194d",
+      "product_card_content_digest_sha256": "4d616016194d568e81cb47d2b9e1e44b8583e20bc69e4cf3f1650882ea498713",
+      "research_claim_id": "w3q_121",
+      "finding_codes_before_fix": [
+        "PIPELINE_JARGON",
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_tc_002",
+      "product_review_record_id": "ch4prv3_ch4_tc_002_0a1b7e7bdb74",
+      "product_card_content_digest_sha256": "0a1b7e7bdb7410b8e855622917bbc502762f71d5d87c7afacb06fd7e26a2be71",
+      "research_claim_id": "w3q_122",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_ot_003",
+      "product_review_record_id": "ch4prv3_ch4_ot_003_a1c91a0cd462",
+      "product_card_content_digest_sha256": "a1c91a0cd4629772d1f1c284d44241c4c307342be30cc428678e6f300c867fcc",
+      "research_claim_id": "w3q_038",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_ot_004",
+      "product_review_record_id": "ch4prv3_ch4_ot_004_1048987c3f26",
+      "product_card_content_digest_sha256": "1048987c3f26fc21356b4f106cbd4570f72ff2b9edc623206e3b9aaad02e34d3",
+      "research_claim_id": "w3q_040",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_gr_004",
+      "product_review_record_id": "ch4prv3_ch4_gr_004_44df0df0a89c",
+      "product_card_content_digest_sha256": "44df0df0a89c66b4dad47aaff6814c0b8f2e797d32209f33e16ee2640d992b6d",
+      "research_claim_id": "w3q_002",
+      "finding_codes_before_fix": [
+        "ENGLISH_GRAMMAR_ABBREVIATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_011",
+      "product_review_record_id": "ch4prv3_ch4_text_011_59b6a97be25f",
+      "product_card_content_digest_sha256": "59b6a97be25f1b258bc33c7426bd162ddab6e5b5c436676a438588cf83a00684",
+      "research_claim_id": "w3q_006",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_text_012",
+      "product_review_record_id": "ch4prv2_ch4_text_012_8e33b1ff865a",
+      "product_card_content_digest_sha256": "8e33b1ff865ab7d7af012d88b74577e27e5186352f8c617adebeb491c0b6f22b",
+      "research_claim_id": "w3q_010",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_gr_005",
+      "product_review_record_id": "ch4prv3_ch4_gr_005_4dafd95ae702",
+      "product_card_content_digest_sha256": "4dafd95ae702e208ffe1c378140264bff43cb285684d7c75b4a640318e956d2e",
+      "research_claim_id": "w3q_015",
+      "finding_codes_before_fix": [
+        "ENGLISH_GRAMMAR_ABBREVIATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_lex_001",
+      "product_review_record_id": "ch4prv2_ch4_lex_001_c5f7007107e1",
+      "product_card_content_digest_sha256": "c965ce14f2526c3df24d4a2fa734a4566385567b85eb902614ad51bb554d0748",
+      "research_claim_id": "w3q_024",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_theol_002",
+      "product_review_record_id": "ch4prv2_ch4_theol_002_f0958fe91e94",
+      "product_card_content_digest_sha256": "2b0608938cfba7ea560f46f27ca1acd5630dfd3fcb6ce3c98cf4f60e813a04b0",
+      "research_claim_id": "w3q_026",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_text_013",
+      "product_review_record_id": "ch4prv2_ch4_text_013_de343753c5d4",
+      "product_card_content_digest_sha256": "005ba566ddfde59ffd5a4cee62e6b55df32bab91deb53a9f55efefdfe3cc8fba",
+      "research_claim_id": "w3q_028",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_tc_003",
+      "product_review_record_id": "ch4prv3_ch4_tc_003_e0004f9984bf",
+      "product_card_content_digest_sha256": "e0004f9984bfcc844ac2e9821e4b52954dbeec9ab5ca9a27587c3c568e743744",
+      "research_claim_id": "w3q_031",
+      "finding_codes_before_fix": [
+        "PIPELINE_JARGON",
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_theol_003",
+      "product_review_record_id": "ch4prv2_ch4_theol_003_4a3042af3eca",
+      "product_card_content_digest_sha256": "1e43113750ac96c1d70ea2b09d4d7d91885a96d805bfad2de65175b1535e59c8",
+      "research_claim_id": "w3q_037",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_app_001",
+      "product_review_record_id": "ch4prv2_ch4_app_001_77050f91880a",
+      "product_card_content_digest_sha256": "3f5ac722cccfcc3e5de4a2255ef8c305c3d9b61b202af42911a0a477cc7eedfd",
+      "research_claim_id": "w3q_042",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_syn_002",
+      "product_review_record_id": "ch4prv2_ch4_syn_002_1b894d84fed9",
+      "product_card_content_digest_sha256": "3b5c37f110318e46914d5f8498882772170bcf0ef92d228db5e57d030daf51b9",
+      "research_claim_id": "w3q_091",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_gr_006",
+      "product_review_record_id": "ch4prv3_ch4_gr_006_14acb4f60f24",
+      "product_card_content_digest_sha256": "14acb4f60f24bc643c3a0c62ffba18571245dca011800b76ae006baa24f88ac2",
+      "research_claim_id": "w3q_093",
+      "finding_codes_before_fix": [
+        "ENGLISH_GRAMMAR_ABBREVIATION"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_hist_003",
+      "product_review_record_id": "ch4prv3_ch4_hist_003_bd85d49ee40b",
+      "product_card_content_digest_sha256": "bd85d49ee40bccfd71399fb6e8404ada7c0daa1a1b0737b37e7e771d33f5198c",
+      "research_claim_id": "w3q_113",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_hist_004",
+      "product_review_record_id": "ch4prv2_ch4_hist_004_1150f1da19e1",
+      "product_card_content_digest_sha256": "50fd0dfa99c88737fe191067848bd6092d01a834b32c6d4bb846f99e2421ca69",
+      "research_claim_id": "w3q_116",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_lex_002",
+      "product_review_record_id": "ch4prv3_ch4_lex_002_f08f7e947d34",
+      "product_card_content_digest_sha256": "f08f7e947d34eb77f16ba4ca7004437a7be2444187d5ba25c8404ef32b406f1b",
+      "research_claim_id": "w3q_130",
+      "finding_codes_before_fix": [
+        "UNTRANSLATED_ENGLISH_TERM"
+      ],
+      "decision": "PASS_AFTER_REVISION"
+    },
+    {
+      "product_card_id": "ch4_tc_004",
+      "product_review_record_id": "ch4prv2_ch4_tc_004_3fbdf0e27d8e",
+      "product_card_content_digest_sha256": "893117c311e5149e96d07dc77fc7c1f13f839c543bb01e70f7bbd5ba82677683",
+      "research_claim_id": "w3q_137",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_app_002",
+      "product_review_record_id": "ch4prv2_ch4_app_002_66b3b0a4d48d",
+      "product_card_content_digest_sha256": "66b3b0a4d48df14fed41649f5e299ed573ededecbca6188e01a17f8211434a8a",
+      "research_claim_id": "w3q_097",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_app_003",
+      "product_review_record_id": "ch4prv2_ch4_app_003_175900c71ab1",
+      "product_card_content_digest_sha256": "645d9c7770fc4ea1966fa51d201e0daa0d33b7f7ced07c77e32153ffa75cbd32",
+      "research_claim_id": "w3q_100",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_app_004",
+      "product_review_record_id": "ch4prv2_ch4_app_004_2a65275a44b6",
+      "product_card_content_digest_sha256": "2a65275a44b6bd1946510c9d23946af51aaaef325c483ad4747cfa6a9620865d",
+      "research_claim_id": "w3q_102",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    },
+    {
+      "product_card_id": "ch4_app_005",
+      "product_review_record_id": "ch4prv2_ch4_app_005_63515b25e0c4",
+      "product_card_content_digest_sha256": "63515b25e0c4417875beb1c5ecded5e07f4a38dd98c524468d5f6a7f09b1b06c",
+      "research_claim_id": "w3q_103",
+      "finding_codes_before_fix": [],
+      "decision": "PASS"
+    }
+  ]
+}

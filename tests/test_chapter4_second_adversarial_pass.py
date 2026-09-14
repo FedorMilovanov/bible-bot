@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 from questions.chapter4.authoring import CHAPTER4_STAGING_QUESTIONS
+from questions.chapter4.final_review_registry import FIRST_GREEN_REVIEW_BY_CARD_ID
+from questions.chapter4.localization_pass import REVIEW_RECORD_REVISIONS_3
 from questions.chapter4.review_registry import PRODUCT_REVIEW_BY_CARD_ID
+from questions.chapter4.second_pass_revisions import REVIEW_RECORD_REVISIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +13,18 @@ AUDIT = json.loads(
     (ROOT / "data" / "chapter4-second-adversarial-pass-v2.json").read_text(
         encoding="utf-8"
     )
+)
+
+# Immutable post-pass-2 record IDs, reconstructed historically: first-green
+# records with the second-pass revisions overlaid.  The third (localization)
+# pass later re-seals a subset of cards, so final runtime IDs are not a valid
+# oracle for this historical audit.
+POST_PASS_TWO_RECORD_IDS = {
+    card_id: FIRST_GREEN_REVIEW_BY_CARD_ID[card_id]["product_review_record_id"]
+    for card_id in FIRST_GREEN_REVIEW_BY_CARD_ID
+}
+POST_PASS_TWO_RECORD_IDS.update(
+    {card_id: record_id for card_id, (record_id, _digest) in REVIEW_RECORD_REVISIONS.items()}
 )
 
 
@@ -33,16 +48,25 @@ def test_second_pass_is_post_first_green_and_covers_52_of_52():
     assert len({row["research_claim_id"] for row in AUDIT["records"]}) == 52
 
 
-def test_second_pass_records_resolve_to_final_runtime_and_review_registry():
+def test_second_pass_records_resolve_to_their_pass_and_to_final_runtime():
     cards = {card["id"]: card for card in CHAPTER4_STAGING_QUESTIONS}
     assert set(cards) == {row["product_card_id"] for row in AUDIT["records"]}
     for row in AUDIT["records"]:
-        card = cards[row["product_card_id"]]
-        review = PRODUCT_REVIEW_BY_CARD_ID[row["product_card_id"]]
-        assert row["product_review_record_id"] == card["review_record_id"]
-        assert row["product_review_record_id"] == review["product_review_record_id"]
+        card_id = row["product_card_id"]
+        card = cards[card_id]
+        review = PRODUCT_REVIEW_BY_CARD_ID[card_id]
+        # The audit pins the immutable state at the close of pass two.
+        assert row["product_review_record_id"] == POST_PASS_TWO_RECORD_IDS[card_id]
         assert row["research_claim_id"] == review["research_claim_id"]
         assert row["decision"] in {"PASS", "PASS_AFTER_REVISION"}
+        if card_id in REVIEW_RECORD_REVISIONS_3:
+            # The localization release superseded the pass-two seal on these
+            # cards; the final runtime carries the new ch4prv3_ seal.
+            assert card["review_record_id"].startswith("ch4prv3_")
+            assert card["review_record_id"] == review["product_review_record_id"]
+        else:
+            assert row["product_review_record_id"] == card["review_record_id"]
+            assert row["product_review_record_id"] == review["product_review_record_id"]
 
 
 def test_second_pass_cueing_finding_is_resolved_to_zero_severe_cases():

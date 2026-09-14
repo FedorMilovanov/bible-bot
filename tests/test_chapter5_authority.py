@@ -54,7 +54,12 @@ def test_5_12_card_distinguishes_ecm_based_treatment():
     card = next(q for q in CHAPTER5_REVIEWED_QUESTIONS if q["research_candidate_id"] == "w3q_075")
     text = " ".join([card["question"], card["explanation"], *card["options"]])
     assert "στῆτε" in text and "ἑστήκατε" in text
-    assert "direct dECM" in text
+    # Русская пользовательская поверхность обязана отличать опору на
+    # опубликованное исследование по Editio Critica Maior от заявления, будто
+    # курс сам выполнил полную сверку всех рукописей (прежняя английская
+    # формулировка этой границы — «direct dECM»).
+    assert "не выполняли самостоятельной полной сверки" in text
+    assert "рукопис" in text.lower()
 
 
 def test_every_card_source_id_is_lane_known():

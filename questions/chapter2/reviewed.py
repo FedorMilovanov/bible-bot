@@ -18,6 +18,8 @@ from .history_bodily_suffering import HISTORY_BODILY_2_18_25
 from .history_exiles_2_11 import HISTORY_EXILES_2_11
 from .history_oiketai import HISTORY_OIKETAI_2_18
 from .history_roman_2_13_14 import HISTORY_ROMAN_2_13_14
+from ..option_balance_review import apply_option_balance
+from ..option_order_review import apply_option_order
 from .quality_overrides import apply_quality_overrides
 from .theology_civil import THEOLOGY_CIVIL_2_13_17
 from .theology_people_text import THEOLOGY_PEOPLE_TEXT
@@ -47,8 +49,11 @@ _REVIEWED_SOURCE_ITEMS = [
     if item["id"] not in CHAPTER2_REVIEW_QUARANTINE_IDS
 ]
 
+# Learner-facing wording passes are last: balance replaces distractors only and
+# leaves the reviewed answer, stem, explanation, verse and sources intact, then the
+# answer-position balance rotates the four options (content unchanged).
 CHAPTER2_REVIEWED_QUESTIONS = [
-    apply_quality_overrides(deepcopy(item))
+    apply_option_order(apply_option_balance(apply_quality_overrides(deepcopy(item))))
     for item in _REVIEWED_SOURCE_ITEMS
 ]
 

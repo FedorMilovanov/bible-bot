@@ -94,6 +94,66 @@ Before an answer is accepted, Mini App `public_question()` exposes exactly `id`,
 
 The v2 suite rejects stale authority digest, wrong claim digest, fabricated inspection edge, a source borrowed from the wrong 5:2 textual unit, direct-dECM wording from ECM-based evidence, manuscript-unanimity wording, project→neutral relabelling, claim-type/confidence strengthening, `competitive=True`, Challenge/fallback leakage, canonical whitespace/padding, duplicated option surfaces, wrong answer-position metadata and pre-answer public-API leakage. It also has an explicit post-green regression that requires the Research minimum source sets for `w3q_095` and `w3q_127` to survive in card/review/edge provenance.
 
+## Third readback — wiseness/wording realignment repin (quality pass, 2026-09)
+
+A third reviewed pass addressed the ratcheted quality debt recorded in
+`data/question-quality-budget.json`. It was performed entirely through the
+authoring bank and the normal repin path; the review contract and the Research
+authority pins were not weakened.
+
+- Agent-3 raw authoring bank repinned to Git blob **`1dbe41b5d296ef9a2738f68f3fef807fde030dce`**
+  (`AGENT3_RAW_BANK_GIT_BLOB_SHA`).
+- The canonical release projection `questions/chapter5/bank.py` was **not**
+  modified: its blob remains `364c76b853271148a5018a3edb342034685edc9b`, because
+  the projection code and the Research-driven source narrowing are unchanged.
+- Across **60** cards the four-option sets were rewritten as comparable,
+  concrete, non-trivial competitors: answer-position slots, correct-index
+  metadata, questions (except the three meta-stems below), explanations,
+  `claim_type`, `confidence`, `position` and `competitive` were left untouched.
+- Three meta-questions (`w3q_080`, `w3q_106`, `w3q_111`) had their stems
+  de-cued: cueing phrases such as «как корректно» / «как позиция курса» and
+  closure-of-manuscript-variant wording were removed without losing the
+  project-position label where required.
+- A residual mixed-script typo in the `w3q_049` explanation (Cyrillic «те»
+  inside the Greek form, «ποιμάναте») was corrected to ποιμάνατε, matching
+  MorphGNT/SBLGNT and the already-corrected stem.
+- After the pass the audit reports **blocker = 0, major = 6**: the six blocker
+  debts (`w3q_050`, `w3q_075`, `w3q_111`, `w3q_125`, `w3q_127`, `w3q_143`) are
+  closed, and the explicit `CHAPTER5_REPIN_DEBT` list and the budget's
+  `accepted_blockers` are now empty.
+- The only remaining findings are six `metadata.source_quorum` majors
+  (`w3q_054`, `w3q_063`, `w3q_065`, `w3q_080`, `w3q_111`, `w3q_112`). They are
+  not authoring defects: the release projection narrows each card's sources to
+  the exact `source_ids` of its immutable Research v2 claim, and those six
+  claims carry a single reviewed edge. Adding a second edge requires a new
+  vendored Research release (new authority/repository digests); it cannot be
+  done from the product repository without breaking the one-way authority
+  chain. They remain inside the ratcheted, test-pinned budget and cannot grow.
+- Invariants re-verified after the repin: exactly **72** cards; correct
+  positions still **0:18 / 1:18 / 2:18 / 3:18**; all 288 option surfaces unique;
+  no leading/trailing whitespace; all cards `competitive=False`; the v2
+  adversarial matrix, `review_contract_v2`, Greek/MorphGNT evidence and the LXX
+  citation fingerprints are green; the accepted Greek-debt set is unchanged
+  (`w3q_075` ἑστήκατε, `w3q_144` ἐκκλησία).
+
+## Fourth readback — learner-language micro-repin (reconciliation, 2026-09)
+
+The reconciliation audit found one residual English textual-criticism phrase in a
+**wrong option** of `w3q_068`: `variant units`. It was localized to the Russian
+`текстовых единицах` through the same authoring-bank repin boundary rather than
+through a post-review runtime overlay.
+
+- New raw authoring-bank Git blob: **`7a02ccdef4f1089e66a9df263bca683f2b1f0d51`**.
+- Previous raw blob: `1dbe41b5d296ef9a2738f68f3fef807fde030dce`.
+- The canonical projection source `questions/chapter5/bank.py` is unchanged
+  (`364c76b853271148a5018a3edb342034685edc9b`).
+- Only a non-key distractor surface changed. The keyed answer, explanation,
+  question, correct index, claim type/confidence/position, source subset,
+  Research authority, ranking disposition and `competitive=False` invariant
+  are unchanged.
+- No new evidence was invented and no Research edge was added; the six
+  Research-bound source-quorum majors remain governed by the existing ratchet.
+
 ## Exact-head release evidence policy
 
 The tracked release content is complete: both semantic readbacks are closed, both post-green findings are repaired, all 32 prototypes are reconciled, and the frozen product-bank blob is pinned. Exact final PR SHA and CI/Security/CodeQL run evidence intentionally live in PR #29 metadata and GitHub checks rather than in this tracked document: embedding the document's own final SHA would itself create a new commit and invalidate that SHA. Agent 5 should therefore verify the exact PR head recorded in PR #29 and require CI, Security Audit and CodeQL to be green on that same head before integration. The PR remains Draft, and `main` remains untouched until that downstream integration decision.
