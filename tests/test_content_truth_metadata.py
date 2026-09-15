@@ -14,10 +14,17 @@ def test_canonical_metadata_values_and_sources_are_valid():
             assert item["position"] in positions
             assert isinstance(item["competitive"], bool)
             if key == "chapter4":
-                # Chapter 4 v2 intentionally keeps claim-level source evidence out
+                # Chapter 4 intentionally keeps claim-level source evidence out
                 # of runtime/public cards. The opaque review record owns it.
+                # First-green/pass-two cards keep ch4prv2_ seals; the plain
+                # Russian localization release re-sealed 21 cards as ch4prv3_.
+                from questions.chapter4.localization_pass import CARD_REVISIONS
+
                 assert isinstance(item["review_record_id"], str)
-                assert item["review_record_id"].startswith("ch4prv2_")
+                expected_prefix = (
+                    "ch4prv3_" if item["id"] in CARD_REVISIONS else "ch4prv2_"
+                )
+                assert item["review_record_id"].startswith(expected_prefix)
                 assert "sources" not in item
                 assert "source_ids" not in item
                 assert "claim_inspection_edge_ids" not in item

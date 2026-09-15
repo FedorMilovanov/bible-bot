@@ -1,8 +1,29 @@
-"""Source-reviewed geography corrections."""
-from __future__ import annotations
-from copy import deepcopy
+"""Source-reviewed geography corrections.
 
-GEOGRAPHY_OVERRIDES = {
+The geography course orients a reader who has never opened an atlas of the Roman
+world. Two authoring defects are repaired here: explanations that named a source
+without saying what it supports, and one explanation that leaked an internal note
+about an older broken wording into learner-facing text.
+"""
+from __future__ import annotations
+
+GEOGRAPHY_OVERRIDES = {    "geo_01": {
+        "explanation": (
+            "Малая Азия (Анатолия) — это территория современной Турции, где находились "
+            "провинции, названные в 1 Пет. 1:1 (атлас Pleiades). Такая география объясняет, "
+            "почему письмо обращено к читателям в греко-римских городах, а не в Иерусалиме."
+        ),
+        "sources": ["pleiades_gazetteer", "orbis_roman_network"],
+    },
+    "geo_02": {
+        "explanation": (
+            "Провинции 1 Пет. 1:1 — Понт, Галатия, Каппадокия, Асия и Вифиния — входили в состав "
+            "Римской империи. Переписка Плиния с Траяном (10.96–97) показывает римскую "
+            "администрацию в Вифинии и Понте около 112 г.: это не дата письма, а реальный "
+            "административный контекст тех областей."
+        ),
+        "sources": ["pliny_10_96_97", "oxford_kantor_pontus_bithynia"],
+    },
     "geo_03": {
         "question": "Какие пять географических/провинциальных названий перечислены в адресе 1 Пет. 1:1?",
         "options": [
@@ -16,6 +37,32 @@ GEOGRAPHY_OVERRIDES = {
         "claim_type": "text", "confidence": "high", "position": "neutral",
         "competitive": False, "sources": ["sblgnt"],
     },
+    "geo_04": {
+        "explanation": (
+            "Эфес был ведущим экономическим и административным центром римской Асии и "
+            "знаменитым центром культа Артемиды («Оксфордский классический словарь»). Сам Эфес в "
+            "1 Пет. 1:1 не назван, но его значение объясняет, почему Асия упомянута среди "
+            "провинций адресатов."
+        ),
+        "sources": ["oxford_ephesus", "pleiades_gazetteer"],
+    },
+    "geo_05": {
+        "question": "Какое море омывало западное и южное побережье провинций из 1 Пет. 1:1?",
+        "explanation": (
+            "Западное и южное побережье Малой Азии выходит к Средиземному морю (включая "
+            "Эгейское), а северное — к Чёрному, которое омывало Вифинию и Понт (географический "
+            "справочник Pleiades). Адресаты 1 Пет. 1:1 жили и в прибрежных, и во внутренних областях."
+        ),
+        "sources": ["pleiades_gazetteer", "orbis_roman_network"],
+    },
+    "geo_06": {
+        "explanation": (
+            "Иерусалим был религиозным центром иудаизма: там находился храм, куда совершались "
+            "паломничества (атлас Pleiades). Для 1 Петра это важно потому, что его читатели "
+            "жили вдали от храма и синагог Иерусалима."
+        ),
+        "sources": ["pleiades_gazetteer"],
+    },
     "geo_07": {
         "question": "Что означает слово «диаспора» в базовом историческом смысле?",
         "options": ["Рассеяние / общины вне родной земли", "Одна римская провинция", "Храмовая должность", "Военный союз"],
@@ -28,18 +75,24 @@ GEOGRAPHY_OVERRIDES = {
         "question": "Сколько географических/провинциальных названий перечислено в адресе 1 Пет. 1:1?",
         "options": ["Три", "Четыре", "Пять", "Семь"],
         "correct": 2,
-        "explanation": "Пять: Понт, Галатия, Каппадокия, Асия и Вифиния.",
+        "explanation": "В адресе 1:1 перечислены пять названий: Понт, Галатия, Каппадокия, Асия и Вифиния. Все они — области Малой Азии, что важно для исторического фона послания и маршрутов его доставки.",
         "claim_type": "text", "confidence": "high", "position": "neutral",
         "competitive": False, "sources": ["sblgnt"],
     },
+    "geo_09": {
+        "explanation": (
+            "Римская дорожная сеть (лат. viae — «дороги») связывала города и провинции империи и вместе с "
+            "морскими путями обеспечивала движение людей и писем. Это объясняет, как послание и "
+            "вестники могли достигать верующих, рассеянных по пяти провинциям 1 Пет. 1:1."
+        ),
+        "sources": ["orbis_roman_network", "pleiades_gazetteer"],
+    },
+    "geo_10": {
+        "explanation": (
+            "Деян. 11:26 прямо говорит, что ученики впервые были названы «христианами» в "
+            "Антиохии. Антиохия Сирийская была одним из крупнейших городов империи и базой "
+            "миссии среди язычников."
+        ),
+        "sources": ["sblgnt"],
+    },
 }
-
-def apply_geography_overrides(pool: list[dict]) -> list[dict]:
-    result = []
-    for question in pool:
-        item = deepcopy(question)
-        override = GEOGRAPHY_OVERRIDES.get(str(item.get("id") or "").strip())
-        if override:
-            item.update(deepcopy(override))
-        result.append(item)
-    return result

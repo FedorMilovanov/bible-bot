@@ -119,6 +119,14 @@ Only after that first green, a second independent adversarial readback was condu
 
 The pass found one systemic presentation issue affecting **16 cards**: answer-length / option-shape cueing. It found no new epistemic-overclaim or wrong-key finding. The 16 cards were revised and received new immutable review-record IDs/content digests. Severe correct-answer length ratios (`>1.8` versus mean distractor length) fell from **13 to 0**; correct-is-longest concentration fell from **36/52 to 29/52**. The machine record is `data/chapter4-second-adversarial-pass-v2.json`; current open findings: **0**.
 
+## Third content pass: plain-Russian localization release (`ch4prv3_`)
+
+The 2026-09 reader-voice audit (`docs/QUESTION_BANK_AUDIT_2026-09.md`) found twenty-one sealed cards that still failed the product's plain-Russian voice: five leaked internal authoring vocabulary (`ch4_syn_001`, `ch4_hist_001`, `ch4_course_003`, `ch4_tc_001`, `ch4_tc_003`), twelve contained untranslated English scholarly terms, five Greek cards used English grammar labels (`ch4_gr_001/002/004/005/006`), and two explanations were non-teaching one-liners (`ch4_text_006`, `ch4_theol_001`).
+
+Per the sealed-release contract these cards were not edited in place. A third content pass (`questions/chapter4/localization_pass.py`, base exact head `c4dea4cd6a07c5549bbf397df4aef6fb56e029e4`) replaced the reader-facing fields and issued new immutable review-record IDs (`ch4prv3_…`) with recomputed content digests; the first-green and pass-two seals remain historically inspectable and are chained in `final_review_registry.py`. Keyed answers, Research claim bindings, claim-inspection edges, confidence/position/claim-type, learning-only non-competitive gameplay and the pass-two cueing invariants (0 severe cases, 29/52 correct-is-longest) are preserved.
+
+The machine record is `data/chapter4-localization-pass-v3.json` (52/52 records, 21 `PASS_AFTER_REVISION`, 0 open findings), regenerated with `scripts/build_chapter4_localization_audit.py`; seals are regenerated with `scripts/build_chapter4_localization_seal.py`. Fail-closed coverage lives in `tests/test_chapter4_localization_pass.py`, and the release ledger in `data/chapter4-release-audit.json` gained a complete `third_localization_pass` block.
+
 ## Final exact-head gate and merge boundary
 
 After the second-pass commits, the final branch head must independently pass CI, Security Audit, CodeQL and Chapter 4 Research Handoff v2. Those exact-head run IDs belong in PR #30 rather than being inferred from the first-green parent.

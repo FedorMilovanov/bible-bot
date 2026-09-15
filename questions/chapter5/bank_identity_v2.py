@@ -4,16 +4,28 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-AGENT3_RAW_BANK_GIT_BLOB_SHA = "b15a6200fb7e4fde3e0c9ce9298645f9d3ff47d9"
+AGENT3_RAW_BANK_GIT_BLOB_SHA = "7a02ccdef4f1089e66a9df263bca683f2b1f0d51"
 CANONICAL_RELEASE_BANK_GIT_BLOB_SHA = "364c76b853271148a5018a3edb342034685edc9b"
 # Backward-compatible name now identifies the actual canonical runtime surface.
 PRODUCT_BANK_GIT_BLOB_SHA = CANONICAL_RELEASE_BANK_GIT_BLOB_SHA
 
 
+def _git_blob_sha_bytes(raw: bytes) -> str:
+    """Return the canonical Git blob id for a tracked Python/text file.
+
+    Git may materialize text files with CRLF in a Windows working tree while the
+    repository object remains LF-normalized. Release identities pin the repository
+    object, not a platform-specific checkout representation, so normalize only the
+    checkout newline transform before hashing.
+    """
+
+    canonical = raw.replace(b"\r\n", b"\n")
+    header = f"blob {len(canonical)}\0".encode()
+    return hashlib.sha1(header + canonical, usedforsecurity=False).hexdigest()
+
+
 def _git_blob_sha(path: Path) -> str:
-    raw = path.read_bytes()
-    header = f"blob {len(raw)}\0".encode()
-    return hashlib.sha1(header + raw, usedforsecurity=False).hexdigest()
+    return _git_blob_sha_bytes(path.read_bytes())
 
 
 def current_agent3_raw_bank_git_blob_sha() -> str:

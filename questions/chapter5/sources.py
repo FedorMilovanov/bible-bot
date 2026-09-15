@@ -133,13 +133,13 @@ SOURCE_CATALOG = {
     ),
     "w3i_sinaiticus_1p4_5": _source(
         "Codex Sinaiticus official transcription — 1 Peter 4:1-5:13",
-        "https://codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=4&verse=15",
+        "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=4&verse=15",
         "primary_manuscript_transcription", "relevant_continuous_transcription_lines_inspected",
         "Supports only this named witness; not full manuscript distribution or original-text decision.",
     ),
     "w3i_sinaiticus_1p5_13_14": _source(
         "Codex Sinaiticus official transcription — 1 Peter 5:13-14",
-        "https://codexsinaiticus.org/en/manuscript.aspx?dir=next&folioNo=4&lid=en&quireNo=89&side=v",
+        "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=5&verse=13",
         "primary_manuscript_transcription", "1Peter5_13_14_transcription_inspected",
         "Supports the named-witness wording only; not a critical-text decision.",
     ),

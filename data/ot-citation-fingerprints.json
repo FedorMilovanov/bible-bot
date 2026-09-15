@@ -1,0 +1,553 @@
+{
+ "provenance": {
+  "source": "LXX Rahlfs 1935 (eliranwong/LXX-Rahlfs-1935), review-time corpus",
+  "source_url": "https://github.com/eliranwong/LXX-Rahlfs-1935",
+  "corpus_sha256": "8e554f9630724cee6f67024a4d912b69258a478ab1ffef272ff8a5d7722e097d",
+  "versification_sha256": "84bf2326bc6ac70fddde37c743f218ad54ec5484c007b7af03ec56e2064f8143",
+  "upstream_rows": 12151,
+  "verses_checked": 578,
+  "cards": 72,
+  "findings": {
+   "lxx.word_in_option_not_in_verses": 3
+  },
+  "note": "The corpus text is not vendored: upstream is CC BY-NC-SA 4.0 and derives from CCAT material with its own access terms. This file records the citations the corpus run verified and a SHA-256 of the Greek quoted on each card, so a later edit makes the offline check ask for a fresh corpus run."
+ },
+ "cards": {
+  "easy_10": {
+   "refs": [
+    "3.11.44",
+    "3.11.45",
+    "3.19.2",
+    "3.20.7"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "easy_es2_10": {
+   "refs": [
+    "2.24.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "easy17_04": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "easy17_14": {
+   "refs": [
+    "23.40",
+    "23.40.6",
+    "23.40.7",
+    "23.40.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "easy17_15": {
+   "refs": [
+    "23.40"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "easy17_es2_08": {
+   "refs": [
+    "23.40.6",
+    "23.40.7",
+    "23.40.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "med_10": {
+   "refs": [
+    "3.11.44",
+    "3.11.45",
+    "3.19.2",
+    "3.20.7"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "med17_04": {
+   "refs": [
+    "23.53",
+    "3.16"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "med17_09": {
+   "refs": [
+    "23.40.6",
+    "23.40.7",
+    "23.40.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "med17_es2_07": {
+   "refs": [
+    "23.40"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hard_03": {
+   "refs": [
+    "2.12.11"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hard_13": {
+   "refs": [
+    "2.12.10",
+    "2.12.11",
+    "2.12.12",
+    "2.12.13",
+    "2.12.7",
+    "2.12.8",
+    "2.12.9",
+    "2.24.3",
+    "2.24.4",
+    "2.24.5",
+    "2.24.6",
+    "2.24.7",
+    "2.24.8",
+    "3.14",
+    "4.19"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hard17_09": {
+   "refs": [
+    "23.40.6",
+    "23.40.7",
+    "23.40.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hard_deep_09": {
+   "refs": [
+    "23.40"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "prac_08": {
+   "refs": [
+    "2.12",
+    "2.24.3",
+    "2.24.4",
+    "2.24.5",
+    "2.24.6",
+    "2.24.7",
+    "2.24.8",
+    "3.16"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ling2_06": {
+   "refs": [
+    "11.6",
+    "2.12.11",
+    "2.20",
+    "3.16"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ling2_07": {
+   "refs": [
+    "3.11.44",
+    "3.11.45",
+    "3.19.2",
+    "3.20.7",
+    "5.7.6"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ling3_02": {
+   "refs": [
+    "2.6.6"
+   ],
+   "quoted_sha256": "6ee8260b02d695840b8d0a80da8cc69725e8379e7ee1aae48afe182a8d6146eb"
+  },
+  "ling3_07": {
+   "refs": [
+    "23.40"
+   ],
+   "quoted_sha256": "f2212c42d3fc8690844953230398648fc5203d0fb42eda8a1fd4ba7c75f8134f"
+  },
+  "ling3_11": {
+   "refs": [
+    "23.40"
+   ],
+   "quoted_sha256": "0c59f622940395a06038351aaf7fe601d155fa6a6cbbca5697d1adfb92b29501"
+  },
+  "ling3_14": {
+   "refs": [
+    "3.17"
+   ],
+   "quoted_sha256": "d6f83ad2ce68f6a136454e373a6366a7536b9af4d2ca37f9f38104d926ad4490"
+  },
+  "tms1_med_03": {
+   "refs": [
+    "2.12.11"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "tms1_hard_03": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "d31b67f2c73f7e9640abafa2f49c23fe212aea760bdf1217fd69cebdabaadd22"
+  },
+  "ch2_text_004": {
+   "refs": [
+    "19.33"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_text_008": {
+   "refs": [
+    "23.28.16"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_text_023": {
+   "refs": [
+    "23.53.9"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_gr_006": {
+   "refs": [
+    "23.28.16"
+   ],
+   "quoted_sha256": "3814f8d3ed111d69038bc7d1d3d110fc14d8f382124f3bab5d132564f13d03d6"
+  },
+  "ch2_gr_015": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "fdaad717eb889b5a2fc29f008152fc8f98140f522d0da689e54078bb1f8e29f7"
+  },
+  "ch2_gr_016": {
+   "refs": [
+    "23.53.5"
+   ],
+   "quoted_sha256": "a4953ef7abbb8c48db8fb43a9fc0a15fca333d69ea62f9e4d6ad7e0de2994d67"
+  },
+  "ch2_ot_004": {
+   "refs": [
+    "19.1.1",
+    "19.150.1",
+    "19.33.9",
+    "19.34.8",
+    "19.88.1",
+    "19.89.1"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_001": {
+   "refs": [
+    "23.28.16",
+    "24.31.31",
+    "26.37.1",
+    "38.14.4"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_002": {
+   "refs": [
+    "19.1.1",
+    "19.117.22",
+    "19.118.22",
+    "19.21.1",
+    "19.22.1",
+    "19.49.12",
+    "19.50.12"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_003": {
+   "refs": [
+    "19.117.22",
+    "23.28.16",
+    "23.53.5",
+    "23.8.14",
+    "24.1.10",
+    "30.5.24"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_005": {
+   "refs": [
+    "1.6.14",
+    "2.19.5",
+    "2.19.6",
+    "21.3.1",
+    "7.6.12"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_006": {
+   "refs": [
+    "28.1",
+    "28.2"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_007": {
+   "refs": [
+    "1.11",
+    "23.53",
+    "7.4"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_008": {
+   "refs": [
+    "23.53",
+    "23.53.9"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_ot_009": {
+   "refs": [
+    "23.53.5"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_theol_002": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_theol_003": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch2_theol_004": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "40edb9894c8ad80bec3a96d1602f9135b3f94b97207452e31b784ffa9d6a36f6"
+  },
+  "ch2_hist_003": {
+   "refs": [
+    "23.53"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch3_text_108": {
+   "refs": [
+    "1.18.12"
+   ],
+   "quoted_sha256": "bbc7fb84d9649d4c8343dbeed2276e317b0370a127e6793698feb7c9b5da1c6e"
+  },
+  "ch3_ot_101": {
+   "refs": [
+    "1.12.11",
+    "1.16.2",
+    "1.18.12",
+    "1.21.10"
+   ],
+   "quoted_sha256": "671fe469a5dd61f2915792daa5b012823a5a930650a3be6d61cb7cc7d8f580f2"
+  },
+  "ch3_ot_102": {
+   "refs": [
+    "1.18.12"
+   ],
+   "quoted_sha256": "f2f28337fd6b71abccc5687cf11f55d07d0e567438b04ab24e0d1db36460642d"
+  },
+  "ch3_ot_103": {
+   "refs": [
+    "1.18.12"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch3_ot_104": {
+   "refs": [
+    "1.18.15",
+    "19.33.5",
+    "20.3.25",
+    "23.8.12"
+   ],
+   "quoted_sha256": "0817dbfa4dfb952b5fdfd82c39d238570969ed6311ce9131b6addb545288093c"
+  },
+  "ch3_ot_105": {
+   "refs": [
+    "20.3.25"
+   ],
+   "quoted_sha256": "4ac6f9460e33df5aebeabecafb44f83d30c540174a37e0f66581b4f6f28f2052"
+  },
+  "ch3_disp_103": {
+   "refs": [
+    "1.18.12"
+   ],
+   "quoted_sha256": "feb1f3bb7e4729b1703da225c549adb54d565f7525976ccbbf9440bb7d0a24a0"
+  },
+  "ch3_ot_201": {
+   "refs": [
+    "19.33",
+    "19.33.13",
+    "19.33.14",
+    "19.33.15",
+    "19.33.16",
+    "19.33.17",
+    "19.34.12",
+    "19.34.13",
+    "19.34.14",
+    "19.34.15",
+    "19.34.16"
+   ],
+   "quoted_sha256": "74ea3fe5b47b3fc2bdb70c849691b5151ff1acf60412718a9f26b8d53d1334a7"
+  },
+  "ch3_ot_202": {
+   "refs": [
+    "19.33.13"
+   ],
+   "quoted_sha256": "cd32882041215925a58ab34a49ea2df7817ed5ad13b849b36d07b83cb0ee2ce9"
+  },
+  "ch3_ot_203": {
+   "refs": [
+    "19.33.14",
+    "19.33.15"
+   ],
+   "quoted_sha256": "92de4b5db249419e464e80c2eddc263b39b8e08f0e38edc695d7a859ad405e1c"
+  },
+  "ch3_ot_204": {
+   "refs": [
+    "19.33.14"
+   ],
+   "quoted_sha256": "0ff4296b392226d6e2ad74b2ea77549c815e8bc5fef026b1c3b2733a605bb29f"
+  },
+  "ch3_ot_205": {
+   "refs": [
+    "19.33.17"
+   ],
+   "quoted_sha256": "265b1701e2f73bdbcb84e23b7f6dfeba3a12972edcb0b20f8a7ec6a9ac83560f"
+  },
+  "ch3_ot_206": {
+   "refs": [
+    "19.33"
+   ],
+   "quoted_sha256": "e9f87327e8425009017b1ca23ca6e95ba529462e4010e1a78bc4acc57438afb3"
+  },
+  "ch3_ot_207": {
+   "refs": [
+    "19.34"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch3_ot_208": {
+   "refs": [
+    "19.34"
+   ],
+   "quoted_sha256": "0bb592c1b6488981652591701e04f416c4d8fe7d13751ead603756cad81460b4"
+  },
+  "ch3_ot_301": {
+   "refs": [
+    "23.8.12"
+   ],
+   "quoted_sha256": "5b6bb4f5bfcddc16b6d4766d20272f0cf257945822a76899edc12ecba13d47dc"
+  },
+  "ch3_ot_302": {
+   "refs": [
+    "23.8.13"
+   ],
+   "quoted_sha256": "b96f108907b0a834d7bb79721ff68015b9819305916f20dfd65f805f079ccde8"
+  },
+  "ch3_ot_303": {
+   "refs": [
+    "23.8",
+    "23.8.12",
+    "23.8.13"
+   ],
+   "quoted_sha256": "8834a2e6afb1d0336b58e7f003874758297416afa6b7ca8a16505c66014b392a"
+  },
+  "ch3_ot_304": {
+   "refs": [
+    "23.8.12",
+    "23.8.13"
+   ],
+   "quoted_sha256": "8834a2e6afb1d0336b58e7f003874758297416afa6b7ca8a16505c66014b392a"
+  },
+  "ch3_theol_301": {
+   "refs": [
+    "23.8",
+    "23.8.13"
+   ],
+   "quoted_sha256": "c0638500f3a855efb0293ec9ae1fe4bb736bfb7a8ec5c781dc1e041bd1029161"
+  },
+  "ch3_ot_001": {
+   "refs": [
+    "1.6",
+    "1.6.1",
+    "1.6.2",
+    "1.6.3",
+    "1.6.4",
+    "1.7",
+    "1.8"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch3_ot_002": {
+   "refs": [
+    "1.6",
+    "1.6.1",
+    "1.6.2",
+    "1.6.3",
+    "1.6.4"
+   ],
+   "quoted_sha256": "5953c4213f3ebbbd9a8382d6980dbf912eb154eb5e801475e14d5560ae4a77de"
+  },
+  "ch3_ot_003": {
+   "refs": [
+    "1.6"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch4_text_005": {
+   "refs": [
+    "20.10.12"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch4_ot_001": {
+   "refs": [
+    "20.10.12"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch4_ot_002": {
+   "refs": [
+    "20.11.31",
+    "20.4.18"
+   ],
+   "quoted_sha256": "350cb1b1f41449cf73df84d8b61802151335188ed3e446e8e7f0e37d67c13cbd"
+  },
+  "ch4_ot_003": {
+   "refs": [
+    "39.3"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch4_ot_004": {
+   "refs": [
+    "20.10.12",
+    "20.11.31"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "ch5_w3q_058": {
+   "refs": [
+    "20.3.34"
+   ],
+   "quoted_sha256": "11a261f977783fa263ea0f43bc37e94b4e57cac71caf6399a375cb8db280f5b5"
+  },
+  "ch5_w3q_059": {
+   "refs": [
+    "20.3.34"
+   ],
+   "quoted_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ }
+}

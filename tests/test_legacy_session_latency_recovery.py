@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from config import SPEED_MODE_TIMEOUT
 from legacy_session_recovery import persisted_fastest_answer, recovery_fields
@@ -19,7 +19,7 @@ def _session(answered_questions):
         "level_key": "easy",
         "level_name": "Easy",
         "chat_id": 42,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
         "time_limit": SPEED_MODE_TIMEOUT,
     }
 

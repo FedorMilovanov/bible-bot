@@ -124,6 +124,40 @@ def test_second_adversarial_pass_is_explicitly_sequenced_after_first_green():
         assert second["open_findings"] == 0
 
 
+def test_third_localization_pass_is_complete_and_resolves_to_runtime():
+    third = AUDIT["third_localization_pass"]
+    assert third["status"] == "COMPLETE"
+    assert third["required_cards"] == third["reviewed_cards"] == 52
+    assert third["revised_cards"] == third["finding_cards_before_fix"] == 22
+    assert third["review_record_id_prefix"] == "ch4prv3_"
+    assert third["changed_cards_received_new_review_record_ids"] is True
+    assert third["keyed_answers_research_claims_and_gameplay_unchanged"] is True
+    assert third["open_findings"] == 0
+
+    from questions.chapter4.localization_pass import (
+        CARD_REVISIONS,
+        REVIEW_RECORD_REVISIONS_3,
+    )
+
+    localized = json.loads(
+        (ROOT / third["audit_file"]).read_text(encoding="utf-8")
+    )
+    assert localized["schema_version"] == 3
+    assert len(localized["records"]) == 52
+    assert localized["open_findings"] == 0
+    runtime = {card["id"]: card for card in CHAPTER4_REVIEWED_QUESTIONS}
+    for record in localized["records"]:
+        assert record["product_card_id"] in runtime
+        review = PRODUCT_REVIEW_BY_CARD_ID[record["product_card_id"]]
+        assert record["product_review_record_id"] == review["product_review_record_id"]
+        assert record["research_claim_id"] == review["research_claim_id"]
+        expected_prefix = (
+            "ch4prv3_" if record["product_card_id"] in CARD_REVISIONS else "ch4prv2_"
+        )
+        assert record["product_review_record_id"].startswith(expected_prefix)
+    assert set(REVIEW_RECORD_REVISIONS_3) == set(CARD_REVISIONS)
+
+
 def test_merge_boundary_remains_agent5_only():
     assert AUDIT["merge_authorized"] is False
     assert AUDIT["main_mutated"] is False

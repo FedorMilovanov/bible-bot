@@ -68,6 +68,7 @@ POOL_POLICIES: dict[str, PoolPolicy] = {
     "nero": _scored(2),
     "geography": _scored(2),
     "random_all": _scored(1),
+    "tms_deep": _learning(),
     # Chapters 2-5 are product learning modules. Chapters 4/5 are deliberately
     # pre-policy-registered but remain unavailable until their canonical pools
     # are present in questions.POOL_REGISTRY.

@@ -12,7 +12,7 @@ requests fail closed through ``resolve_course``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from collections.abc import Iterable
 
 from questions.pool_policy import PoolPolicy, get_pool_policy
 
@@ -205,6 +205,17 @@ COURSE_ENTRIES: tuple[CourseEntry, ...] = (
         _BOTH,
         icon="📕",
     ),
+    CourseEntry(
+        "tms_deep_ch1",
+        "🎓 TMS Глубина — Глава 1",
+        "Серьёзная богословская глубина в простоте: уже/ещё нет, Троица, искупление, страдание, святость",
+        "tms_deep",
+        10,
+        "chapter1",
+        60,
+        _BOTH,
+        icon="🎓",
+    ),
 )
 
 
@@ -355,15 +366,15 @@ def course_for_pool(pool_key: str, *, surface: str) -> CourseEntry | None:
 __all__ = [
     "COURSE_ENTRIES",
     "COURSE_GROUPS",
+    "DEFAULT_MODES",
+    "KNOWN_SURFACES",
+    "SURFACE_MINIAPP",
+    "SURFACE_TELEGRAM",
     "CourseCatalogError",
     "CourseEntry",
     "CourseGroup",
     "CourseModeNotAllowedError",
     "CourseUnavailableError",
-    "DEFAULT_MODES",
-    "KNOWN_SURFACES",
-    "SURFACE_MINIAPP",
-    "SURFACE_TELEGRAM",
     "UnknownCourseError",
     "course_available",
     "course_for_pool",

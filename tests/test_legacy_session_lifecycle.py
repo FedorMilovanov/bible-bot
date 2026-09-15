@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from pymongo.errors import AutoReconnect
@@ -120,7 +120,7 @@ def partial_session(*, attempt_id="attempt-1", legacy=False):
         ],
         "time_limit": None,
         "chat_id": 100,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
         "restart_count": 0,
     }
     if not legacy:
@@ -156,7 +156,7 @@ def completed_session():
         ],
         "time_limit": None,
         "chat_id": 100,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
     }
 
 

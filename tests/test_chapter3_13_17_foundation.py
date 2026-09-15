@@ -177,7 +177,7 @@ def test_chapter3_13_17_apologia_guardrail():
     greek = next(item for item in GREEK_3_13_17 if item["id"] == "ch3_gr_304")
     interpretation = next(item for item in THEOLOGY_3_13_17 if item["id"] == "ch3_theol_302")
     application = next(item for item in APPLICATION_3_13_17 if item["id"] == "ch3_app_302")
-    assert "не выводятся из parsing code" in greek["explanation"]
+    assert "не выводятся из кода разбора" in greek["explanation"]
     assert "не выбирая одну современную школу" in interpretation["options"][interpretation["correct"]]
     assert "требует дополнительных аргументов" in application["explanation"]
 

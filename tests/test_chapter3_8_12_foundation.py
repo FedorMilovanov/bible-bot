@@ -127,11 +127,11 @@ def test_morphgnt_anchor_forms_are_exact():
 def test_psalm_quote_is_sustained_adaptation_and_exact_differences_are_pinned():
     classification = next(item for item in INTERTEXT_3_8_12 if item["id"] == "ch3_ot_201")
     correct = classification["options"][classification["correct"]]
-    assert "sustained quotation/adaptation" in correct.casefold()
+    assert "пространная цитата с адаптацией" in correct.casefold()  # noqa: RUF001
     assert "Пс. 33:13\u201317 LXX" in correct
-    assert "Пс. 34:12\u201316 MT/common English numbering" in correct
-    assert "verbatim" not in correct.casefold()
+    assert "Пс. 34:12\u201316 в нумерации масоретского текста" in correct
     assert "дослов" not in correct.casefold()
+    assert "слово в слово" not in correct
 
     assert LXX_PS33_13_17[13].startswith("τίς ἐστιν ἄνθρωπος")
     assert FIRST_PETER_3_10_12[10].startswith("ὁ γὰρ θέλων")
@@ -159,7 +159,7 @@ def test_psalm_correct_options_still_match_their_textual_anchors_after_reorderin
     assert "третье лицо единственного числа" in person
     assert "\u043e\u0431\u0430 \u03c3\u03bf\u03c5" in possessives
     assert "\u0441\u0442\u0438\u0440\u0430\u043d\u0438\u0438 \u0438\u0445 \u043f\u0430\u043c\u044f\u0442\u0438 \u0441 \u0437\u0435\u043c\u043b\u0438" in truncation
-    assert "не утверждает авторский мотив omission" in items["ch3_ot_205"]["explanation"]
+    assert "не утверждает авторский мотив этого пропуска" in items["ch3_ot_205"]["explanation"]
 
 
 def test_psalm_function_separates_local_text_fact_from_broader_interpretation():

@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from pymongo.errors import AutoReconnect
@@ -31,7 +31,7 @@ def _partial(*, legacy=False):
         "correct_count": 0,
         "answered_questions": [],
         "time_limit": None,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
     }
     if not legacy:
         doc["attempt_id"] = "attempt-1"
