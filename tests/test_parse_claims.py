@@ -2,9 +2,10 @@
 
 ``scripts/verify_parse_claims.py`` holds the checker; this file runs it and pins
 what it verified. The point of the pin is coverage: the checker is deliberately
-conservative (a multi-form card is reported as INFO and skipped, a card without a
-corpus row for its form is reported as INFO), so every skip is listed here with a
-reason and a sharpened checker cannot quietly verify fewer cards.
+conservative (a per-form multi-form claim or a parse claim with no named form is
+reported as INFO and left for explicit manual review; a named form that cannot be
+resolved is blocking), so every intentional skip is listed here with a reason and
+a sharpened checker cannot quietly verify fewer cards.
 
 Two things are pinned beyond the counts:
 
@@ -29,9 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 
-# Verified coverage. ``cards_with_parse_claim`` counts the cards whose keyed option
-# states morphology for a form that resolves to a corpus row and whose anchor names
-# a 1 Peter verse.
+# Coverage contract: parse candidates are admitted conservatively; the machine-
+# verified and manual-review counts below must partition the candidate set exactly.
+# ``cards_with_parse_claim`` remains only as a backward-compatible alias for the
+# candidate count.
 PARSE_CLAIM_CARDS = 79
 MACHINE_VERIFIED_CARDS = 56
 MANUAL_REVIEW_CARDS = 23
@@ -183,6 +185,17 @@ def test_keyed_parse_answers_match_the_corpus_row():
         # The card may not hedge: every feature it names is in the row above, and
         # nothing it names contradicts the row.
         assert not checker._specified_conflicts(row, claimed), (card_id, row, claimed)
+
+
+def test_a_named_form_missing_from_the_corpus_is_blocking():
+    checker = _checker()
+    corpus = checker.load_corpus()
+    card = copy.deepcopy(_cards_by_id()["ch4_gr_002"])
+    card["question"] = str(card["question"]).replace("εὐηγγελίσθη", "εὐηγγελίσθην")
+    assert card["question"] != _cards_by_id()["ch4_gr_002"]["question"]
+    findings = checker.audit_card(card, "chapter4", corpus)
+    assert [finding.check_id for finding in findings] == ["parse.form_not_in_corpus"], findings
+    assert findings[0].severity == checker.FINDING_BLOCKING
 
 
 def test_a_flipped_label_is_caught():

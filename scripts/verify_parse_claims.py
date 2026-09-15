@@ -636,8 +636,11 @@ def main() -> int:
         for finding in findings:
             print(f"{finding.severity:8s} {finding.check_id:32s} {finding.pool}/{finding.card_id}: {finding.message}")
         print(
-            f"checked {stats['cards_with_parse_claim']} parse card(s) against "
-            f"{stats['corpus_rows']} vendored corpus rows; {len(blocking)} blocking finding(s)"
+            f"parse candidates={stats['parse_claim_cards']}; "
+            f"machine-verified={stats['machine_verified_cards']}; "
+            f"manual-review={stats['manual_review_cards']}; "
+            f"corpus rows={stats['corpus_rows']}; "
+            f"blocking={len(blocking)}"
         )
     return 1 if blocking else 0
 
