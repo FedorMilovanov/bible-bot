@@ -52,6 +52,10 @@ from web_api.telegram_transport import (
 
 logger = logging.getLogger(__name__)
 
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _PUBLIC_BOT_COMMANDS = (
     BotCommand("app", "🚀 Открыть приложение"),
     BotCommand("menu", "🏠 Главное меню"),
@@ -125,8 +129,8 @@ async def _sync_public_command_menu_job(context):
             "Telegram public command menu synchronized (%d commands)",
             len(_PUBLIC_BOT_COMMANDS),
         )
-    except Exception:
-        logger.warning("Telegram public command menu sync failed", exc_info=True)
+    except Exception as exc:
+        _log_runtime_failure("Telegram public command menu sync failed", exc, level=logging.WARNING)
 
 
 async def _sync_public_command_menu_post_init(application):
