@@ -50,28 +50,27 @@ def test_battle_queue_outage_is_retryable_summary(monkeypatch):
     )
     result = run(drain.drain_pending_battles(sender=sender))
     assert result.battles_seen == 0
-    assert len(result.errors) == 1
-    assert result.errors[0].startswith("battle-list:<queue>:BattleStoreUnavailable:")
+    assert result.errors == ("battle-list:BattleStoreUnavailable",)
 
 
 def test_one_battle_failure_does_not_starve_next(monkeypatch):
     monkeypatch.setattr(
         drain,
         "get_pending_final_battles",
-        lambda _limit: [{"_id": "bad"}, {"_id": "good"}],
+        lambda _limit: [{"_id": "battle-sensitive-id"}, {"_id": "good"}],
     )
     seen = []
 
     async def deliver(battle, _sender):
-        if battle["_id"] == "bad":
-            raise RuntimeError("boom")
+        if battle["_id"] == "battle-sensitive-id":
+            raise RuntimeError("provider-sensitive-marker")
         seen.append("good")
         return SimpleNamespace(
             creator_sent=True,
             opponent_sent=False,
             creator_pending=False,
             opponent_pending=True,
-            errors=("opponent:RuntimeError:telegram",),
+            errors=("opponent:RuntimeError",),
         )
 
     monkeypatch.setattr(drain, "deliver_final_battle_once", deliver)
@@ -79,7 +78,9 @@ def test_one_battle_failure_does_not_starve_next(monkeypatch):
     assert seen == ["good"]
     assert result.recipient_sends == 1
     assert result.deferred == 1
-    assert len(result.errors) == 2
+    assert result.errors == ("battle-delivery:RuntimeError", "opponent:RuntimeError")
+    assert "battle-sensitive-id" not in repr(result.errors)
+    assert "provider-sensitive-marker" not in repr(result.errors)
 
 
 def test_invalid_listing_shape_fails_closed(monkeypatch):

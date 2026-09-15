@@ -41,14 +41,15 @@ def test_one_recipient_failure_does_not_block_other(monkeypatch):
     async def deliver(_battle_id, user_id, _sender_fn):
         calls.append(user_id)
         if user_id == 10:
-            raise RuntimeError("telegram down")
+            raise RuntimeError("provider-sensitive-marker")
         return True
     monkeypatch.setattr(flow, "deliver_battle_recipient_once", deliver)
     result = run(flow.deliver_final_battle_once(_battle(), _sender))
     assert calls == [10, 20]
     assert result.creator_pending is True
     assert result.opponent_sent is True
-    assert len(result.errors) == 1
+    assert result.errors == ("creator:RuntimeError",)
+    assert "provider-sensitive-marker" not in repr(result.errors)
 
 
 def test_existing_lease_is_pending_not_success(monkeypatch):

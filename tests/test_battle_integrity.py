@@ -2,6 +2,9 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
+from pymongo.errors import PyMongoError
+
+import battle_integrity as integrity
 
 import database
 from battle_integrity import (
@@ -338,3 +341,21 @@ def test_delete_is_scoped_to_participant_and_cannot_remove_durable_result_eviden
         "opponent_finished": {"$ne": True},
         "final_claimed": {"$ne": True},
     }
+
+
+def test_battle_store_failure_redacts_ids_and_raw_mongo_message(monkeypatch, caplog):
+    class BrokenCollection:
+        def find_one_and_update(self, *_args, **_kwargs):
+            raise PyMongoError("mongo-sensitive-marker")
+
+    monkeypatch.setattr(integrity, "_battle_collection", lambda: BrokenCollection())
+    with caplog.at_level("WARNING", logger=integrity.__name__):
+        with pytest.raises(BattleStoreUnavailable) as raised:
+            claim_battle_opponent("battle-sensitive-id", 424242, "Player")
+
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+    assert "battle-sensitive-id" not in caplog.text
+    assert "424242" not in caplog.text
+    assert "mongo-sensitive-marker" not in caplog.text
+    assert "battle opponent claim failed (PyMongoError)" in caplog.text

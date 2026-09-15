@@ -84,12 +84,12 @@ def test_retry_after_becomes_durable_defer_without_sleep(monkeypatch):
     ) is False
     assert deferred[0][0:2] == ("battle_0123456789abcdef", "lease-token")
     assert deferred[0][2]["delay_seconds"] == 23.0
-    assert "RetryAfter" in deferred[0][2]["error"]
+    assert deferred[0][2]["error"] == "RetryAfter"
 
 
 def test_transient_network_error_releases_lease_for_recovery(monkeypatch):
     bot = Bot()
-    bot.error = NetworkError("temporary")
+    bot.error = NetworkError("provider-sensitive-marker")
     monkeypatch.setattr(ready, "claim_creator_ready_delivery", lambda *_args, **_kwargs: _claim())
     released = []
     monkeypatch.setattr(
@@ -107,7 +107,8 @@ def test_transient_network_error_releases_lease_for_recovery(monkeypatch):
             )
         )
     assert released[0][0:2] == ("battle_0123456789abcdef", "lease-token")
-    assert "NetworkError" in released[0][2]["error"]
+    assert released[0][2]["error"] == "NetworkError"
+    assert "provider-sensitive-marker" not in released[0][2]["error"]
 
 
 def test_drain_recovers_pending_battle_after_restart(monkeypatch):
@@ -133,3 +134,32 @@ def test_drain_recovers_pending_battle_after_restart(monkeypatch):
     assert summary.deferred == 0
     assert summary.errors == ()
     assert delivered == ["battle_0123456789abcdef"]
+
+
+def test_ready_drain_redacts_listing_and_delivery_errors(monkeypatch):
+    bot = Bot()
+    monkeypatch.setattr(
+        ready,
+        "get_pending_creator_ready_battles",
+        lambda _limit: (_ for _ in ()).throw(
+            ready.LegacyBattleReadyDeliveryUnavailable("mongo-sensitive-marker")
+        ),
+    )
+    summary = run(ready.drain_creator_ready_outbox(bot, start_payload_builder=payload))
+    assert summary.errors == ("battle-ready-list:LegacyBattleReadyDeliveryUnavailable",)
+    assert "mongo-sensitive-marker" not in repr(summary.errors)
+
+    monkeypatch.setattr(
+        ready,
+        "get_pending_creator_ready_battles",
+        lambda _limit: [{"_id": "battle-sensitive-id"}],
+    )
+
+    async def fail(*_args, **_kwargs):
+        raise RuntimeError("provider-sensitive-marker")
+
+    monkeypatch.setattr(ready, "deliver_creator_ready_once", fail)
+    summary = run(ready.drain_creator_ready_outbox(bot, start_payload_builder=payload))
+    assert summary.errors == ("battle-ready:RuntimeError",)
+    assert "battle-sensitive-id" not in repr(summary.errors)
+    assert "provider-sensitive-marker" not in repr(summary.errors)

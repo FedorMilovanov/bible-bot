@@ -30,8 +30,8 @@ def _battle_id(battle: dict) -> str:
     return value
 
 
-def _error(identifier: str, exc: Exception) -> str:
-    return f"battle:{identifier}:{type(exc).__name__}:{exc}"[:500]
+def _error(exc: Exception) -> str:
+    return f"battle-delivery:{type(exc).__name__}"
 
 
 async def drain_pending_battles(
@@ -46,7 +46,7 @@ async def drain_pending_battles(
         battles = await asyncio.to_thread(get_pending_final_battles, limit)
     except BattleStoreUnavailable as exc:
         return BattleDeliveryDrainSummary(
-            errors=(f"battle-list:<queue>:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"battle-list:{type(exc).__name__}",)
         )
     if not isinstance(battles, list):
         raise LegacyBattleDeliveryQueueInvalid(
@@ -60,18 +60,14 @@ async def drain_pending_battles(
     deferred = 0
     errors: list[str] = []
     for battle in battles:
-        identifier = "<unknown>"
         try:
-            identifier = _battle_id(battle)
+            _battle_id(battle)
             outcome = await deliver_final_battle_once(battle, durable_sender)
             sends += int(outcome.creator_sent) + int(outcome.opponent_sent)
             deferred += int(outcome.creator_pending) + int(outcome.opponent_pending)
-            errors.extend(
-                f"battle:{identifier}:{item}"[:500]
-                for item in outcome.errors
-            )
+            errors.extend(outcome.errors)
         except Exception as exc:
-            errors.append(_error(identifier, exc))
+            errors.append(_error(exc))
     return BattleDeliveryDrainSummary(
         battles_seen=len(battles),
         recipient_sends=sends,
