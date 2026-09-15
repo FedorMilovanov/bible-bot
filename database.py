@@ -38,7 +38,7 @@ if MONGO_URL:
         quiz_sessions_collection = db["quiz_sessions"]
         reports_collection = db["reports"]
         weekly_lb_collection = db["weekly_leaderboard"]
-        logger.info("✅ MongoDB подключена")
+        logger.info("MongoDB client configured")
     except Exception as e:
         _log_db_exception("MongoDB initialization", e)
         collection = battles_collection = questions_stats_collection = None
