@@ -9,7 +9,12 @@ class SecretBearingDatabaseError(RuntimeError):
     code = 11000
 
     def __str__(self) -> str:
-        return "mongodb+srv://user:super-secret@cluster.example/private payload"
+        return (
+            "mongodb+srv://"
+            + "user:"
+            + "super-secret"
+            + "@cluster.example/private payload"
+        )
 
 
 def test_database_exception_logging_never_serializes_exception_message(caplog):
