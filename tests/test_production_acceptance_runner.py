@@ -74,8 +74,6 @@ def test_http_contracts_require_exact_ready_and_revision(monkeypatch):
     }
 
 
-
-
 def test_http_contracts_reject_degraded_production_ready(monkeypatch):
     sha = "e" * 40
     monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://example.onrender.com")
