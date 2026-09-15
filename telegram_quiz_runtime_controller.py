@@ -108,6 +108,10 @@ from telegram_quiz_runtime_state import (
 from utils import safe_edit
 
 logger = logging.getLogger(__name__)
+
+
+def _log_quiz_failure(operation: str, exc: BaseException, *, level: int = logging.WARNING) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
 _T = TypeVar("_T")
 user_data = get_user_data()
 
@@ -242,8 +246,8 @@ async def _send_claimed_achievements(bot, chat_id: int, keys: list[str]) -> None
                 ),
                 parse_mode="Markdown",
             )
-        except Exception:
-            logger.warning("achievement UI delivery failed for user chat %s", chat_id, exc_info=True)
+        except Exception as exc:
+            _log_quiz_failure("achievement UI delivery failed", exc)
 
 
 async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = False) -> None:
@@ -254,7 +258,7 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
     result = outcome.result if isinstance(outcome.result, dict) else {}
     chat_id = data.get("quiz_chat_id")
     if not chat_id:
-        logger.error("cannot render quiz result without chat id for user %s", user_id)
+        logger.error("cannot render quiz result without chat id")
         return
 
     data["correct_answers"] = score
@@ -336,8 +340,8 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
 
     try:
         await bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
-    except Exception:
-        logger.error("result card delivery failed for user %s", user_id, exc_info=True)
+    except Exception as exc:
+        _log_quiz_failure("result card delivery failed", exc, level=logging.ERROR)
 
     if not retry_drill:
         await _send_claimed_achievements(
@@ -347,8 +351,8 @@ async def _render_result(bot, user_id: int, outcome, *, retry_drill: bool = Fals
         )
     try:
         await send_final_results_menu(bot, chat_id, data)
-    except Exception:
-        logger.error("final result menu delivery failed for user %s", user_id, exc_info=True)
+    except Exception as exc:
+        _log_quiz_failure("final result menu delivery failed", exc, level=logging.ERROR)
 
 
 class _MemoryResultOutcome:
@@ -527,8 +531,8 @@ async def _launch_attempt(
             username=user.username,
             first_name=user.first_name,
         )
-    except (LegacyPersistedSessionModeInvalid, LegacyPersistedSessionStateInvalid, ValueError):
-        logger.exception("new durable quiz session could not be hydrated")
+    except (LegacyPersistedSessionModeInvalid, LegacyPersistedSessionStateInvalid, ValueError) as exc:
+        _log_quiz_failure("new durable quiz session could not be hydrated", exc, level=logging.ERROR)
         await bot.send_message(
             chat_id=chat_id,
             text="⚠️ Новая попытка записана, но её состояние не удалось безопасно прочитать. Используй /status.",
@@ -662,8 +666,8 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
             build_live_answer_callback(prefix, data, index, option_index)
             for option_index in range(len(shuffled))
         ]
-    except (LegacyLiveAnswerStale, LegacyLiveStateInvalid, LegacyLiveQuestionStateInvalid, ValueError):
-        logger.error("cannot build live question target for user %s", user_id, exc_info=True)
+    except (LegacyLiveAnswerStale, LegacyLiveStateInvalid, LegacyLiveQuestionStateInvalid, ValueError) as exc:
+        _log_quiz_failure("cannot build live question target", exc, level=logging.ERROR)
         await bot.send_message(
             chat_id=data.get("quiz_chat_id"),
             text="⚠️ Состояние вопроса изменилось. Используй /status.",
@@ -690,7 +694,7 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
     )
     chat_id = data.get("quiz_chat_id")
     if not chat_id:
-        logger.error("quiz chat id missing for user %s", user_id)
+        logger.error("quiz chat id missing")
         return
 
     message_id = data.get("quiz_message_id")
@@ -717,8 +721,8 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
                 parse_mode="Markdown",
             )
             data["quiz_message_id"] = message.message_id
-        except Exception:
-            logger.error("question Telegram delivery failed for user %s", user_id, exc_info=True)
+        except Exception as exc:
+            _log_quiz_failure("question Telegram delivery failed", exc, level=logging.ERROR)
             return
 
     sent_at = time.time()
@@ -731,11 +735,10 @@ async def _send_current_question(bot, user_id: int, prefix: str) -> None:
         LegacyLiveQuestionStateInvalid,
         LegacyQuestionTimerConflict,
         LegacyQuestionTimerUnavailable,
-    ):
-        logger.warning(
-            "question delivered but durable timer marker failed for user %s",
-            user_id,
-            exc_info=True,
+    ) as exc:
+        _log_quiz_failure(
+            "question delivered but durable timer marker failed",
+            exc,
         )
         await _disable_question_keyboard(bot, data)
         await bot.send_message(
@@ -814,8 +817,8 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
         except (QuizSessionStoreUnavailable, QuizSessionAnswerConflict):
             await query.answer("⚠️ Ответ не сохранён. Повтори через несколько секунд.", show_alert=True)
             return
-        except LegacyLiveStateInvalid:
-            logger.error("live answer state invalid for user %s", user_id, exc_info=True)
+        except LegacyLiveStateInvalid as exc:
+            _log_quiz_failure("live answer state invalid", exc, level=logging.ERROR)
             await query.answer("⚠️ Состояние теста изменилось. Используй /status.", show_alert=True)
             return
 
@@ -842,8 +845,8 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
                 is_numeric,
                 shuffled,
             )
-        except Exception:
-            logger.debug("answer animation failed", exc_info=True)
+        except Exception as exc:
+            _log_quiz_failure("answer animation failed", exc, level=logging.DEBUG)
 
         if outcome.applied:
             try:
@@ -854,8 +857,8 @@ async def _handle_inline_answer(update: Update, context, prefix: str):
                     outcome.is_correct,
                     float(outcome.latency_seconds or 0.0),
                 )
-            except Exception:
-                logger.warning("question analytics failed after durable answer", exc_info=True)
+            except Exception as exc:
+                _log_quiz_failure("question analytics failed after durable answer", exc)
 
         if outcome.is_correct:
             suffix = f" 🔥×{outcome.current_streak}" if outcome.current_streak >= 2 else ""
@@ -917,8 +920,8 @@ async def _handle_question_timeout(
             )
         except LegacyLiveAnswerStale:
             return
-        except (QuizSessionStoreUnavailable, QuizSessionAnswerConflict):
-            logger.warning("timeout could not be durably recorded for user %s", user_id, exc_info=True)
+        except (QuizSessionStoreUnavailable, QuizSessionAnswerConflict) as exc:
+            _log_quiz_failure("timeout could not be durably recorded", exc)
             await _disable_question_keyboard(bot, data)
             chat_id = data.get("quiz_chat_id")
             if chat_id:
@@ -930,8 +933,8 @@ async def _handle_question_timeout(
                     ),
                 )
             return
-        except LegacyLiveStateInvalid:
-            logger.error("timeout state invalid for user %s", user_id, exc_info=True)
+        except LegacyLiveStateInvalid as exc:
+            _log_quiz_failure("timeout state invalid", exc, level=logging.ERROR)
             return
 
         if outcome.applied:
@@ -943,8 +946,8 @@ async def _handle_question_timeout(
                     False,
                     float(outcome.latency_seconds or timeout_seconds),
                 )
-            except Exception:
-                logger.warning("timeout analytics failed after durable answer", exc_info=True)
+            except Exception as exc:
+                _log_quiz_failure("timeout analytics failed after durable answer", exc)
 
         chat_id = data.get("quiz_chat_id")
         message_id = data.get("quiz_message_id")
@@ -1018,8 +1021,8 @@ async def resume_session_handler(update: Update, context):
     await query.answer()
     try:
         await _resume_resolved(query, context, resolved)
-    except (LegacyPersistedSessionModeInvalid, LegacyPersistedSessionStateInvalid, ValueError):
-        logger.error("resume hydration failed", exc_info=True)
+    except (LegacyPersistedSessionModeInvalid, LegacyPersistedSessionStateInvalid, ValueError) as exc:
+        _log_quiz_failure("resume hydration failed", exc, level=logging.ERROR)
         await query.edit_message_text("⚠️ Сохранённая попытка повреждена. Новую не создаю.")
 
 
@@ -1358,8 +1361,8 @@ async def remind_unfinished_tests_job(context):
 
     try:
         stale = await _run_blocking_io(get_stale_sessions, max_age_hours=2)
-    except Exception:
-        logger.warning("stale-session reminder lookup failed", exc_info=True)
+    except Exception as exc:
+        _log_quiz_failure("stale-session reminder lookup failed", exc)
         return
     for session in stale:
         uid = session.get("user_id")
@@ -1381,8 +1384,8 @@ async def remind_unfinished_tests_job(context):
                 parse_mode="Markdown",
                 reply_markup=_lifecycle_keyboard(session),
             )
-        except Exception:
-            logger.debug("unfinished-session reminder delivery failed for %s", uid, exc_info=True)
+        except Exception as exc:
+            _log_quiz_failure("unfinished-session reminder delivery failed", exc, level=logging.DEBUG)
 
 
 async def _save_all_sessions(_application=None):
