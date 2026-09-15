@@ -5,11 +5,12 @@
 ## Сводка
 
 - карточек в производственных пулах: **759**
-- `blocker`: **6**
-- `major`: **127**
-- `minor`: **72**
-- `info`: **72**
-- вне пятой главы (её банки заперты блоб-пинами и ждут выпускного repin): `blocker` 0, `major` 0, `minor` 0, `info` 64
+- `blocker`: **0**
+- `major`: **6**
+- `minor`: **0**
+- `info`: **68**
+- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 62
+- пятая глава: reviewed bank закреплён blob-пинами; любое будущее изменение содержимого проходит только через новый reviewed release repin.
 - покрытие послания: **105/105** стихов (1: 25/25, 2: 25/25, 3: 22/22, 4: 19/19, 5: 14/14)
 
 Бюджет качества соблюдён: ни один счётчик не вырос.
@@ -26,49 +27,21 @@
 | `hard_p2` | 35 | 92 | 218 | 0% | 0% | 37% | 20 | 27/0/8 |
 | `practical_p1` | 47 | 80 | 181 | 0% | 0% | 47% | 24 | 0/0/47 |
 | `practical_p2` | 43 | 84 | 188 | 0% | 0% | 26% | 16 | 0/0/43 |
-| `linguistics_ch1` | 15 | 66 | 161 | 0% | 0% | 47% | 10 | 0/0/15 |
-| `linguistics_ch1_2` | 15 | 72 | 169 | 7% | 0% | 27% | 14 | 1/0/14 |
-| `linguistics_ch1_3` | 15 | 62 | 180 | 0% | 0% | 47% | 11 | 0/0/15 |
-| `nero` | 15 | 72 | 255 | 0% | 0% | 27% | 3 | 1/0/14 |
-| `geography` | 10 | 43 | 215 | 10% | 0% | 30% | 3 | 3/0/7 |
+| `linguistics_ch1` | 15 | 66 | 170 | 0% | 0% | 47% | 10 | 0/0/15 |
+| `linguistics_ch1_2` | 15 | 72 | 172 | 7% | 0% | 27% | 14 | 1/0/14 |
+| `linguistics_ch1_3` | 15 | 62 | 196 | 0% | 0% | 47% | 11 | 0/0/15 |
+| `nero` | 15 | 72 | 261 | 0% | 0% | 27% | 3 | 1/0/14 |
+| `geography` | 10 | 43 | 218 | 10% | 0% | 30% | 3 | 3/0/7 |
 | `tms_deep` | 15 | 107 | 202 | 0% | 0% | 27% | 14 | 4/11/0 |
 | `intro1` | 15 | 92 | 174 | 0% | 0% | 27% | 4 | 0/0/15 |
 | `intro2` | 16 | 95 | 154 | 0% | 0% | 25% | 5 | 1/0/15 |
 | `intro3` | 16 | 92 | 153 | 0% | 0% | 25% | 12 | 0/0/16 |
-| `chapter2` | 78 | 68 | 185 | 1% | 0% | 26% | 40 | 35/19/24 |
-| `chapter3` | 165 | 77 | 191 | 0% | 0% | 26% | 55 | 44/50/71 |
-| `chapter4` | 52 | 82 | 153 | 0% | 0% | 25% | 24 | 20/15/17 |
-| `chapter5` | 72 | 60 | 98 | 83% | 75% | 25% | 22 | 28/21/23 |
+| `chapter2` | 78 | 68 | 192 | 1% | 0% | 26% | 40 | 35/19/24 |
+| `chapter3` | 165 | 84 | 186 | 0% | 0% | 26% | 56 | 44/50/71 |
+| `chapter4` | 52 | 87 | 187 | 0% | 0% | 25% | 24 | 20/15/17 |
+| `chapter5` | 72 | 110 | 204 | 1% | 0% | 25% | 22 | 28/21/23 |
 
 ## Проверки
-
-### `depth.explanation_short` — minor, 23
-
-Пулы: `chapter5` (23)
-
-- `chapter5` / `ch5_w3q_048`: explanation is 87 chars (<90)
-- `chapter5` / `ch5_w3q_052`: explanation is 72 chars (<90)
-- `chapter5` / `ch5_w3q_053`: explanation is 86 chars (<90)
-- `chapter5` / `ch5_w3q_055`: explanation is 73 chars (<90)
-- `chapter5` / `ch5_w3q_056`: explanation is 77 chars (<90)
-- … ещё 18
-
-### `depth.explanation_very_short` — major, 3
-
-Пулы: `chapter5` (3)
-
-- `chapter5` / `ch5_w3q_070`: explanation is 56 chars (<60)
-- `chapter5` / `ch5_w3q_090`: explanation is 52 chars (<60)
-- `chapter5` / `ch5_w3q_127`: explanation is 51 chars (<60)
-
-### `depth.meta_phrasing` — major, 4
-
-Пулы: `chapter5` (4)
-
-- `chapter5` / `ch5_w3q_068`: stem asks how to phrase the claim: 'Как корректно формулировать наблюдение о καταρτίσει, στηρίξει, σθενώσε'
-- `chapter5` / `ch5_w3q_080`: stem asks how to phrase the claim: 'Как корректно представить основные исторические варианты местонахожден'
-- `chapter5` / `ch5_w3q_106`: stem asks how to phrase the claim: '[Позиция курса] Как суммировать этические границы лидерства в 1 Пет. 5'
-- `chapter5` / `ch5_w3q_111`: stem asks how to phrase the claim: '[Позиция курса] Как формулировать практический призыв 1 Пет. 5:12 с уч'
 
 ### `depth.recall_only` — info, 12
 
@@ -80,26 +53,6 @@
 - `chapter3` / `ch3_text_302`: single-clause recall item
 - `chapter4` / `ch4_text_005`: single-clause recall item
 - … ещё 7
-
-### `language.pipeline_vocabulary_in_explanation` — major, 4
-
-Пулы: `chapter5` (4)
-
-- `chapter5` / `ch5_w3q_050`: hold-workflow in explanation
-- `chapter5` / `ch5_w3q_051`: internal-english in explanation
-- `chapter5` / `ch5_w3q_075`: artifact-vocabulary in explanation
-- `chapter5` / `ch5_w3q_125`: internal-english in explanation
-
-### `language.pipeline_vocabulary_in_stem` — blocker, 6
-
-Пулы: `chapter5` (6)
-
-- `chapter5` / `ch5_w3q_050`: internal-english visible to the learner
-- `chapter5` / `ch5_w3q_075`: internal-english visible to the learner
-- `chapter5` / `ch5_w3q_111`: artifact-vocabulary visible to the learner
-- `chapter5` / `ch5_w3q_125`: artifact-vocabulary visible to the learner
-- `chapter5` / `ch5_w3q_127`: internal-english visible to the learner
-- … ещё 1
 
 ### `levels.derived_tiers_only` — info, 21
 
@@ -123,59 +76,29 @@
 - `chapter5` / `ch5_w3q_111`: application/project has 1 source(s), policy quorum 2
 - … ещё 1
 
-### `wiseness.correct_longest` — major, 63
+### `wiseness.correct_longest` — info, 4
 
-Пулы: `chapter5` (60), `chapter2` (1), `geography` (1), `linguistics_ch1_2` (1)
+Пулы: `chapter2` (1), `chapter5` (1), `geography` (1), `linguistics_ch1_2` (1)
 
-- `chapter5` / `ch5_w3q_046`: correct option is uniquely longest (70 vs max 56)
-- `chapter5` / `ch5_w3q_047`: correct option is uniquely longest (126 vs max 74)
-- `chapter5` / `ch5_w3q_049`: correct option is uniquely longest (68 vs max 60)
-- `chapter5` / `ch5_w3q_050`: correct option is uniquely longest (132 vs max 62)
-- `chapter5` / `ch5_w3q_051`: correct option is uniquely longest (98 vs max 53)
-- … ещё 58
+- `chapter2` / `ch2_ot_005`: correct option is uniquely longest (11 vs max 9); label set - the difference is the length of a name, reference or grammatical tag
+- `chapter5` / `ch5_w3q_056`: correct option is uniquely longest (36 vs max 31); label set - the difference is the length of a name, reference or grammatical tag
+- `geography` / `geo_06`: correct option is uniquely longest (9 vs max 6); label set - the difference is the length of a name, reference or grammatical tag
+- `linguistics_ch1_2` / `ling2_06`: correct option is uniquely longest (10 vs max 8); label set - the difference is the length of a name, reference or grammatical tag
 
-### `wiseness.length_leak` — major, 54
+### `wiseness.option_shape_spread` — info, 31
 
-Пулы: `chapter5` (54)
+Пулы: `chapter2` (7), `easy_p1` (5), `easy_p2` (4), `geography` (3), `medium_p1` (3), `linguistics_ch1_3` (2), `chapter4` (1), `chapter5` (1), `hard_p1` (1), `hard_p2` (1), `linguistics_ch1` (1), `nero` (1), `practical_p1` (1)
 
-- `chapter5` / `ch5_w3q_047`: length alone reveals the answer (126 vs [39, 47, 74])
-- `chapter5` / `ch5_w3q_050`: length alone reveals the answer (132 vs [50, 55, 62])
-- `chapter5` / `ch5_w3q_051`: length alone reveals the answer (98 vs [50, 50, 53])
-- `chapter5` / `ch5_w3q_052`: length alone reveals the answer (108 vs [66, 73, 84])
-- `chapter5` / `ch5_w3q_053`: length alone reveals the answer (124 vs [42, 64, 72])
-- … ещё 49
-
-### `wiseness.option_shape_spread` — minor, 78
-
-Пулы: `chapter5` (46), `chapter2` (7), `easy_p1` (5), `easy_p2` (4), `geography` (3), `medium_p1` (3), `chapter3` (2), `linguistics_ch1_3` (2), `chapter4` (1), `hard_p1` (1), `hard_p2` (1), `linguistics_ch1` (1), `nero` (1), `practical_p1` (1)
-
-- `chapter5` / `ch5_w3q_047`: options are not comparable in shape (39..126)
-- `chapter5` / `ch5_w3q_050`: options are not comparable in shape (50..132)
-- `chapter5` / `ch5_w3q_053`: options are not comparable in shape (42..124)
-- `chapter5` / `ch5_w3q_054`: options are not comparable in shape (33..92)
-- `chapter5` / `ch5_w3q_057`: options are not comparable in shape (37..94)
-- … ещё 73
-
-### `wiseness.trivial_distractor` — minor, 3
-
-Пулы: `chapter5` (3)
-
-- `chapter5` / `ch5_w3q_053`: unfalsifiable/joke distractor: 'Текст вообще не говорит о лидерстве общины'
-- `chapter5` / `ch5_w3q_058`: unfalsifiable/joke distractor: '1 Петра вообще не использует формулу о гордых и смиренных'
-- `chapter5` / `ch5_w3q_107`: unfalsifiable/joke distractor: 'Потому что в стихе вообще нет обращения к младшим'
+- `chapter2` / `ch2_gr_006`: options are not comparable in shape (19..47); label set - lexical length only
+- `chapter2` / `ch2_ot_006`: options are not comparable in shape (4..10); label set - lexical length only
+- `chapter2` / `ch2_text_003`: options are not comparable in shape (16..45); label set - lexical length only
+- `chapter2` / `ch2_text_007`: options are not comparable in shape (12..29); label set - lexical length only
+- `chapter2` / `ch2_text_013`: options are not comparable in shape (9..41); label set - lexical length only
+- … ещё 26
 
 ## Блокеры (`blocker`)
 
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_050` (принятый долг): internal-english visible to the learner
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_075` (принятый долг): internal-english visible to the learner
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_111` (принятый долг): artifact-vocabulary visible to the learner
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_125` (принятый долг): artifact-vocabulary visible to the learner
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_127` (принятый долг): internal-english visible to the learner
-- `language.pipeline_vocabulary_in_stem` `chapter5` / `ch5_w3q_143` (принятый долг): artifact-vocabulary visible to the learner
-
-### Принятый долг (требует выпускного repin)
-
-Эти блокеры перечислены в `data/question-quality-budget.json` → `accepted_blockers` с причиной. Список закреплён тестом `tests/test_question_bank_audit.py`, поэтому он не может вырасти без отдельного ревью.
+Блокеров нет.
 
 ## Верификация цитат
 
@@ -186,6 +109,8 @@
 - LXX/ВЗ: **72** карточек с ветхозаветными ссылками, **578** стихов Рафлса 1935; офлайн-проверка нашла **0**.
   - прошлый прогон по корпусу: информационные находки lxx.word_in_option_not_in_verses × 3; блокирующих нет.
   - корпус LXX не вендорится (CC BY-NC-SA/CCAT): хранится запись ссылок и хеш цитат, `data/ot-citation-fingerprints.json`.
+- Разбор форм: **79** карточек-кандидатов с разбором на якоре 1 Петра; **56** действительно сверены с **1218** строками MorphGNT, **23** явно оставлены для ручной проверки; блокирующих расхождений — **0**.
+  - ручная граница: несколько форм в одном вопросе или форма не названа; `scripts/verify_parse_claims.py`, тесты `tests/test_parse_claims.py` фиксируют и машинное покрытие, и полный список таких исключений.
 
 ## Как читать отчёт
 
@@ -198,7 +123,9 @@
 
 ## Что делать по приоритету
 
-1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет: единственный оставшийся долг — пятая глава (6 блокеров в `accepted_blockers`, всего 213 находок). Её банки заперты блоб-пинами, поэтому содержимое меняет только выпускной repin; правка на месте обошла бы выпускное ревью (`docs/CHAPTER5_RELEASE_AUDIT.md`).
+1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет. В пятой главе остаётся только явно учтённый non-info долг: `blocker` 0, `major` 6, `minor` 0.
+   - `metadata.source_quorum`: 6
+   - Эти source-quorum находки принадлежат Research-authority boundary: product-репозиторий не добавляет недостающие evidence edges самовольно; для их закрытия нужен новый reviewed Research release и последующий repin.
 2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 21 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
-3. Все прочие находки — INFO-контекст, а не дефекты (`depth.recall_only` 12, `levels.derived_tiers_only` 21, `wiseness.correct_longest` 5, `wiseness.option_shape_spread` 34): базовые recall-карточки для простых пользователей, метки/ссылки в вариантах, для которых выравнивание длины меняло бы сам проверяемый факт, и производные уровни.
+3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 21, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
 4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` не даёт счётчикам вырасти, а `tests/test_question_depth_regressions.py` держит глубину объяснений, нейтральность длины вариантов и источник-quorum вне пятой главы.
