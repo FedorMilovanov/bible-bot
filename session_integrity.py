@@ -14,6 +14,11 @@ from legacy_session_retention import ensure_state_aware_session_ttl
 
 logger = logging.getLogger(__name__)
 
+
+def _log_session_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 # database._ensure_indexes() historically installs generic TTL indexes before
 # bot.py imports this integrity layer. Migrate them immediately during normal
 # runtime import so pending quiz results and undelivered outbox evidence are not
@@ -107,15 +112,19 @@ def get_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
             return None
         try:
             decision = classify_restart_session(session)
-        except LegacyRestartStateInvalid:
-            logger.warning("refusing resume of contradictory quiz session %s", session_id)
+        except LegacyRestartStateInvalid as exc:
+            _log_session_failure(
+                "refusing resume of contradictory quiz session",
+                exc,
+                level=logging.WARNING,
+            )
             return None
         if decision.action != "resume":
             return None
         return session
     except PyMongoError as exc:
-        logger.exception("failed to load owned quiz session %s", session_id)
-        raise QuizSessionStoreUnavailable("quiz session lookup failed") from exc
+        _log_session_failure("failed to load owned quiz session", exc)
+        raise QuizSessionStoreUnavailable("quiz session lookup failed") from None
 
 
 def record_owned_quiz_answer(
@@ -258,12 +267,8 @@ def record_owned_quiz_answer(
     except QuizSessionAnswerConflict:
         raise
     except PyMongoError as exc:
-        logger.exception(
-            "failed to persist owned quiz answer %s[%s]",
-            session_id,
-            expected_index,
-        )
-        raise QuizSessionStoreUnavailable("quiz answer write failed") from exc
+        _log_session_failure("failed to persist owned quiz answer", exc)
+        raise QuizSessionStoreUnavailable("quiz answer write failed") from None
 
 
 def cancel_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
@@ -285,10 +290,11 @@ def cancel_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
         try:
             decision = classify_restart_session(existing)
             attempt_id = persisted_attempt_id(existing)
-        except (LegacyRestartStateInvalid, ValueError):
-            logger.warning(
-                "refusing cancellation of contradictory quiz session %s",
-                session_id,
+        except (LegacyRestartStateInvalid, ValueError) as exc:
+            _log_session_failure(
+                "refusing cancellation of contradictory quiz session",
+                exc,
+                level=logging.WARNING,
             )
             return None
         if decision.action != "resume":
@@ -317,5 +323,5 @@ def cancel_owned_quiz_session(session_id: str, user_id: int) -> dict | None:
             return_document=ReturnDocument.BEFORE,
         )
     except PyMongoError as exc:
-        logger.exception("failed to cancel owned quiz session %s", session_id)
-        raise QuizSessionStoreUnavailable("quiz session cancellation failed") from exc
+        _log_session_failure("failed to cancel owned quiz session", exc)
+        raise QuizSessionStoreUnavailable("quiz session cancellation failed") from None
