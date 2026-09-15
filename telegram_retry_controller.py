@@ -56,8 +56,8 @@ async def retry_errors(update, context):
     except LegacyRetrySourceUnavailable:
         await query.answer("База результатов временно недоступна.", show_alert=True)
         return ConversationHandler.END
-    except (LegacyRetrySourceInvalid, ValueError):
-        logger.error("durable retry source is invalid for user %s", user_id, exc_info=True)
+    except (LegacyRetrySourceInvalid, ValueError) as exc:
+        logger.error("durable retry source is invalid (%s)", type(exc).__name__)
         await query.answer("Сохранённый результат повреждён.", show_alert=True)
         return ConversationHandler.END
 
