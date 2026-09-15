@@ -7,7 +7,7 @@ import uuid
 import logging
 import functools
 from datetime import UTC, datetime, timedelta
-from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING, timeout as pymongo_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,10 @@ POINTS_PER_QUESTION = {
 
 REPORT_COOLDOWN_SECONDS = 60
 
+# Render HTTP health checks must respond within five seconds. Bound only the
+# health ping so normal database operations keep their existing timeout policy.
+_DB_HEALTH_TIMEOUT_SECONDS = 2.0
+
 
 # ═══════════════════════════════════════════════
 # HELPERS
@@ -122,15 +126,15 @@ def mongo_retry(max_retries=2, delay=0.3):
 
 
 def check_db_connection() -> bool:
-    """Проверяет доступность MongoDB."""
+    """Check MongoDB availability within the health-probe deadline."""
     if collection is None:
         return False
     try:
-        cluster.admin.command("ping")
+        with pymongo_timeout(_DB_HEALTH_TIMEOUT_SECONDS):
+            cluster.admin.command("ping")
         return True
     except Exception:
         return False
-
 
 # ═══════════════════════════════════════════════
 # TTL INDEXES
