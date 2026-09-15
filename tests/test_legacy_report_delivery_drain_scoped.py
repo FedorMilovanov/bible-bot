@@ -100,21 +100,20 @@ def test_report_store_outage_is_retryable_summary(monkeypatch):
 
     assert result.reports_seen == 0
     assert result.stage_sends == 0
-    assert len(result.errors) == 1
-    assert result.errors[0].startswith("report-list:<queue>:ReportStoreUnavailable:")
+    assert result.errors == ("report-list:ReportStoreUnavailable",)
 
 
 def test_one_report_failure_does_not_starve_next(monkeypatch):
     monkeypatch.setattr(
         drain,
         "get_pending_reports",
-        lambda _limit: [{"_id": "bad"}, {"_id": "good"}],
+        lambda _limit: [{"_id": "report-sensitive-id"}, {"_id": "good"}],
     )
     seen = []
 
     async def deliver(report_id, _photo, _text):
-        if report_id == "bad":
-            raise RuntimeError("telegram down")
+        if report_id == "report-sensitive-id":
+            raise RuntimeError("provider-sensitive-marker")
         seen.append(report_id)
         return False, True
 
@@ -123,7 +122,9 @@ def test_one_report_failure_does_not_starve_next(monkeypatch):
 
     assert seen == ["good"]
     assert result.stage_sends == 1
-    assert len(result.errors) == 1
+    assert result.errors == ("report-delivery:RuntimeError",)
+    assert "report-sensitive-id" not in repr(result.errors)
+    assert "provider-sensitive-marker" not in repr(result.errors)
 
 
 def test_existing_lease_is_deferred(monkeypatch):

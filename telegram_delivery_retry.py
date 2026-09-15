@@ -36,12 +36,10 @@ async def send_with_durable_retry_after(
     try:
         return await sender(*args)
     except (Forbidden, BadRequest) as exc:
-        raise LegacyDeliveryPermanentFailure(
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+        raise LegacyDeliveryPermanentFailure(type(exc).__name__) from None
     except RetryAfter as exc:
         delay = retry_after_seconds(exc)
         raise LegacyDeliveryDeferred(
             delay,
-            detail=f"RetryAfter: {exc}",
-        ) from exc
+            detail=type(exc).__name__,
+        ) from None

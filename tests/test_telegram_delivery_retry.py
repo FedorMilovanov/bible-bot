@@ -45,7 +45,9 @@ def test_sender_retry_after_becomes_generic_durable_defer_signal():
 
     assert calls == ["payload"]
     assert caught.value.delay_seconds == 300.0
-    assert "RetryAfter" in caught.value.detail
+    assert caught.value.detail == "RetryAfter"
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
 
 
 @pytest.mark.parametrize(
@@ -59,7 +61,9 @@ def test_terminal_telegram_errors_become_permanent_failure_signal(error):
     with pytest.raises(LegacyDeliveryPermanentFailure) as caught:
         run(retry.send_with_durable_retry_after(sender))
 
-    assert type(error).__name__ in caught.value.detail
+    assert caught.value.detail == type(error).__name__
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
 
 
 def test_non_rate_limit_sender_error_passes_through_unchanged():

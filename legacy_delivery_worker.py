@@ -128,7 +128,7 @@ async def deliver_battle_recipient_once(
             battle_id,
             user_id,
             token,
-            error=f"{type(exc).__name__}: {exc}",
+            error=type(exc).__name__,
         )
         raise
 
@@ -206,7 +206,7 @@ async def _deliver_report_stage_once(
             report_id,
             stage,
             token,
-            error=f"{type(exc).__name__}: {exc}",
+            error=type(exc).__name__,
         )
         raise
 
