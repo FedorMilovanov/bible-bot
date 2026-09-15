@@ -1,5 +1,7 @@
 import copy
+import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import database
@@ -298,3 +300,32 @@ def test_old_receipt_is_pruned_after_source_session_disappears(monkeypatch):
     result_store._prune_old_receipts(123)
 
     assert "session-gone" not in users.doc.get("miniapp_result_receipts", {})
+
+
+def test_result_store_exception_logging_redacts_result_id_and_payload(monkeypatch, caplog):
+    class BrokenCollection:
+        def update_one(self, *_args, **_kwargs):
+            raise RuntimeError("provider-sensitive-marker")
+
+    monkeypatch.setattr(result_store, "_user_collection", lambda: BrokenCollection())
+    with caplog.at_level(logging.ERROR, logger=result_store.__name__):
+        stored = result_store._persist_once(
+            123,
+            "session-sensitive-id",
+            {},
+            {"kind": "regular"},
+        )
+
+    assert stored is None
+    assert "failed to persist Mini App result receipt (RuntimeError)" in caplog.text
+    assert "session-sensitive-id" not in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text
+
+
+def test_result_store_source_has_no_traceback_or_result_id_logging():
+    source = Path(result_store.__file__).read_text(encoding="utf-8")
+    assert "logger.exception(" not in source
+    assert "exc_info=True" not in source
+    for line in source.splitlines():
+        if "logger." in line or "_log_result_store_failure(" in line:
+            assert "result_id" not in line
