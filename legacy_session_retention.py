@@ -15,6 +15,10 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_storage_failure(operation: str, exc: BaseException) -> None:
+    logger.error("%s (%s)", operation, type(exc).__name__)
+
 _LEGACY_TTL_NAME = "ttl_updated_at"
 _TERMINAL_TTL_NAME = "ttl_terminal_updated_at"
 _TERMINAL_RETENTION_SECONDS = 90 * 24 * 60 * 60
@@ -66,7 +70,7 @@ def ensure_state_aware_session_ttl() -> bool:
             )
         return True
     except PyMongoError as exc:
-        logger.exception("failed to install state-aware quiz-session retention")
+        _log_storage_failure("failed to install state-aware quiz-session retention", exc)
         raise QuizSessionRetentionUnavailable(
             "quiz-session retention migration failed"
-        ) from exc
+        ) from None
