@@ -22,6 +22,11 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_result_card_failure(operation: str, exc: BaseException) -> None:
+    logger.error("%s (%s)", operation, type(exc).__name__)
+
+
 RESULT_CARD_DELIVERY_PROTOCOL = "result_card_outbox_v1"
 _MAX_RESULT_TEXT = 4096
 
@@ -172,8 +177,8 @@ def set_result_card_delivery_text(
     except (ResultCardDeliveryConflict, ResultCardDeliveryUnavailable):
         raise
     except PyMongoError as exc:
-        logger.exception("failed to persist result-card text for %s", session_id)
-        raise ResultCardDeliveryUnavailable("result-card text write failed") from exc
+        _log_result_card_failure("failed to persist result-card text", exc)
+        raise ResultCardDeliveryUnavailable("result-card text write failed") from None
 
 
 def claim_result_card_delivery(
@@ -235,8 +240,8 @@ def claim_result_card_delivery(
     except ResultCardDeliveryConflict:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to lease result card for %s", session_id)
-        raise ResultCardDeliveryUnavailable("result-card claim failed") from exc
+        _log_result_card_failure("failed to lease result card", exc)
+        raise ResultCardDeliveryUnavailable("result-card claim failed") from None
 
 
 def mark_result_card_delivered(
@@ -281,7 +286,7 @@ def mark_result_card_delivered(
         marker = existing.get(path) if isinstance(existing, dict) else None
         return isinstance(marker, dict) and marker.get("delivered") is True
     except PyMongoError as exc:
-        raise ResultCardDeliveryUnavailable("result-card acknowledgement failed") from exc
+        raise ResultCardDeliveryUnavailable("result-card acknowledgement failed") from None
 
 
 def defer_result_card_delivery(
@@ -321,7 +326,7 @@ def defer_result_card_delivery(
         )
         return result.modified_count == 1
     except PyMongoError as exc:
-        raise ResultCardDeliveryUnavailable("result-card deferral failed") from exc
+        raise ResultCardDeliveryUnavailable("result-card deferral failed") from None
 
 
 def release_result_card_delivery(
@@ -354,7 +359,7 @@ def release_result_card_delivery(
         )
         return result.modified_count == 1
     except PyMongoError as exc:
-        raise ResultCardDeliveryUnavailable("result-card release failed") from exc
+        raise ResultCardDeliveryUnavailable("result-card release failed") from None
 
 
 def settle_result_card_delivery_failure(
@@ -398,7 +403,7 @@ def settle_result_card_delivery_failure(
         )
         return result.modified_count == 1
     except PyMongoError as exc:
-        raise ResultCardDeliveryUnavailable("result-card terminal settlement failed") from exc
+        raise ResultCardDeliveryUnavailable("result-card terminal settlement failed") from None
 
 
 def get_pending_result_card_sessions(limit: int = 50) -> list[dict]:
@@ -426,5 +431,5 @@ def get_pending_result_card_sessions(limit: int = 50) -> list[dict]:
             .limit(limit)
         )
     except PyMongoError as exc:
-        logger.exception("failed to list pending result cards")
-        raise ResultCardDeliveryUnavailable("pending result-card lookup failed") from exc
+        _log_result_card_failure("failed to list pending result cards", exc)
+        raise ResultCardDeliveryUnavailable("pending result-card lookup failed") from None
