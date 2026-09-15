@@ -110,12 +110,14 @@ def test_request_body_limit_returns_json_413(http):
 def test_security_and_cache_headers(http):
     public = http.get("/live")
     assert public.status_code == 200
+    assert public.headers["Strict-Transport-Security"] == "max-age=31536000"
     assert public.headers["X-Content-Type-Options"] == "nosniff"
     assert public.headers["Referrer-Policy"] == "no-referrer"
     assert public.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert "no-cache" in public.headers["Cache-Control"]
 
     api = http.get("/api/me", headers=debug_headers())
+    assert api.headers["Strict-Transport-Security"] == "max-age=31536000"
     assert api.headers["X-Content-Type-Options"] == "nosniff"
     assert api.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert api.headers["Cache-Control"] == "no-store"
