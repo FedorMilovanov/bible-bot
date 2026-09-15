@@ -13,6 +13,10 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_storage_failure(operation: str, exc: BaseException) -> None:
+    logger.error("%s (%s)", operation, type(exc).__name__)
+
 _RETENTION_SECONDS = 90 * 24 * 60 * 60
 
 _BROADCAST_TTL = (
@@ -216,7 +220,7 @@ def ensure_broadcast_indexes() -> None:
     except BroadcastIndexSafetyUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("broadcast index safety bootstrap failed")
+        _log_storage_failure("broadcast index safety bootstrap failed", exc)
         raise BroadcastIndexSafetyUnavailable(
             "broadcast index safety bootstrap is unavailable"
-        ) from exc
+        ) from None

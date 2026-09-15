@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import pytest
+from pymongo.errors import PyMongoError
 
 import broadcast_index_safety as safety
 
@@ -172,3 +173,22 @@ def test_missing_database_is_distinct_fail_closed_boundary(monkeypatch):
 
     with pytest.raises(safety.BroadcastIndexSafetyUnavailable, match="database is unavailable"):
         safety.ensure_broadcast_indexes()
+
+
+def test_pymongo_failure_log_redacts_provider_payload(monkeypatch, caplog):
+    class FailingCollection(Collection):
+        def index_information(self):
+            raise PyMongoError("provider-sensitive-marker")
+
+    monkeypatch.setattr(
+        safety,
+        "_database",
+        lambda: DB(broadcasts=FailingCollection(), deliveries=Collection()),
+    )
+
+    with caplog.at_level("ERROR", logger=safety.__name__):
+        with pytest.raises(safety.BroadcastIndexSafetyUnavailable):
+            safety.ensure_broadcast_indexes()
+
+    assert "broadcast index safety bootstrap failed (PyMongoError)" in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text

@@ -15,6 +15,10 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_storage_failure(operation: str, exc: BaseException) -> None:
+    logger.error("%s (%s)", operation, type(exc).__name__)
+
 _BATTLE_LEGACY_TTL = "ttl_battles_created_at"
 _BATTLE_DELIVERED_TTL = "ttl_battles_delivered_created_at"
 _BATTLE_RETENTION_SECONDS = 30 * 24 * 60 * 60
@@ -102,7 +106,7 @@ def ensure_state_aware_delivery_ttl() -> bool:
             )
         return True
     except PyMongoError as exc:
-        logger.exception("failed to install state-aware delivery retention")
+        _log_storage_failure("failed to install state-aware delivery retention", exc)
         raise DeliveryRetentionUnavailable(
             "battle/report delivery retention migration failed"
-        ) from exc
+        ) from None

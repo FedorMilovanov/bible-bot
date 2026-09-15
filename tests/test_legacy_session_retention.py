@@ -127,8 +127,12 @@ def test_missing_collection_is_explicit_noop(monkeypatch):
     assert ensure_state_aware_session_ttl() is False
 
 
-def test_index_failure_is_not_silently_treated_as_safe(monkeypatch):
+def test_index_failure_is_not_silently_treated_as_safe(monkeypatch, caplog):
     monkeypatch.setattr(database, "quiz_sessions_collection", FakeIndexes(fail=True))
 
-    with pytest.raises(QuizSessionRetentionUnavailable, match="retention migration failed"):
-        ensure_state_aware_session_ttl()
+    with caplog.at_level("ERROR", logger="legacy_session_retention"):
+        with pytest.raises(QuizSessionRetentionUnavailable, match="retention migration failed"):
+            ensure_state_aware_session_ttl()
+
+    assert "failed to install state-aware quiz-session retention (PyMongoError)" in caplog.text
+    assert "index lookup failed" not in caplog.text

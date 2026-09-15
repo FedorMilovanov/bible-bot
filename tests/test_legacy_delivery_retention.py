@@ -199,9 +199,14 @@ def test_one_configured_collection_can_migrate_independently(monkeypatch):
     assert len(reports.created) == 1
 
 
-def test_index_failure_is_not_silently_treated_as_safe(monkeypatch):
-    monkeypatch.setattr(database, "battles_collection", FakeIndexes(fail=True))
+def test_index_failure_is_not_silently_treated_as_safe(monkeypatch, caplog):
+    failing = FakeIndexes(fail=True)
+    monkeypatch.setattr(database, "battles_collection", failing)
     monkeypatch.setattr(database, "reports_collection", FakeIndexes())
 
-    with pytest.raises(DeliveryRetentionUnavailable, match="retention migration failed"):
-        ensure_state_aware_delivery_ttl()
+    with caplog.at_level("ERROR", logger="legacy_delivery_retention"):
+        with pytest.raises(DeliveryRetentionUnavailable, match="retention migration failed"):
+            ensure_state_aware_delivery_ttl()
+
+    assert "failed to install state-aware delivery retention (PyMongoError)" in caplog.text
+    assert "index lookup failed" not in caplog.text
