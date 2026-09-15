@@ -172,9 +172,11 @@ def test_index_metadata_failure_is_explicit(monkeypatch, caplog):
         with pytest.raises(
             hardening.MiniAppIndexSafetyUnavailable,
             match="hardening failed",
-        ):
+        ) as raised:
             hardening.ensure_miniapp_indexes()
 
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
     assert "Mini App index hardening pending (RuntimeError)" in caplog.text
     assert sensitive_marker not in caplog.text
 
