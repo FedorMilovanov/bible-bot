@@ -32,19 +32,26 @@ _DEFAULT_MINIAPP_BODY_BYTES = 64 * 1024
 
 # Per authenticated Telegram user. Values are (requests, window seconds).
 _RATE_LIMITS = {
+    ("GET", "/api/quiz/active"): (60, 60),
     ("POST", "/api/quiz/start"): (12, 60),
     ("POST", "/api/quiz/current"): (180, 60),
     ("POST", "/api/quiz/answer"): (180, 60),
+    ("POST", "/api/quiz/cancel"): (12, 60),
     ("GET", "/api/me"): (60, 60),
     ("GET", "/api/leaderboard"): (60, 60),
     ("GET", "/api/launch-context"): (60, 60),
 }
 _QUESTION_ENDPOINT_LIMIT = (30, 60)
 _QUESTION_RATE_SCOPE = "/api/questions/*"
-_SERIALIZED_QUIZ_PATHS = frozenset({
+_JSON_QUIZ_PATHS = frozenset({
     "/api/quiz/start",
     "/api/quiz/current",
     "/api/quiz/answer",
+    "/api/quiz/cancel",
+})
+_SERIALIZED_QUIZ_PATHS = frozenset({
+    "/api/quiz/active",
+    *_JSON_QUIZ_PATHS,
 })
 
 
@@ -197,7 +204,9 @@ def create_app():
         policy = _RATE_LIMITS.get((request.method, request.path))
         if policy is None and question_catalog_request:
             policy = _QUESTION_ENDPOINT_LIMIT
-        if policy is None:
+
+        serialized_quiz_request = request.path in _SERIALIZED_QUIZ_PATHS
+        if policy is None and not serialized_quiz_request:
             return None
 
         # Authenticate protected API traffic before parsing request bodies.
@@ -210,22 +219,23 @@ def create_app():
                 return jsonify({"error": "telegram authentication required"}), 401
             return None
 
-        limit, window_seconds = policy
-        rate_scope = _QUESTION_RATE_SCOPE if question_catalog_request else request.path
-        allowed, retry_after = GLOBAL_API_LIMITER.allow(
-            f"{user['id']}:{request.method}:{rate_scope}",
-            limit=limit,
-            window_seconds=window_seconds,
-        )
-        if not allowed:
-            response = jsonify(
-                {"error": "rate limit exceeded", "retry_after": retry_after}
+        if policy is not None:
+            limit, window_seconds = policy
+            rate_scope = _QUESTION_RATE_SCOPE if question_catalog_request else request.path
+            allowed, retry_after = GLOBAL_API_LIMITER.allow(
+                f"{user['id']}:{request.method}:{rate_scope}",
+                limit=limit,
+                window_seconds=window_seconds,
             )
-            response.status_code = 429
-            response.headers["Retry-After"] = str(retry_after)
-            return response
+            if not allowed:
+                response = jsonify(
+                    {"error": "rate limit exceeded", "retry_after": retry_after}
+                )
+                response.status_code = 429
+                response.headers["Retry-After"] = str(retry_after)
+                return response
 
-        if request.path in _SERIALIZED_QUIZ_PATHS:
+        if request.path in _JSON_QUIZ_PATHS:
             request.max_content_length = int(
                 os.getenv(
                     "MINIAPP_MAX_REQUEST_BODY_BYTES",
@@ -241,9 +251,10 @@ def create_app():
             if not isinstance(payload, dict):
                 return jsonify({"error": "JSON object required"}), 400
 
+        if serialized_quiz_request:
             # Waitress is multi-threaded. Hold one bounded lock stripe for the
-            # authenticated user until Flask tears down the request so a new
-            # start cannot race that user's current/answer persistence.
+            # authenticated user until Flask tears down the request so active,
+            # start/current/answer/cancel cannot race the same session state.
             lock = user_operation_lock(user["id"])
             lock.acquire()
             g.miniapp_user_operation_lock = lock
