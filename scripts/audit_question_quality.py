@@ -1053,16 +1053,16 @@ def citation_verification() -> list[str]:
     parse_rows = parse_claim_findings()
     parse_stats = parse_claim_coverage()
     parse_blocking = [finding for finding in parse_rows if finding.severity == "blocking"]
-    parse_manual = [finding for finding in parse_rows if finding.severity == "info"]
     lines.append(
-        f"- Разбор форм: **{parse_stats['cards_with_parse_claim']}** карточек, у которых ключевой "
-        f"вариант утверждает разбор, сверены с **{parse_stats['corpus_rows']}** строками MorphGNT; "
-        f"расхождений — **{len(parse_blocking)}**."
+        f"- Разбор форм: **{parse_stats['parse_claim_cards']}** карточек-кандидатов с разбором "
+        f"на якоре 1 Петра; **{parse_stats['machine_verified_cards']}** действительно сверены "
+        f"с **{parse_stats['corpus_rows']}** строками MorphGNT, **{parse_stats['manual_review_cards']}** "
+        f"явно оставлены для ручной проверки; блокирующих расхождений — **{len(parse_blocking)}**."
     )
     lines.append(
-        "  - вне машинной сверки: **"
-        f"{len(parse_manual)}** карточек (несколько форм в одном вопросе или форма не названа); "
-        "`scripts/verify_parse_claims.py`, тесты `tests/test_parse_claims.py`."
+        "  - ручная граница: несколько форм в одном вопросе или форма не названа; "
+        "`scripts/verify_parse_claims.py`, тесты `tests/test_parse_claims.py` фиксируют "
+        "и машинное покрытие, и полный список таких исключений."
     )
     return lines
 
@@ -1190,10 +1190,14 @@ def render_markdown(report: AuditReport, *, budget: dict[str, Any] | None = None
         finding.severity for finding in report.findings if finding.pool != "chapter5"
     )
     lines.append(
-        "- вне пятой главы (её банки заперты блоб-пинами и ждут выпускного repin): "
+        "- вне пятой главы: "
         + ", ".join(
             f"`{severity}` {outside_counts.get(severity, 0)}" for severity in SEVERITY_ORDER
         )
+    )
+    lines.append(
+        "- пятая глава: reviewed bank закреплён blob-пинами; любое будущее изменение "
+        "содержимого проходит только через новый reviewed release repin."
     )
     coverage = letter_coverage(_pool_items())
     lines.append(
@@ -1307,7 +1311,11 @@ def render_markdown(report: AuditReport, *, budget: dict[str, Any] | None = None
         for finding in report.findings
         if finding.pool != "chapter5" and finding.severity in (BLOCKER, MAJOR, MINOR)
     ]
-    chapter5_total = sum(1 for finding in report.findings if finding.pool == "chapter5")
+    chapter5_actionable = [
+        finding
+        for finding in report.findings
+        if finding.pool == "chapter5" and finding.severity in (BLOCKER, MAJOR, MINOR)
+    ]
     if blocking_outside:
         lines.append(
             "1. Вне пятой главы ещё остаются находки уровня `blocker`/`major`/`minor` — их закрывают "
@@ -1325,12 +1333,34 @@ def render_markdown(report: AuditReport, *, budget: dict[str, Any] | None = None
             )
             lines.append(f"   - `{check_id}`: {count} — " + ", ".join(f"`{pool}`" for pool in pools))
     else:
-        lines.append(
-            "1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет: единственный оставшийся "
-            f"долг — пятая глава ({len(blockers)} блокеров в `accepted_blockers`, всего {chapter5_total} "
-            "находок). Её банки заперты блоб-пинами, поэтому содержимое меняет только выпускной repin; "
-            "правка на месте обошла бы выпускное ревью (`docs/CHAPTER5_RELEASE_AUDIT.md`)."
-        )
+        if chapter5_actionable:
+            chapter5_severity = Counter(finding.severity for finding in chapter5_actionable)
+            lines.append(
+                "1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет. "
+                "В пятой главе остаётся только явно учтённый non-info долг: "
+                + ", ".join(
+                    f"`{severity}` {chapter5_severity.get(severity, 0)}"
+                    for severity in (BLOCKER, MAJOR, MINOR)
+                )
+                + "."
+            )
+            for check_id, count in Counter(
+                finding.check_id for finding in chapter5_actionable
+            ).most_common():
+                lines.append(f"   - `{check_id}`: {count}")
+            if all(
+                finding.check_id == "metadata.source_quorum"
+                for finding in chapter5_actionable
+            ):
+                lines.append(
+                    "   - Эти source-quorum находки принадлежат Research-authority boundary: "
+                    "product-репозиторий не добавляет недостающие evidence edges самовольно; "
+                    "для их закрытия нужен новый reviewed Research release и последующий repin."
+                )
+        else:
+            lines.append(
+                "1. Находок уровня `blocker`/`major`/`minor` нет ни в одном производственном пуле."
+            )
     level_pools = [
         finding for finding in report.findings if finding.check_id == "levels.derived_tiers_only"
     ]
@@ -1345,16 +1375,20 @@ def render_markdown(report: AuditReport, *, budget: dict[str, Any] | None = None
     jargon_pools = Counter(
         finding.pool for finding in report.by_check("language.latin_jargon")
     )
+    info_summary = ", ".join(
+        f"`{check}` {count}" for check, count in sorted(info_checks.items())
+    ) or "нет"
+    jargon_summary = ", ".join(
+        f"`{pool}` {count}" for pool, count in sorted(jargon_pools.items())
+    ) or "0"
     lines.append(
-        "3. INFO-находки вне пятой главы — контекст, а не дефекты, кроме одной семьи ("
-        + ", ".join(f"`{check}` {count}" for check, count in sorted(info_checks.items()))
-        + "). `language.latin_jargon` — это латиница в тексте для учащихся: "
-        + ", ".join(f"`{pool}` {count}" for pool, count in sorted(jargon_pools.items()))
-        + ". Третью главу локализует параллельная полоса (её строки вне этой ветки), "
-        "пятая ждёт выпускного repin; в остальных пулах счётчик нулевой. Базовые "
-        "recall-карточки для простых пользователей, метки/ссылки в вариантах, для которых "
-        "выравнивание длины меняло бы сам проверяемый факт, и производные уровни — "
-        "осознанный INFO-контекст."
+        "3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: "
+        + info_summary
+        + ". `language.latin_jargon` по пулам: "
+        + jargon_summary
+        + ". Базовые recall-карточки, различия длины в коротких label-наборах и "
+        "производные уровни остаются видимыми в ratchet и не объявляются исправленными "
+        "только потому, что они не блокируют релиз."
     )
     lines.append(
         "4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` "
@@ -1401,6 +1435,10 @@ def compare_budget(report: AuditReport, budget: dict[str, Any]) -> list[tuple[st
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", type=Path, help="write the machine-readable report here")
     parser.add_argument("--report", type=Path, default=None, help="write the Markdown report here")

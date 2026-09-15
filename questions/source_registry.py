@@ -28,12 +28,33 @@ def _extend_with_identity_only_sources(
     base: dict[str, dict],
     identity_catalog: dict[str, dict],
 ) -> dict[str, dict]:
-    """Add only missing source identities without overriding existing authority."""
+    """Add identities while preserving claim depth from the earliest authority.
+
+    A later identity-only catalog may know a stable bibliographic URL that an
+    earlier identity-only Research handoff intentionally left blank. Filling that
+    URL is identity enrichment, not an evidence-depth upgrade. All authority,
+    inspection and claim-depth fields still come from the earlier record.
+    """
+
     merged = {source_id: dict(metadata) for source_id, metadata in base.items()}
     for source_id, metadata in identity_catalog.items():
         if source_id in merged:
-            # Earlier canonical identity wins. A later chapter may reuse the
-            # same work ID, but cannot upgrade or replace shared claim depth.
+            current = merged[source_id]
+            if (
+                current.get("source_identity_only") is True
+                and metadata.get("source_identity_only") is True
+            ):
+                current_url = str(current.get("url") or "").strip()
+                later_url = str(metadata.get("url") or "").strip()
+                if current_url and later_url and current_url != later_url:
+                    raise ValueError(
+                        f"Conflicting identity URLs for {source_id!r}: "
+                        f"{current_url!r} != {later_url!r}"
+                    )
+                if not current_url and later_url:
+                    current["url"] = later_url
+            # Earlier canonical authority still wins. A later chapter may reuse
+            # the same work ID, but cannot upgrade or replace shared claim depth.
             continue
         merged[source_id] = dict(metadata)
     return merged

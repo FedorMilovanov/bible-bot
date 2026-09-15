@@ -28,7 +28,7 @@ def _session(**overrides):
         "level_key": "easy",
         "level_name": "Easy",
         "chat_id": 42,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
         "time_limit": None,
     }
     base.update(overrides)

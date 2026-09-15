@@ -382,6 +382,10 @@ def claims_needed() -> set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, help="full 1Pe MorphGNT file to verify against")
     parser.add_argument("--write-evidence", action="store_true", help="rewrite the vendored excerpt")

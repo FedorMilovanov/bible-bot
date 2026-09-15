@@ -111,7 +111,7 @@ SOURCE_CATALOG = {
     "macarthur_husbands": {
         "title": "John MacArthur, Husbands, Love Your Wives (with 1 Peter 3:7 exposition)",
         "kind": "conservative_exposition_position",
-        "url": "https://www.gty.org/library/sermons-library/80-383/husbands-love-your-wives",
+        "url": "https://www.gty.org/sermons/80-383/husbands-love-your-wives",
         "evidence_status": "inspected_passage",
     },
     "piper_fearless_submission": {

@@ -8,8 +8,9 @@ against the production pools instead of against the audit's own counters, so a
 later edit that reintroduces a one-line explanation, a length cue or a single
 source fails here even before ``--check`` runs.
 
-Chapter 5 is excluded on purpose. After the 2026-09 wiseness release repin
-(raw-bank blob 1dbe41b5d296ef9a2738f68f3fef807fde030dce) its option-length
+Chapter 5 is excluded on purpose. After the 2026-09 wiseness repin and the
+learner-language micro-repin (current raw-bank blob
+7a02ccdef4f1089e66a9df263bca683f2b1f0d51) its option-length
 findings are zero; what remains is six Research-gated ``source_quorum`` majors
 (second evidence edges can only arrive in a new vendored Research release) and
 a handful of deliberate recall cards for entry-level learners. Asserting the

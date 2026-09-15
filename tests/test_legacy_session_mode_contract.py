@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -24,7 +24,7 @@ def _completed_session(**overrides):
         "level_key": "easy",
         "level_name": "Easy",
         "chat_id": 42,
-        "start_time": datetime(2026, 8, 10, 12, 0, 0).timestamp(),
+        "start_time": datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC).timestamp(),
         "time_limit": None,
     }
     session.update(overrides)

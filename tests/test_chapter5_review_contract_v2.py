@@ -1,5 +1,4 @@
 # ruff: noqa: RUF001
-import hashlib
 from copy import deepcopy
 from pathlib import Path
 
@@ -18,6 +17,8 @@ from questions.chapter5.bank import CHAPTER5_STAGING_QUESTIONS
 from questions.chapter5.bank_identity_v2 import (
     AGENT3_RAW_BANK_GIT_BLOB_SHA,
     CANONICAL_RELEASE_BANK_GIT_BLOB_SHA,
+    _git_blob_sha,
+    _git_blob_sha_bytes,
 )
 from questions.chapter5.reviewed import CHAPTER5_REVIEWED_QUESTIONS
 from questions.research_release_authority import (
@@ -43,17 +44,26 @@ def _ids(items) -> set[str]:
     return {str(item["id"]) for item in items}
 
 
-def _git_blob_sha(raw: bytes) -> str:
-    header = f"blob {len(raw)}\0".encode()
-    return hashlib.sha1(header + raw).hexdigest()
+def test_git_blob_identity_is_independent_of_windows_checkout_newlines(tmp_path: Path):
+    lf = b'print("release")\nprint("identity")\n'
+    crlf = lf.replace(b"\n", b"\r\n")
+    assert _git_blob_sha_bytes(lf) == _git_blob_sha_bytes(crlf)
+
+    lf_path = tmp_path / "lf.py"
+    crlf_path = tmp_path / "crlf.py"
+    lf_path.write_bytes(lf)
+    crlf_path.write_bytes(crlf)
+    assert _git_blob_sha(lf_path) == _git_blob_sha(crlf_path)
 
 
 def test_exact_raw_and_canonical_product_bank_blobs_and_no_padding_machinery():
     root = Path(__file__).resolve().parents[1] / "questions" / "chapter5"
-    raw_authoring = (root / "bank_raw.py").read_bytes()
-    canonical = (root / "bank.py").read_bytes()
-    assert _git_blob_sha(raw_authoring) == AGENT3_RAW_BANK_GIT_BLOB_SHA
-    assert _git_blob_sha(canonical) == CANONICAL_RELEASE_BANK_GIT_BLOB_SHA
+    raw_path = root / "bank_raw.py"
+    canonical_path = root / "bank.py"
+    raw_authoring = raw_path.read_bytes()
+    canonical = canonical_path.read_bytes()
+    assert _git_blob_sha(raw_path) == AGENT3_RAW_BANK_GIT_BLOB_SHA
+    assert _git_blob_sha(canonical_path) == CANONICAL_RELEASE_BANK_GIT_BLOB_SHA
     for source in (raw_authoring.decode("utf-8"), canonical.decode("utf-8")):
         assert ".ljust(" not in source
         assert ".rjust(" not in source

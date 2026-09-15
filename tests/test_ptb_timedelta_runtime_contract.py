@@ -20,6 +20,7 @@ def test_production_surfaces_opt_into_ptb_timedelta_mode():
 def test_ptb_timedelta_opt_in_matches_retry_adapter_contract():
     env = os.environ.copy()
     env["PTB_TIMEDELTA"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     probe = subprocess.run(
         [
             sys.executable,
@@ -33,6 +34,8 @@ def test_ptb_timedelta_opt_in_matches_retry_adapter_contract():
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
     )
 
