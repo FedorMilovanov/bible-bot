@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -137,7 +138,7 @@ def test_retry_fails_closed_when_mongo_source_is_unavailable(monkeypatch):
     assert query.answers == [("База результатов временно недоступна.", True)]
 
 
-def test_retry_rejects_invalid_or_missing_durable_source(monkeypatch):
+def test_retry_rejects_invalid_or_missing_durable_source(monkeypatch, caplog):
     query = _Query()
 
     monkeypatch.setattr(
@@ -149,15 +150,20 @@ def test_retry_rejects_invalid_or_missing_durable_source(monkeypatch):
     assert result == retry.ConversationHandler.END
     assert query.answers[-1] == ("Данные результата устарели.", True)
 
-    query = _Query()
+    query = _Query(user_id=424242, data="retry_errors_424242")
 
     def invalid(**_kwargs):
-        raise LegacyRetrySourceInvalid("bad ledger")
+        raise LegacyRetrySourceInvalid("provider-sensitive-marker")
 
     monkeypatch.setattr(retry, "load_retry_source_for_result_message", invalid)
-    result = _run(retry.retry_errors(_Update(query), _Context()))
+    with caplog.at_level(logging.ERROR, logger=retry.__name__):
+        result = _run(retry.retry_errors(_Update(query), _Context()))
+
     assert result == retry.ConversationHandler.END
     assert query.answers[-1] == ("Сохранённый результат повреждён.", True)
+    assert "durable retry source is invalid (LegacyRetrySourceInvalid)" in caplog.text
+    assert "424242" not in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text
 
 
 def test_retry_does_not_offer_practice_when_durable_source_has_no_errors(monkeypatch):
