@@ -11,8 +11,9 @@ Each one now has a test so it cannot come back.
 Chapter 5 stays excluded by design: two of its cards quote readings that
 SBLGNT does not print, because the text-critical point of the card is precisely
 that reading versus the SBLGNT base (ἑστήκατε as a competing 5:12 reading,
-ἐκκλησία as the Sinaiticus 5:13 reading). They survived the 2026-09 wiseness
-release repin with the raw-bank blob 1dbe41b5d296ef9a2738f68f3fef807fde030dce.
+ἐκκλησία as the Sinaiticus 5:13 reading). They survived the 2026-09 wiseness repin and the subsequent learner-language
+micro-repin; the current raw-bank blob is
+7a02ccdef4f1089e66a9df263bca683f2b1f0d51.
 The pinned list below is explicit, so a new Greek finding outside it fails this
 suite.
 """

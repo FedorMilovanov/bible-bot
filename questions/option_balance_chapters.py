@@ -9,10 +9,11 @@ form, a wrong textual-criticism procedure - and are only expanded to comparable
 specificity so the answer cannot be picked by length.
 
 Chapter 5 is deliberately absent from this overlay: its length cues were closed
-inside the chapter's own 2026-09 release repin (raw-bank blob
-1dbe41b5d296ef9a2738f68f3fef807fde030dce, see
-docs/CHAPTER5_RELEASE_AUDIT.md, "Third readback"), not via this editable-pool
-table.
+inside the chapter's own 2026-09 reviewed repin, followed by the learner-language
+micro-repin. The current raw-bank blob is
+7a02ccdef4f1089e66a9df263bca683f2b1f0d51; see
+docs/CHAPTER5_RELEASE_AUDIT.md ("Third readback" and "Fourth readback").
+It is not edited through this editable-pool table.
 """
 
 from __future__ import annotations
