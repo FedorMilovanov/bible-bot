@@ -46,6 +46,7 @@ Exit `0` requires all of the following:
 - `/live` returns HTTP 200 JSON with `status=ok`;
 - `/ready` returns HTTP 200 JSON with `status=ready` and `database=true`;
 - `/telegram/ready` returns HTTP 200 JSON with `status=ready` and `transport=webhook`;
+- `/production/ready` returns HTTP 200 JSON with `status=ready`, `database=true`, `telegram=true` and `transport=webhook`; this is the exact Render health-check contract declared by `render.yaml`;
 - `/meta` reports exactly `EXPECTED_DEPLOY_SHA`, preventing a green smoke against an older Render build;
 - the retention preflight is green **without** `bootstrap_pending`;
 - Telegram `getWebhookInfo` matches the exact URL, single connection and allowed-update contract with no current unsafe delivery error;

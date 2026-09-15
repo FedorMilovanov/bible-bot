@@ -49,6 +49,12 @@ def test_http_contracts_require_exact_ready_and_revision(monkeypatch):
         "/live": {"status": "ok", "uptime_seconds": 1},
         "/ready": {"status": "ready", "database": True},
         "/telegram/ready": {"status": "ready", "transport": "webhook"},
+        "/production/ready": {
+            "status": "ready",
+            "database": True,
+            "telegram": True,
+            "transport": "webhook",
+        },
         "/meta": {"revision": sha},
     }
     monkeypatch.setattr(
@@ -63,8 +69,40 @@ def test_http_contracts_require_exact_ready_and_revision(monkeypatch):
         "/live",
         "/ready",
         "/telegram/ready",
+        "/production/ready",
         "/meta",
     }
+
+
+
+
+def test_http_contracts_reject_degraded_production_ready(monkeypatch):
+    sha = "e" * 40
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://example.onrender.com")
+    monkeypatch.setenv("EXPECTED_DEPLOY_SHA", sha)
+
+    payloads = {
+        "/live": {"status": "ok"},
+        "/ready": {"status": "ready", "database": True},
+        "/telegram/ready": {"status": "ready", "transport": "webhook"},
+        "/production/ready": {
+            "status": "not_ready",
+            "database": True,
+            "telegram": False,
+            "transport": "webhook",
+        },
+        "/meta": {"revision": sha},
+    }
+    monkeypatch.setattr(
+        acceptance,
+        "_fetch_json",
+        lambda _origin, path: payloads[path],
+    )
+
+    results = acceptance._http_contracts()
+    production = next(item for item in results if item.name == "/production/ready")
+    assert production.code == acceptance.UNSAFE
+    assert "database=true telegram=true transport=webhook" in production.detail
 
 
 def test_http_contracts_reject_old_deployed_revision(monkeypatch):
@@ -78,6 +116,13 @@ def test_http_contracts_reject_old_deployed_revision(monkeypatch):
             return {"status": "ready", "database": True}
         if path == "/telegram/ready":
             return {"status": "ready", "transport": "webhook"}
+        if path == "/production/ready":
+            return {
+                "status": "ready",
+                "database": True,
+                "telegram": True,
+                "transport": "webhook",
+            }
         return {"revision": "d" * 40}
 
     monkeypatch.setattr(acceptance, "_fetch_json", payload)
@@ -132,6 +177,7 @@ def test_acceptance_document_keeps_both_phases_and_exact_revision_gate():
         "run_production_acceptance.py postdeploy",
         "EXPECTED_DEPLOY_SHA",
         "/telegram/ready",
+        "/production/ready",
         "100% accepted",
     )
     for marker in required:

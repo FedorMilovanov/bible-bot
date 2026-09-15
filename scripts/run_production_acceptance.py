@@ -165,6 +165,16 @@ def _http_contracts() -> list[CheckResult]:
             lambda data: data.get("status") == "ready" and data.get("transport") == "webhook",
             "status=ready transport=webhook",
         ),
+        (
+            "/production/ready",
+            lambda data: (
+                data.get("status") == "ready"
+                and data.get("database") is True
+                and data.get("telegram") is True
+                and data.get("transport") == "webhook"
+            ),
+            "status=ready database=true telegram=true transport=webhook",
+        ),
     )
     for path, predicate, expected in contracts:
         try:
