@@ -5,21 +5,10 @@ on:
     branches:
       - release/1peter-ch1-5
       - main
-  pull_request:
-    paths:
-      - 'questions/**'
-      - 'web_api/**'
-      - 'handlers/**'
-      - 'course_catalog.py'
-      - 'telegram_*.py'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'data/**'
-      - 'docs/**'
-      - 'miniapp/**'
-      - '.github/workflows/1peter-release-integrity.yml'
-      - 'requirements*.txt'
-      - 'constraints.txt'
+  # This job is a strict required status check on protected main, so it must
+  # emit a result for every pull request. Path filters would make unrelated PRs
+  # permanently unmergeable because the required context would never be created.
+  pull_request: {}
   workflow_dispatch:
 
 permissions:
