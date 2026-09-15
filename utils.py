@@ -18,6 +18,11 @@ from telegram_delivery_retry import retry_after_seconds
 
 logger = logging.getLogger(__name__)
 
+
+def _log_safe_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 # ═══════════════════════════════════════════════
 # КОНСТАНТЫ
 # ═══════════════════════════════════════════════
@@ -158,10 +163,10 @@ async def safe_send(target, text: str, **kwargs):
                 try:
                     return await target.reply_text(text, **kwargs)
                 except Exception as e2:
-                    logger.error("safe_send plain fallback failed: %s", e2)
+                    _log_safe_failure("safe_send plain fallback failed", e2)
                     return None
             else:
-                logger.error("safe_send BadRequest: %s", e)
+                _log_safe_failure("safe_send BadRequest", e)
                 return None
         except TimedOut:
             if attempt < 2:
@@ -170,7 +175,7 @@ async def safe_send(target, text: str, **kwargs):
                 logger.error("safe_send timed out after 3 attempts")
                 return None
         except Exception as e:
-            logger.error("safe_send failed: %s", e)
+            _log_safe_failure("safe_send failed", e)
             return None
     return None
 
@@ -198,10 +203,10 @@ async def safe_edit(query, text: str, **kwargs):
                 try:
                     return await query.edit_message_text(text, **kwargs)
                 except Exception as e2:
-                    logger.error("safe_edit plain fallback failed: %s", e2)
+                    _log_safe_failure("safe_edit plain fallback failed", e2)
                     return None
             else:
-                logger.error("safe_edit BadRequest: %s", e)
+                _log_safe_failure("safe_edit BadRequest", e)
                 return None
         except TimedOut:
             if attempt < 2:
@@ -210,7 +215,7 @@ async def safe_edit(query, text: str, **kwargs):
                 logger.error("safe_edit timed out after 3 attempts")
                 return None
         except Exception as e:
-            logger.error("safe_edit failed: %s", e)
+            _log_safe_failure("safe_edit failed", e)
             return None
     return None
 
@@ -222,10 +227,10 @@ async def safe_delete(bot, chat_id: int, message_id: int) -> bool:
         return True
     except BadRequest as e:
         if "not found" not in str(e).lower():
-            logger.warning("safe_delete: %s", e)
+            _log_safe_failure("safe_delete BadRequest", e, level=logging.WARNING)
         return False
     except Exception as e:
-        logger.warning("safe_delete: %s", e)
+        _log_safe_failure("safe_delete failed", e, level=logging.WARNING)
         return False
 
 
