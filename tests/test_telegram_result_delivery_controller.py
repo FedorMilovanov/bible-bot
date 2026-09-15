@@ -72,7 +72,7 @@ def test_retry_after_becomes_durable_defer_without_sleep(monkeypatch):
     assert run(controller.deliver_result_card_once(bot, "s1", 42)) is False
     assert deferred[0][:3] == ("s1", 42, "token-1")
     assert deferred[0][3]["delay_seconds"] == 23.0
-    assert deferred[0][3]["error"] == "LegacyDeliveryDeferred"
+    assert deferred[0][3]["error"] == "RetryAfter"
 
 
 def test_restart_fallback_uses_only_durable_core_evidence(monkeypatch):
@@ -182,3 +182,24 @@ def test_drain_summary_redacts_session_and_exception_payload(monkeypatch):
     assert summary.errors == ("result-card:RuntimeError",)
     assert "session-sensitive-marker" not in repr(summary.errors)
     assert "provider-sensitive-marker" not in repr(summary.errors)
+
+
+def test_untrusted_delivery_detail_is_not_persisted(monkeypatch):
+    bot = Bot()
+    monkeypatch.setattr(controller, "claim_result_card_delivery", lambda *_args, **_kwargs: _claim())
+    deferred = []
+    monkeypatch.setattr(
+        controller,
+        "defer_result_card_delivery",
+        lambda session_id, user_id, token, **kwargs: deferred.append(kwargs) or True,
+    )
+
+    async def raise_untrusted(*_args, **_kwargs):
+        from legacy_delivery_worker import LegacyDeliveryDeferred
+        raise LegacyDeliveryDeferred(9, detail="provider-sensitive-marker")
+
+    monkeypatch.setattr(controller, "send_with_durable_retry_after", raise_untrusted)
+
+    assert run(controller.deliver_result_card_once(bot, "s1", 42)) is False
+    assert deferred == [{"delay_seconds": 9.0, "error": "LegacyDeliveryDeferred"}]
+    assert "provider-sensitive-marker" not in repr(deferred)
