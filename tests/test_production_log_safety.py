@@ -6,12 +6,16 @@ import sys
 
 
 def _run_python(code: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", code],
         check=False,
         capture_output=True,
         text=True,
-        env=os.environ.copy(),
+        encoding="utf-8",
+        errors="replace",
+        env=env,
     )
 
 

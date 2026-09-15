@@ -139,7 +139,10 @@ FEATURE_TABLES = (
     ("gender", GENDER),
 )
 
-LEMMA_MARKER = re.compile(r"\bот\s+([\u0370-\u03ff\u1f00-\u1fff]{3,})")
+LEMMA_MARKER = re.compile(
+    r"\b(?:от|лемма|lemma)\s*[:=]?\s*([\u0370-\u03ff\u1f00-\u1fff]{3,})",
+    re.IGNORECASE,
+)
 
 # A distractor only competes with the key when the option *is* a parse label.
 # "Adj., nom. neut. sg." is a second answer; a full sentence that happens to
@@ -147,7 +150,7 @@ LEMMA_MARKER = re.compile(r"\bот\s+([\u0370-\u03ff\u1f00-\u1fff]{3,})")
 # грамматически обязательным") is an interpretation claim and is judged by the
 # interpretation, not by the parse code.
 GRAMMAR_LABEL_EXTRA = (
-    "врем", "залог", "наклонен", "падеж", "лиц", "числ", "род",
+    "врем", "залог", "наклонен", "падеж", "лиц", "числ", "род", "лемм",
     "от", "и", "или", "е", "л", "ч",
 )
 LABEL_TOKEN = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
@@ -166,12 +169,17 @@ class Finding:
 
 
 def _normalize_greek(text: str) -> str:
-    """Accent-, marker- and case-insensitive key for a Greek token."""
+    """Accent/marker/case-insensitive key without erasing iota-subscript identity."""
 
-    text = unicodedata.normalize("NFD", str(text))
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    text = unicodedata.normalize("NFC", text)
-    return "".join(char for char in text if char.isalpha())
+    decomposed = unicodedata.normalize("NFD", str(text))
+    chars: list[str] = []
+    for char in decomposed:
+        if char == "\u0345":  # COMBINING GREEK YPOGEGRAMMENI: preserve as iota.
+            chars.append("\u03b9")
+        elif not unicodedata.combining(char):
+            chars.append(char)
+    folded = unicodedata.normalize("NFC", "".join(chars)).casefold()
+    return "".join(char for char in folded if char.isalpha())
 
 
 def load_corpus(path: Path = EVIDENCE_PATH) -> dict[tuple[str, str], list[dict]]:
@@ -269,6 +277,24 @@ def _has_parse_claim(text: str) -> bool:
     if not claimed:
         return False
     return bool({"mood", "voice", "case", "pos"} & set(claimed)) or len(claimed) >= 2
+
+
+MORPHOLOGY_CONTEXT = re.compile(
+    r"морфолог|разбор|падеж|\bрод\b|числ|наклон|залог|\bформ(?:а|ы|у|ой|е)\b",
+    re.IGNORECASE,
+)
+
+
+def _card_has_parse_claim(stem: str, keyed: str) -> bool:
+    """Recognize a safe single-feature claim only with an explicit Greek target."""
+
+    if _has_parse_claim(keyed):
+        return True
+    return bool(
+        _claimed_features(keyed)
+        and GREEK_RUN.search(stem)
+        and MORPHOLOGY_CONTEXT.search(f"{stem} {keyed}")
+    )
 
 
 def _explained_label_token(token: str) -> bool:
@@ -390,7 +416,7 @@ def _specified_conflicts(row: dict, claimed: dict[str, str]) -> list[str]:
 def audit_card(card: dict, pool: str, corpus: dict[tuple[str, str], list[dict]]) -> list[Finding]:
     stem, keyed, _explanation = _card_texts(card)
     card_id = str(card.get("id") or "<no-id>")
-    if not _has_parse_claim(keyed):
+    if not _card_has_parse_claim(stem, keyed):
         return []
     claimed = _claimed_features(keyed)
     refs = first_peter_refs(str(card.get("verse") or ""))
@@ -548,18 +574,49 @@ def audit(pools: dict[str, list[dict]] | None = None) -> list[Finding]:
 
 
 def coverage(pools: dict[str, list[dict]] | None = None) -> dict[str, int]:
+    """Count candidates separately from cards the checker actually verifies."""
+
     corpus = load_corpus()
     pools = pools if pools is not None else pool_cards()
-    checked = 0
-    for cards in pools.values():
+    candidates = 0
+    verified = 0
+    manual = 0
+    blocked = 0
+    for pool, cards in pools.items():
         for card in cards:
             _stem, keyed, _explanation = _card_texts(card)
-            if _claimed_features(keyed) and first_peter_refs(str(card.get("verse") or "")):
-                checked += 1
-    return {"cards_with_parse_claim": checked, "corpus_rows": len(corpus)}
+            if not _card_has_parse_claim(_stem, keyed):
+                continue
+            if not first_peter_refs(str(card.get("verse") or "")):
+                continue
+            candidates += 1
+            findings = audit_card(card, pool, corpus)
+            if any(finding.severity == FINDING_BLOCKING for finding in findings):
+                blocked += 1
+            elif any(finding.severity == FINDING_INFO for finding in findings):
+                manual += 1
+            else:
+                verified += 1
+    return {
+        # Backward-compatible candidate count; this was historically (and
+        # misleadingly) described as the number already machine-verified.
+        "cards_with_parse_claim": candidates,
+        "parse_claim_cards": candidates,
+        "machine_verified_cards": verified,
+        "manual_review_cards": manual,
+        "blocking_cards": blocked,
+        "corpus_rows": sum(len(rows) for rows in corpus.values()),
+        "corpus_form_keys": len(corpus),
+    }
 
 
 def main() -> int:
+    # Windows shells can expose a legacy code page even when stdout is captured.
+    # The findings contain polytonic Greek; force a deterministic UTF-8 CLI.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit findings and coverage as JSON")
     args = parser.parse_args()
@@ -579,8 +636,11 @@ def main() -> int:
         for finding in findings:
             print(f"{finding.severity:8s} {finding.check_id:32s} {finding.pool}/{finding.card_id}: {finding.message}")
         print(
-            f"checked {stats['cards_with_parse_claim']} parse card(s) against "
-            f"{stats['corpus_rows']} vendored corpus rows; {len(blocking)} blocking finding(s)"
+            f"parse candidates={stats['parse_claim_cards']}; "
+            f"machine-verified={stats['machine_verified_cards']}; "
+            f"manual-review={stats['manual_review_cards']}; "
+            f"corpus rows={stats['corpus_rows']}; "
+            f"blocking={len(blocking)}"
         )
     return 1 if blocking else 0
 

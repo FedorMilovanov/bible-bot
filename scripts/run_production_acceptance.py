@@ -82,12 +82,16 @@ def _compact_output(stdout: str, stderr: str) -> str:
 
 
 def _run_script(path: str) -> CheckResult:
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, str(ROOT / path)],
         cwd=ROOT,
-        env=os.environ.copy(),
+        env=child_env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=60,
     )

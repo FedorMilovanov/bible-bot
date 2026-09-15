@@ -24,6 +24,7 @@ from questions.review_composition_2026_09 import REVIEW_LAYERS
 ROOT = Path(__file__).resolve().parents[1]
 BUDGET_PATH = ROOT / "data" / "question-quality-budget.json"
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_question_quality.py"
+AUDIT_REPORT_PATH = ROOT / "docs" / "QUESTION_BANK_AUDIT.md"
 
 # Accepted blocker debt. The previous Chapter-5 release-repin list
 # (ch5_w3q_050/075/111/125/127/143) was closed by the reviewed option/stem
@@ -42,6 +43,8 @@ def _run_audit(*args: str) -> subprocess.CompletedProcess[str]:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
@@ -58,6 +61,16 @@ def test_question_quality_budget_is_respected():
     """The audit must pass its ratchet: no counter may grow past the baseline."""
     result = _run_audit("--check")
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tracked_question_bank_audit_is_fresh(tmp_path: Path):
+    generated = tmp_path / "QUESTION_BANK_AUDIT.md"
+    result = _run_audit("--report", str(generated))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert generated.read_text(encoding="utf-8") == AUDIT_REPORT_PATH.read_text(encoding="utf-8"), (
+        "docs/QUESTION_BANK_AUDIT.md is stale; regenerate it with "
+        "python scripts/audit_question_quality.py --report docs/QUESTION_BANK_AUDIT.md"
+    )
 
 
 def test_blocker_debt_is_exactly_the_reviewed_chapter5_repin_list(tmp_path: Path):

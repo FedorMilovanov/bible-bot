@@ -428,6 +428,10 @@ def _bank():
 
 
 def main(argv: list[str] | None = None) -> int:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--corpus", type=Path, help="LXX text file (.zip or .csv) to verify against")
     parser.add_argument("--versification", type=Path, help="word-index to verse map from the same repository")
