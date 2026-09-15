@@ -23,6 +23,7 @@ from telegram import Update
 
 logger = logging.getLogger(__name__)
 
+
 def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
     logger.log(level, "%s (%s)", operation, type(exc).__name__)
 
