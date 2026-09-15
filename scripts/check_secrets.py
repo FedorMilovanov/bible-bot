@@ -28,8 +28,23 @@ PATTERNS = {
     ),
 }
 
-# This file intentionally contains a non-secret Mongo placeholder.
-CONTENT_ALLOWLIST = {".env.example"}
+EXAMPLE_MONGO_PLACEHOLDER = (
+    "MONGO_URL=mongodb+srv://"
+    "user:password"
+    "@cluster0.example.mongodb.net/?retryWrites=true&w=majority"
+)
+
+SAFE_PLACEHOLDER_LINES = {
+    (
+        ".env.example",
+        "MongoDB URI with embedded credentials",
+        EXAMPLE_MONGO_PLACEHOLDER,
+    ),
+}
+
+
+def is_safe_placeholder(relative: str, label: str, line: str) -> bool:
+    return (relative, label, line.strip()) in SAFE_PLACEHOLDER_LINES
 
 
 def tracked_files() -> list[Path]:
@@ -47,9 +62,6 @@ def main() -> int:
             findings.append(f"{relative}: forbidden credential-like tracked file")
             continue
 
-        if relative in CONTENT_ALLOWLIST:
-            continue
-
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -57,7 +69,7 @@ def main() -> int:
 
         for line_number, line in enumerate(text.splitlines(), start=1):
             for label, pattern in PATTERNS.items():
-                if pattern.search(line):
+                if pattern.search(line) and not is_safe_placeholder(relative, label, line):
                     findings.append(f"{relative}:{line_number}: {label}")
 
     if findings:
