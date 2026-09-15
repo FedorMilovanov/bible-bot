@@ -2,9 +2,9 @@
 
 SOURCE_CATALOG = {
     "gty_1p2_18_21": {
-        "title": "John MacArthur, Why Does the Christian's Work Ethic Matter?",
-        "url": "https://www.gty.org/articles/QA0202/why-does-the-christians-work-ethic-matter",
-        "kind": "conservative_application",
+        "title": "John MacArthur, Submission in the Workplace, Part 1 (1 Peter 2:18-19a)",
+        "url": "https://www.gty.org/sermons/60-26/submission-in-the-workplace-part-1",
+        "kind": "conservative_exposition",
     },
     "gty_1p2_21_23": {
         "title": "John MacArthur, The Suffering Jesus: An Example for Every Christian",
