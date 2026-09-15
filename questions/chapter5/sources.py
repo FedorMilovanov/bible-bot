@@ -139,7 +139,7 @@ SOURCE_CATALOG = {
     ),
     "w3i_sinaiticus_1p5_13_14": _source(
         "Codex Sinaiticus official transcription — 1 Peter 5:13-14",
-        "https://www.codexsinaiticus.org/en/manuscript.aspx?book=54",
+        "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=5&verse=13",
         "primary_manuscript_transcription", "1Peter5_13_14_transcription_inspected",
         "Supports the named-witness wording only; not a critical-text decision.",
     ),

@@ -24,7 +24,7 @@ def test_known_passage_sources_resolve_to_the_passages_their_ids_claim():
             "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=4&verse=15"
         ),
         "w3i_sinaiticus_1p5_13_14": (
-            "https://www.codexsinaiticus.org/en/manuscript.aspx?book=54"
+            "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=5&verse=13"
         ),
     }
     for source_id, url in expected.items():
@@ -81,3 +81,53 @@ def test_source_registry_contains_no_known_legacy_or_tls_fragile_url_forms():
     assert not any("shop.gty.org/library/bibleqnas-library" in url for url in urls)
     assert not any("gty.org/library/sermons-library" in url for url in urls)
     assert not any(url.startswith("https://codexsinaiticus.org/") for url in urls)
+
+
+def test_identity_url_enrichment_never_changes_earlier_authority_fields():
+    """Later chapter identities may fill a blank URL and nothing else."""
+    for source_id, later in CHAPTER5_IDENTITIES.items():
+        if source_id not in CHAPTER4_IDENTITIES:
+            continue
+        earlier = CHAPTER4_IDENTITIES[source_id]
+        if (
+            earlier.get("source_identity_only") is not True
+            or later.get("source_identity_only") is not True
+            or not later.get("url")
+        ):
+            continue
+        expected = dict(earlier)
+        expected["url"] = later["url"]
+        assert questions.SOURCE_CATALOG[source_id] == expected, source_id
+
+
+def test_one_card_never_counts_multiple_aliases_of_the_same_work_as_independent_sources():
+    """Source-ID aliases are provenance handles, not independent witnesses."""
+    same_work_families = (
+        {"davids_1peter_1990", "davids_1peter_nicnt"},
+        {"pliny_10_96_97", "pliny_trajan_10_96_97"},
+        {"schreiner_nac_1peter", "schreiner_1peter_2003", "schreiner_1peter_nac"},
+        {"richards_silvanus", "w3_richards_silvanus_2000"},
+        {
+            "horrell_williams_icc_2023",
+            "horrell_williams_icc_v2",
+            "w3n_williams_horrell_icc_v2_2023",
+        },
+        {
+            "tgc_storms_1p3_18_22",
+            "tgc_1p_commentary",
+            "tgc_storms_1peter",
+            "w3_storms_1peter",
+        },
+        {"ubs_handbook_1p2_12", "ubs_handbook_1p3_21", "w3_ubs_handbook_1peter"},
+    )
+    aggregate_pools = {
+        "easy", "medium", "hard", "practical_ch1", "random_all", "competitive_all"
+    }
+    for pool, cards in questions.POOL_REGISTRY.items():
+        if pool in aggregate_pools:
+            continue
+        for card in cards:
+            actual = set(card.get("sources") or ())
+            for family in same_work_families:
+                duplicated = sorted(actual & family)
+                assert len(duplicated) <= 1, (pool, card["id"], duplicated)
