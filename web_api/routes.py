@@ -27,8 +27,10 @@ from .ttl_cache import TTLValueCache
 
 logger = logging.getLogger(__name__)
 
+
 def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
     logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
