@@ -11,6 +11,17 @@ from pymongo import MongoClient, ASCENDING, DESCENDING, timeout as pymongo_timeo
 
 logger = logging.getLogger(__name__)
 
+
+def _log_db_exception(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    """Log DB failures without serializing exception messages or credentials."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, bool) or not isinstance(code, int):
+        code = None
+    if code is None:
+        logger.log(level, "%s failed (%s)", operation, type(exc).__name__)
+    else:
+        logger.log(level, "%s failed (%s, code=%d)", operation, type(exc).__name__, code)
+
 # ═══════════════════════════════════════════════
 # ПОДКЛЮЧЕНИЕ
 # ═══════════════════════════════════════════════
@@ -29,7 +40,7 @@ if MONGO_URL:
         weekly_lb_collection = db["weekly_leaderboard"]
         logger.info("✅ MongoDB подключена")
     except Exception as e:
-        logger.error("Ошибка подключения к БД: %s", e)
+        _log_db_exception("MongoDB initialization", e)
         collection = battles_collection = questions_stats_collection = None
         quiz_sessions_collection = reports_collection = weekly_lb_collection = None
 else:
@@ -118,8 +129,11 @@ def mongo_retry(max_retries=2, delay=0.3):
                     last_error = e
                     if attempt < max_retries:
                         time.sleep(delay * (attempt + 1))
-            logger.error("%s failed after %d attempts: %s",
-                         func.__name__, max_retries + 1, last_error)
+            if last_error is not None:
+                _log_db_exception(
+                    f"{func.__name__} after {max_retries + 1} attempts",
+                    last_error,
+                )
             return None
         return wrapper
     return decorator
@@ -151,7 +165,7 @@ def _ensure_indexes():
                 background=True,
             )
         except Exception as e:
-            logger.warning("quiz_sessions index: %s", e)
+            _log_db_exception("quiz_sessions index", e, level=logging.WARNING)
 
     if battles_collection is not None:
         try:
@@ -160,7 +174,7 @@ def _ensure_indexes():
                 background=True,
             )
         except Exception as e:
-            logger.warning("battles index: %s", e)
+            _log_db_exception("battles index", e, level=logging.WARNING)
 
     if collection is not None:
         try:
@@ -179,7 +193,7 @@ def _ensure_indexes():
                 background=True,
             )
         except Exception as e:
-            logger.warning("leaderboard index: %s", e)
+            _log_db_exception("leaderboard index", e, level=logging.WARNING)
 
     if weekly_lb_collection is not None:
         try:
@@ -196,7 +210,7 @@ def _ensure_indexes():
                 background=True,
             )
         except Exception as e:
-            logger.warning("weekly_lb index: %s", e)
+            _log_db_exception("weekly_lb index", e, level=logging.WARNING)
 
 
 _ensure_indexes()
@@ -250,7 +264,7 @@ def create_quiz_session(user_id: int, mode: str, question_ids: list,
     except LegacyQuizSessionPersistenceUnavailable:
         raise
     except Exception as e:
-        logger.error("create_quiz_session error: %s", e)
+        _log_db_exception("create_quiz_session", e)
         raise LegacyQuizSessionPersistenceUnavailable("quiz session insert failed") from e
     return session_id
 
@@ -263,7 +277,7 @@ def get_active_quiz_session(user_id: int):
             {"user_id": _uid(user_id), "status": "in_progress"}
         )
     except Exception as e:
-        logger.error("get_active_quiz_session error: %s", e)
+        _log_db_exception("get_active_quiz_session", e)
         raise LegacyQuizSessionPersistenceUnavailable("active quiz session lookup failed") from e
 
 
@@ -298,7 +312,7 @@ def update_quiz_session(session_id: str, fields: dict):
             {"$set": safe_fields}
         )
     except Exception as e:
-        logger.error("update_quiz_session error: %s", e)
+        _log_db_exception("update_quiz_session", e)
         raise LegacyQuizSessionPersistenceUnavailable("quiz session update failed") from e
 
 
@@ -331,7 +345,7 @@ def advance_quiz_session(session_id: str, qid: str, user_answer: str,
         )
         return quiz_sessions_collection.find_one({"_id": session_id})
     except Exception as e:
-        logger.error("advance_quiz_session error: %s", e)
+        _log_db_exception("advance_quiz_session", e)
         return None
 
 
@@ -407,7 +421,7 @@ def get_user_history(user_id: int, limit: int = 10) -> list:
         ]
         return list(quiz_sessions_collection.aggregate(pipeline))
     except Exception as e:
-        logger.error("get_user_history error: %s", e)
+        _log_db_exception("get_user_history", e)
         return []
 
 
@@ -446,7 +460,7 @@ def create_battle_doc(battle_id: str, creator_id: int, creator_name: str,
         battles_collection.insert_one(doc)
         return doc
     except Exception as e:
-        logger.error("create_battle_doc error: %s", e)
+        _log_db_exception("create_battle_doc", e)
         return None
 
 
@@ -466,7 +480,7 @@ def update_battle(battle_id: str, fields: dict):
     try:
         battles_collection.update_one({"_id": battle_id}, {"$set": fields})
     except Exception as e:
-        logger.error("update_battle error: %s", e)
+        _log_db_exception("update_battle", e)
 
 
 def get_waiting_battles(limit: int = 10) -> list:
@@ -489,7 +503,7 @@ def delete_battle(battle_id: str):
     try:
         battles_collection.delete_one({"_id": battle_id})
     except Exception as e:
-        logger.error("delete_battle error: %s", e)
+        _log_db_exception("delete_battle", e)
 
 
 def cleanup_stale_battles() -> int:
@@ -502,7 +516,7 @@ def cleanup_stale_battles() -> int:
         )
         return result.deleted_count
     except Exception as e:
-        logger.error("cleanup_stale_battles error: %s", e)
+        _log_db_exception("cleanup_stale_battles", e)
         return 0
 
 
@@ -565,7 +579,7 @@ def init_user_stats(user_id, username, first_name):
             collection.insert_one(new_entry)
             return True
         except Exception as e:
-            logger.error("init_user_stats error: %s", e)
+            _log_db_exception("init_user_stats", e)
             return False
     else:
         try:
@@ -633,7 +647,7 @@ def update_daily_streak(user_id: int) -> int:
             }}
         )
     except Exception as e:
-        logger.error("update_daily_streak error: %s", e)
+        _log_db_exception("update_daily_streak", e)
 
     return streak
 
@@ -719,7 +733,7 @@ def get_detailed_admin_stats() -> dict:
                 )
             )
     except Exception as e:
-        logger.error("get_detailed_admin_stats error: %s", e)
+        _log_db_exception("get_detailed_admin_stats", e)
 
     return stats
 
@@ -777,7 +791,7 @@ def add_to_leaderboard(user_id, username, first_name,
             upsert=True,
         )
     except Exception as e:
-        logger.error("add_to_leaderboard error: %s", e)
+        _log_db_exception("add_to_leaderboard", e)
 
 
 def update_battle_stats(user_id, result):
@@ -800,7 +814,7 @@ def update_battle_stats(user_id, result):
             upsert=True,
         )
     except Exception as e:
-        logger.error("update_battle_stats error: %s", e)
+        _log_db_exception("update_battle_stats", e)
 
 
 def get_user_position(user_id):
@@ -926,7 +940,7 @@ def get_context_leaderboard(limit=10):
         ]
         return list(collection.aggregate(pipeline))
     except Exception as e:
-        logger.error("get_context_leaderboard error: %s", e)
+        _log_db_exception("get_context_leaderboard", e)
         return []
 
 
@@ -1062,7 +1076,7 @@ def update_challenge_stats(user_id, username, first_name, mode,
             upsert=True,
         )
     except Exception as e:
-        logger.error("update_challenge_stats error: %s", e)
+        _log_db_exception("update_challenge_stats", e)
 
     return total_earned, new_achievements
 
@@ -1097,7 +1111,7 @@ def update_weekly_leaderboard(user_id, username, first_name,
                 upsert=True,
             )
     except Exception as e:
-        logger.error("update_weekly_leaderboard error: %s", e)
+        _log_db_exception("update_weekly_leaderboard", e)
 
 
 def get_weekly_leaderboard(mode, limit=10):
@@ -1218,7 +1232,7 @@ def get_hardest_questions(limit: int = 10) -> list:
         ]
         return list(questions_stats_collection.aggregate(pipeline))
     except Exception as e:
-        logger.error("get_hardest_questions error: %s", e)
+        _log_db_exception("get_hardest_questions", e)
         return []
 
 
@@ -1243,7 +1257,7 @@ def can_submit_report(user_id: int) -> bool:
         elapsed = (_now_utc() - last).total_seconds()
         return elapsed >= REPORT_COOLDOWN_SECONDS
     except Exception as e:
-        logger.error("can_submit_report error: %s", e)
+        _log_db_exception("can_submit_report", e)
         return False
 
 
@@ -1266,7 +1280,7 @@ def seconds_until_next_report(user_id: int) -> int:
             return REPORT_COOLDOWN_SECONDS
         return max(0, min(REPORT_COOLDOWN_SECONDS, int(REPORT_COOLDOWN_SECONDS - elapsed)))
     except Exception as e:
-        logger.error("seconds_until_next_report error: %s", e)
+        _log_db_exception("seconds_until_next_report", e)
         return REPORT_COOLDOWN_SECONDS
 
 
@@ -1297,7 +1311,7 @@ def insert_report(user_id: int, username: str, first_name: str,
     try:
         reports_collection.insert_one(doc)
     except Exception as e:
-        logger.error("insert_report error: %s", e)
+        _log_db_exception("insert_report", e)
         return None
 
     try:
@@ -1314,9 +1328,8 @@ def insert_report(user_id: int, username: str, first_name: str,
     except Exception as e:
         # The report is already durable. Never turn a persisted report into a
         # phantom failure merely because the secondary cooldown write failed.
-        logger.error(
-            "insert_report: report %s persisted but cooldown update failed: %s",
-            report_id,
+        _log_db_exception(
+            f"insert_report cooldown update after persisted report {report_id}",
             e,
         )
 
@@ -1338,7 +1351,7 @@ def mark_report_delivered(report_id: str) -> bool:
         )
         return bool(existing and existing.get("admin_delivered") is True)
     except Exception as e:
-        logger.error("mark_report_delivered error: %s", e)
+        _log_db_exception("mark_report_delivered", e)
         return False
 
 
@@ -1396,7 +1409,7 @@ def update_achievement_stats(user_id: int, is_perfect: bool, max_streak: int) ->
         try:
             collection.update_one({"_id": uid}, update_query)
         except Exception as e:
-            logger.error("update_achievement_stats error: %s", e)
+            _log_db_exception("update_achievement_stats", e)
 
     return {
         "perfect_count":   entry.get("perfect_count", 0) + (1 if is_perfect else 0),
@@ -1434,7 +1447,7 @@ def check_daily_bonus(user_id: int) -> int:
             {"$set": {"last_daily_bonus": today}, "$inc": {"total_points": bonus}},
         )
     except Exception as e:
-        logger.error("check_daily_bonus error: %s", e)
+        _log_db_exception("check_daily_bonus", e)
         return 0
 
     return bonus
