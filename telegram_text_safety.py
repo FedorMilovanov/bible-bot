@@ -9,6 +9,12 @@ from telegram.error import BadRequest, RetryAfter, TimedOut
 from telegram_delivery_retry import retry_after_seconds
 
 logger = logging.getLogger(__name__)
+
+
+def _log_safe_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 MAX_MSG_LEN = 3900
 
 
@@ -75,9 +81,9 @@ async def safe_edit(query, text: str, **kwargs):
                 try:
                     return await query.edit_message_text(text, **kwargs)
                 except Exception as fallback_exc:
-                    logger.error("safe_edit plain fallback failed: %s", fallback_exc)
+                    _log_safe_failure("safe_edit plain fallback failed", fallback_exc)
                     return None
-            logger.error("safe_edit BadRequest: %s", exc)
+            _log_safe_failure("safe_edit BadRequest", exc)
             return None
         except TimedOut:
             if attempt < 2:
@@ -86,7 +92,7 @@ async def safe_edit(query, text: str, **kwargs):
                 logger.error("safe_edit timed out after 3 attempts")
                 return None
         except Exception as exc:
-            logger.error("safe_edit failed: %s", exc)
+            _log_safe_failure("safe_edit failed", exc)
             return None
     return None
 

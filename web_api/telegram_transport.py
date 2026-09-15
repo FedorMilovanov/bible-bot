@@ -23,6 +23,11 @@ from telegram import Update
 
 logger = logging.getLogger(__name__)
 
+
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 WEBHOOK_PATH = "/telegram/webhook"
 WEBHOOK_ALLOWED_UPDATES = ("message", "callback_query")
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
@@ -323,8 +328,8 @@ async def _run_webhook_application(
                 await _deactivate_bridge_before_stop(application)
                 await application.stop()
                 await _call_shutdown_hook(before_shutdown)
-            except Exception:
-                logger.exception("failed to stop Telegram application cleanly")
+            except Exception as exc:
+                _log_runtime_failure("failed to stop Telegram application cleanly", exc)
         else:
             TELEGRAM_WEBHOOK_BRIDGE.clear(application)
         for sig in installed_signals:

@@ -31,6 +31,11 @@ import telegram_quiz_runtime_controller as quiz
 
 logger = logging.getLogger(__name__)
 
+
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _MODE_LABELS = {
     "relaxed": "🧘 Без ограничения времени",
     "timed": f"⏱ На время ({TIMED_MODE_TIMEOUT} сек)",
@@ -102,8 +107,8 @@ async def _show_unavailable(query) -> None:
             "⚠️ Этот учебный модуль больше недоступен. Обнови меню.",
             reply_markup=_group_keyboard(),
         )
-    except Exception:
-        logger.debug("could not replace stale course callback", exc_info=True)
+    except Exception as exc:
+        _log_runtime_failure("could not replace stale course callback", exc, level=logging.DEBUG)
 
 
 async def show_group_callback(update, context):
@@ -184,8 +189,8 @@ async def start_course_deep_link(update, context, course_key: str) -> bool:
             "⚠️ Этот учебный модуль сейчас недоступен. Открой /test для актуального меню.",
         )
         return True
-    except Exception:
-        logger.exception("Telegram course deep-link resolution failed")
+    except Exception as exc:
+        _log_runtime_failure("Telegram course deep-link resolution failed", exc)
         await update.message.reply_text(
             "⚠️ Не удалось безопасно открыть учебный модуль. Открой /test и попробуй ещё раз.",
         )
@@ -206,8 +211,8 @@ async def _show_course(query, course_key: str):
     except (CourseCatalogError, KeyError):
         await _show_unavailable(query)
         return ConversationHandler.END
-    except Exception:
-        logger.exception("Telegram course resolution failed")
+    except Exception as exc:
+        _log_runtime_failure("Telegram course resolution failed", exc)
         await _show_unavailable(query)
         return ConversationHandler.END
 
@@ -285,8 +290,8 @@ async def _launch_course(update, context, *, mode: str, course_key: str):
     except (CourseCatalogError, KeyError):
         await _show_unavailable(query)
         return ConversationHandler.END
-    except Exception:
-        logger.exception("Telegram course start resolution failed")
+    except Exception as exc:
+        _log_runtime_failure("Telegram course start resolution failed", exc)
         await _show_unavailable(query)
         return ConversationHandler.END
 

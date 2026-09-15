@@ -25,6 +25,12 @@ from question_identity import get_qid
 from questions import get_pool_by_key, pick_competitive_challenge_questions
 
 logger = logging.getLogger(__name__)
+
+
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _COMPETITIVE_MODES = frozenset({"random20", "hardcore20"})
 
 
@@ -116,8 +122,8 @@ async def challenge_start(update, context):
         return ConversationHandler.END
     try:
         questions = pick_competitive_challenge_questions(mode)
-    except ValueError:
-        logger.exception("competitive Challenge question selection failed")
+    except ValueError as exc:
+        _log_runtime_failure("competitive Challenge question selection failed", exc)
         await query.edit_message_text("⚠️ Вопросы Challenge временно недоступны.")
         return ConversationHandler.END
 
@@ -176,8 +182,8 @@ async def restart_session_handler(update, context):
     if mode in _COMPETITIVE_MODES:
         try:
             questions = pick_competitive_challenge_questions(mode)
-        except ValueError:
-            logger.exception("competitive Challenge restart selection failed")
+        except ValueError as exc:
+            _log_runtime_failure("competitive Challenge restart selection failed", exc)
             await query.answer(
                 "⚠️ Не удалось собрать вопросы Challenge для перезапуска.",
                 show_alert=True,

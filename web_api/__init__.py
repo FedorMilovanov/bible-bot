@@ -27,6 +27,11 @@ from .user_locks import user_operation_lock
 
 logger = logging.getLogger(__name__)
 
+
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _DEFAULT_SERVER_BODY_BYTES = 1024 * 1024
 _DEFAULT_MINIAPP_BODY_BYTES = 64 * 1024
 
@@ -100,11 +105,11 @@ def create_app():
                     query_id=verified.query_id,
                     context=context,
                 )
-            except Exception:
+            except Exception as exc:
                 # Attribution is non-authoritative telemetry. A persistence or
                 # index failure must never damage signed launch routing or quiz
                 # authority, and no initData value is logged here.
-                logger.exception("Mini App launch attribution persistence failed")
+                _log_runtime_failure("Mini App launch attribution persistence failed", exc)
                 payload["attribution_persisted"] = False
 
         return jsonify(payload)
@@ -163,8 +168,8 @@ def create_app():
             if telegram_transport_mode() != "webhook":
                 return jsonify({"error": "not found"}), 404
             expected_secret = telegram_webhook_secret()
-        except TransportConfigurationError:
-            logger.exception("Telegram webhook transport configuration is invalid")
+        except TransportConfigurationError as exc:
+            _log_runtime_failure("Telegram webhook transport configuration is invalid", exc)
             return jsonify({"error": "telegram webhook unavailable"}), 503
 
         supplied_secret = request.headers.get(
@@ -191,8 +196,8 @@ def create_app():
             return jsonify({"error": "invalid telegram update"}), 400
         except WebhookNotReady:
             return jsonify({"error": "telegram application not ready"}), 503
-        except Exception:
-            logger.exception("unexpected Telegram webhook dispatch failure")
+        except Exception as exc:
+            _log_runtime_failure("unexpected Telegram webhook dispatch failure", exc)
             return jsonify({"error": "telegram webhook dispatch failed"}), 503
         return jsonify({"ok": True})
 
