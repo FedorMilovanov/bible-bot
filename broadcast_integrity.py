@@ -18,6 +18,10 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_store_failure(operation: str, exc: BaseException) -> None:
+    logger.warning("%s failed (%s)", operation, type(exc).__name__)
+
 _RETENTION_SECONDS = 90 * 24 * 60 * 60
 _FANOUT_CHUNK = 500
 _MAX_TEXT_LENGTH = 3500
@@ -68,8 +72,8 @@ def _recipient_snapshot(values) -> list[str]:
             raise ValueError("recipient id is invalid")
         try:
             value = int(raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("recipient id is invalid") from exc
+        except (TypeError, ValueError):
+            raise ValueError("recipient id is invalid") from None
         if value <= 0:
             raise ValueError("recipient id is invalid")
         recipients.add(str(value))
@@ -120,8 +124,8 @@ def ensure_broadcast_indexes() -> None:
             expireAfterSeconds=_RETENTION_SECONDS,
         )
     except PyMongoError as exc:
-        logger.exception("broadcast index bootstrap failed")
-        raise BroadcastStoreUnavailable("broadcast indexes are unavailable") from exc
+        _log_store_failure("broadcast index bootstrap", exc)
+        raise BroadcastStoreUnavailable("broadcast indexes are unavailable") from None
 
 
 def ensure_broadcast_fanout(broadcast: dict) -> dict:
@@ -179,8 +183,8 @@ def ensure_broadcast_fanout(broadcast: dict) -> dict:
     except BroadcastStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("broadcast fanout failed for %s", broadcast_id)
-        raise BroadcastStoreUnavailable("broadcast fanout failed") from exc
+        _log_store_failure("broadcast fanout", exc)
+        raise BroadcastStoreUnavailable("broadcast fanout failed") from None
 
 
 def accept_broadcast_once(
@@ -233,8 +237,8 @@ def accept_broadcast_once(
     except BroadcastStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("broadcast acceptance failed for %s", broadcast_id)
-        raise BroadcastStoreUnavailable("broadcast acceptance failed") from exc
+        _log_store_failure("broadcast acceptance", exc)
+        raise BroadcastStoreUnavailable("broadcast acceptance failed") from None
 
 
 def get_pending_broadcasts(limit: int = 20) -> list[dict]:
@@ -247,8 +251,8 @@ def get_pending_broadcasts(limit: int = 20) -> list[dict]:
             .sort("created_at_dt", ASCENDING)
             .limit(limit)
         )
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("pending broadcast listing failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("pending broadcast listing failed") from None
 
 
 def get_broadcast(broadcast_id: str) -> dict | None:
@@ -257,8 +261,8 @@ def get_broadcast(broadcast_id: str) -> dict | None:
     try:
         value = broadcasts.find_one({"_id": broadcast_id})
         return value if isinstance(value, dict) else None
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast lookup failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast lookup failed") from None
 
 
 def claim_next_broadcast_delivery(
@@ -297,8 +301,8 @@ def claim_next_broadcast_delivery(
             return_document=ReturnDocument.AFTER,
         )
         return claimed if isinstance(claimed, dict) else None
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast delivery claim failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast delivery claim failed") from None
 
 
 def _settle_delivery(
@@ -331,8 +335,8 @@ def _settle_delivery(
             return True
         current = deliveries.find_one({"_id": delivery_id}, {"done": 1})
         return isinstance(current, dict) and current.get("done") is True
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast delivery acknowledgement failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast delivery acknowledgement failed") from None
 
 
 def mark_broadcast_delivery_delivered(delivery_id: str, claim_token: str) -> bool:
@@ -366,8 +370,8 @@ def release_broadcast_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast delivery release failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast delivery release failed") from None
 
 
 def defer_broadcast_delivery(
@@ -405,8 +409,8 @@ def defer_broadcast_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast delivery deferral failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast delivery deferral failed") from None
 
 
 def sync_broadcast_completion(broadcast_id: str) -> dict:
@@ -452,5 +456,5 @@ def sync_broadcast_completion(broadcast_id: str) -> dict:
         return {"completed": True, "delivered": delivered, "failed": failed}
     except BroadcastStoreUnavailable:
         raise
-    except PyMongoError as exc:
-        raise BroadcastStoreUnavailable("broadcast completion sync failed") from exc
+    except PyMongoError:
+        raise BroadcastStoreUnavailable("broadcast completion sync failed") from None
