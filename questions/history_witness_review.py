@@ -27,7 +27,7 @@ HISTORY_WITNESS_SOURCE_CATALOG = {
     },
     "josephus_jewish_war_6": {
         "title": "Josephus, Jewish War 6 (Jerusalem, the temple and the Passover crowds)",
-        "url": "https://penelope.uchicago.edu/Thayer/E/Roman/Texts/Josephus/home.html",
+        "url": "https://penelope.uchicago.edu/josephus/war-6.html",
         "kind": "primary_source",
     },
 }

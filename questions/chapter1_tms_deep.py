@@ -231,7 +231,7 @@ CHAPTER1_TMS_DEEP = [
         "confidence": "medium",
         "position": "project",
         "competitive": False,
-        "sources": ["sblgnt", "gty_1p1_17_21"],
+        "sources": ["sblgnt", "gty_1p1_13", "gty_1p1_18_21"],
     },
     {
         "id": "tms1_app_01",

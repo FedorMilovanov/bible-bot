@@ -694,18 +694,31 @@ REVIEW_STAGE_CORRECTIONS = {
 }
 
 CORRECTION_SOURCE_CATALOG = {
-    'gty_1p1_13': {'kind': 'conservative_exposition',
-     'title': "John MacArthur, Living in Light of Christ's Return (1 Peter 1:13)",
-     'url': 'https://www.gty.org/library/sermons-library/60-7'},
-    'gty_1p1_17_21': {'kind': 'conservative_exposition',
-     'title': 'John MacArthur, Living as Strangers (1 Peter 1:17-21)',
-     'url': 'https://www.gty.org/library/sermons-library/60-9'},
-    'gty_1p1_7': {'kind': 'conservative_exposition',
-     'title': 'John MacArthur, The Purpose of Trials (1 Peter 1:6-7)',
-     'url': 'https://www.gty.org/library/sermons-library/60-4'},
-    'gty_1p3_18': {'kind': 'conservative_exposition',
-     'title': 'John MacArthur, The Suffering and Triumph of Christ (1 Peter 3:18)',
-     'url': 'https://www.gty.org/library/sermons-library/60-41'},
+    'gty_1p1_13': {
+     'kind': 'conservative_exposition',
+     'title': 'John MacArthur, Hope, Holiness, and Honor (1 Peter 1:13-17)',
+     'url': 'https://www.gty.org/sermons/60-10/hope-holiness-and-honor',
+     'inspection_scope': 'relevant_section_inspected',
+     'claim_limit': 'Passage-level conservative exposition of 1 Peter 1:13-17; it supports the readiness/hope reading but is not neutral lexical proof.'},
+    'gty_1p1_18_21': {
+     'kind': 'conservative_exposition',
+     'title': 'John MacArthur, The Basics of Redemption (1 Peter 1:18-21)',
+     'url': 'https://www.gty.org/sermons/80-200/the-basics-of-redemption',
+     'inspection_scope': 'relevant_section_inspected',
+     'claim_limit': 'Passage-level conservative exposition of 1 Peter 1:18-21; it supports the redemption/resurrection application but is not an independent primary-text witness.'},
+    'gty_1p1_7': {
+     'kind': 'conservative_exposition',
+     'title': 'John MacArthur, The Joy of Salvation, Part 1 (1 Peter 1:6-7)',
+     'url': 'https://www.gty.org/sermons/60-7/the-joy-of-salvation-part-1',
+     'inspection_scope': 'relevant_section_inspected',
+     'claim_limit': 'Passage-level conservative exposition of 1 Peter 1:6-7; it supports the trials/eschatological-praise reading but is not neutral lexical proof.'},
+    'gty_1p3_18': {
+     'title': "John MacArthur, The Triumph of Christ's Suffering, Part 1 (1 Peter 3:18)",
+     'url': 'https://www.gty.org/resources/study-guides/chapters/60-36/the-triumph-of-christs-suffering-part-1',
+     'kind': 'conservative_exposition_position',
+     'inspection_scope': 'relevant_section_inspected',
+     'claim_limit': "Relevant 1 Peter 3:18 exposition was inspected. It supports MacArthur's passage-level once-for-all sin-bearing, righteous-for-unrighteous, access-to-God, suffering-to-triumph reading; it is an evangelical interpretive witness, not neutral lexical proof.",
+     'project_passage_witness': True},
     'schreiner_nac_1peter': {'kind': 'evangelical_exegetical_commentary',
      'title': 'Thomas R. Schreiner, 1, 2 Peter, Jude, New American Commentary 37',
      'url': 'https://www.bhpublishinggroup.com/product/1-2-peter-jude-2/'},
