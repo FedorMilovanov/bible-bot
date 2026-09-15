@@ -169,12 +169,17 @@ class Finding:
 
 
 def _normalize_greek(text: str) -> str:
-    """Accent-, marker- and case-insensitive key for a Greek token."""
+    """Accent/marker/case-insensitive key without erasing iota-subscript identity."""
 
-    text = unicodedata.normalize("NFD", str(text))
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    text = unicodedata.normalize("NFC", text)
-    return "".join(char for char in text if char.isalpha())
+    decomposed = unicodedata.normalize("NFD", str(text))
+    chars: list[str] = []
+    for char in decomposed:
+        if char == "\u0345":  # COMBINING GREEK YPOGEGRAMMENI: preserve as iota.
+            chars.append("\u03b9")
+        elif not unicodedata.combining(char):
+            chars.append(char)
+    folded = unicodedata.normalize("NFC", "".join(chars)).casefold()
+    return "".join(char for char in folded if char.isalpha())
 
 
 def load_corpus(path: Path = EVIDENCE_PATH) -> dict[tuple[str, str], list[dict]]:
@@ -272,6 +277,24 @@ def _has_parse_claim(text: str) -> bool:
     if not claimed:
         return False
     return bool({"mood", "voice", "case", "pos"} & set(claimed)) or len(claimed) >= 2
+
+
+MORPHOLOGY_CONTEXT = re.compile(
+    r"морфолог|разбор|падеж|\bрод\b|числ|наклон|залог|\bформ(?:а|ы|у|ой|е)\b",
+    re.IGNORECASE,
+)
+
+
+def _card_has_parse_claim(stem: str, keyed: str) -> bool:
+    """Recognize a safe single-feature claim only with an explicit Greek target."""
+
+    if _has_parse_claim(keyed):
+        return True
+    return bool(
+        _claimed_features(keyed)
+        and GREEK_RUN.search(stem)
+        and MORPHOLOGY_CONTEXT.search(f"{stem} {keyed}")
+    )
 
 
 def _explained_label_token(token: str) -> bool:
@@ -393,7 +416,7 @@ def _specified_conflicts(row: dict, claimed: dict[str, str]) -> list[str]:
 def audit_card(card: dict, pool: str, corpus: dict[tuple[str, str], list[dict]]) -> list[Finding]:
     stem, keyed, _explanation = _card_texts(card)
     card_id = str(card.get("id") or "<no-id>")
-    if not _has_parse_claim(keyed):
+    if not _card_has_parse_claim(stem, keyed):
         return []
     claimed = _claimed_features(keyed)
     refs = first_peter_refs(str(card.get("verse") or ""))
@@ -562,7 +585,7 @@ def coverage(pools: dict[str, list[dict]] | None = None) -> dict[str, int]:
     for pool, cards in pools.items():
         for card in cards:
             _stem, keyed, _explanation = _card_texts(card)
-            if not _has_parse_claim(keyed):
+            if not _card_has_parse_claim(_stem, keyed):
                 continue
             if not first_peter_refs(str(card.get("verse") or "")):
                 continue
@@ -587,6 +610,12 @@ def coverage(pools: dict[str, list[dict]] | None = None) -> dict[str, int]:
 
 
 def main() -> int:
+    # Windows shells can expose a legacy code page even when stdout is captured.
+    # The findings contain polytonic Greek; force a deterministic UTF-8 CLI.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit findings and coverage as JSON")
     args = parser.parse_args()

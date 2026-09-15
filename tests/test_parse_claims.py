@@ -32,8 +32,8 @@ CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 # Verified coverage. ``cards_with_parse_claim`` counts the cards whose keyed option
 # states morphology for a form that resolves to a corpus row and whose anchor names
 # a 1 Peter verse.
-PARSE_CLAIM_CARDS = 108
-MACHINE_VERIFIED_CARDS = 85
+PARSE_CLAIM_CARDS = 79
+MACHINE_VERIFIED_CARDS = 56
 MANUAL_REVIEW_CARDS = 23
 CORPUS_ROWS = 1134
 
@@ -203,6 +203,21 @@ def test_a_wrong_lemma_is_caught():
     )
     findings = checker.audit_card(card, "chapter4", corpus)
     assert [finding.check_id for finding in findings] == ["parse.lemma_mismatch"], findings
+
+
+def test_greek_normalization_preserves_iota_subscript_and_ignores_case():
+    checker = _checker()
+    assert checker._normalize_greek("ᾗ") != checker._normalize_greek("ἡ")
+    assert checker._normalize_greek("ΛΌΓΟΣ") == checker._normalize_greek("λόγος")
+
+
+def test_single_feature_morphology_claim_with_explicit_greek_target_is_checked():
+    checker = _checker()
+    corpus = checker.load_corpus()
+    card = _cards_by_id()["ch5_w3q_136"]
+    findings = checker.audit_card(card, "chapter5", corpus)
+    assert not findings, findings
+    assert checker._claimed_features(str(card["options"][card["correct"]])) == {"gender": "F"}
 
 
 def test_localized_lemma_marker_is_machine_checked():
