@@ -26,6 +26,10 @@ from .quiz_start import start_quiz
 from .ttl_cache import TTLValueCache
 
 logger = logging.getLogger(__name__)
+
+def _log_runtime_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "miniapp"
 STARTED_AT = datetime.now(UTC)
@@ -204,8 +208,8 @@ def _hard_leaderboard(limit: int = 20) -> list[dict]:
             {"$limit": max(1, min(int(limit), 100))},
         ]
         return list(collection.aggregate(pipeline))
-    except Exception:
-        logger.exception("hard leaderboard aggregation failed")
+    except Exception as exc:
+        _log_runtime_failure("hard leaderboard aggregation failed", exc)
         return []
 
 
@@ -289,8 +293,8 @@ def create_app() -> Flask:
             # browser/proxy keeping the previous deployment's availability.
             response.headers["Cache-Control"] = "no-store, max-age=0"
             return response
-        except Exception:
-            logger.exception("course catalog unavailable")
+        except Exception as exc:
+            _log_runtime_failure("course catalog unavailable", exc)
             return _json_error("course catalog unavailable", 503)
 
     @app.get("/stats")
@@ -306,8 +310,8 @@ def create_app() -> Flask:
                 for question in questions
             }
             return jsonify({"status": "ok", "database": "connected" if _database_ready() else "unavailable", "total_users": _total_users(), "total_questions": len(unique_ids), "pools": pools, "uptime_seconds": _uptime_seconds()})
-        except Exception:
-            logger.exception("stats endpoint failed")
+        except Exception as exc:
+            _log_runtime_failure("stats endpoint failed", exc)
             return _json_error("stats unavailable", 503)
 
     @app.get("/api/botinfo")
@@ -319,8 +323,8 @@ def create_app() -> Flask:
         try:
             from questions import POOL_REGISTRY
             return jsonify({key: len(value) for key, value in POOL_REGISTRY.items()})
-        except Exception:
-            logger.exception("pool registry unavailable")
+        except Exception as exc:
+            _log_runtime_failure("pool registry unavailable", exc)
             return _json_error("question pools unavailable", 503)
 
     @app.get("/api/questions/<pool_key>")
@@ -332,8 +336,8 @@ def create_app() -> Flask:
             return jsonify([public_question(prepare_question(question)) for question in sample])
         except KeyError:
             return _json_error("unknown question pool", 404)
-        except Exception:
-            logger.exception("question endpoint failed")
+        except Exception as exc:
+            _log_runtime_failure("question endpoint failed", exc)
             return _json_error("questions unavailable", 503)
 
     @app.get("/api/quiz/active")
@@ -392,8 +396,8 @@ def create_app() -> Flask:
             history = sorted(miniapp_history + bot_history, key=_history_timestamp, reverse=True)[:10]
             achievements, streak_count, streak_date = get_user_achievements(uid)
             return jsonify({"user": user, "position": position, "entry": _public_user_document(entry), "stats": _public_user_document(stats_data), "history": _serialize_history(history), "achievements": achievements, "streak": {"count": streak_count, "last": streak_date}})
-        except Exception:
-            logger.exception("api/me failed")
+        except Exception as exc:
+            _log_runtime_failure("api/me failed", exc)
             return _json_error("profile unavailable", 503)
 
     @app.get("/api/leaderboard")
@@ -417,8 +421,8 @@ def create_app() -> Flask:
                 score_key = "_hard_correct"
             users = [{"rank": rank, "username": item.get("username", ""), "first_name": item.get("first_name", "Пользователь"), "score": item.get(score_key, 0), "total_tests": item.get("total_tests", 0)} for rank, item in enumerate(raw_users, start=1)]
             return jsonify({"cat": category, "users": users})
-        except Exception:
-            logger.exception("leaderboard endpoint failed")
+        except Exception as exc:
+            _log_runtime_failure("leaderboard endpoint failed", exc)
             return _json_error("leaderboard unavailable", 503)
 
     return app
