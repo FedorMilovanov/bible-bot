@@ -1,8 +1,8 @@
 """Bounded same-user operation locks for the single-process Mini App runtime.
 
-Waitress serves requests concurrently in threads. Quiz start/current/answer for one
-Telegram user are serialized so a new start cannot abandon a session while that
-same user's final answer is being committed. Stripes keep memory bounded.
+Waitress serves requests concurrently in threads. Quiz active/start/current/answer/cancel
+operations for one Telegram user are serialized so recovery, cancellation, and answer
+commits cannot race the same session lifecycle. Stripes keep memory bounded.
 
 This is process-local by design. Horizontal scaling requires a shared lock or a
 fully transactional database lifecycle across instances.

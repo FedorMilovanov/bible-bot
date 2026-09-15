@@ -34,6 +34,67 @@ def test_api_requires_json_before_quiz_work(http):
     assert response.get_json()["error"] == "application/json required"
 
 
+def test_cancel_requires_json_before_quiz_work(http):
+    response = http.post(
+        "/api/quiz/cancel",
+        data="{}",
+        content_type="text/plain",
+        headers=debug_headers(),
+    )
+    assert response.status_code == 415
+    assert response.get_json()["error"] == "application/json required"
+
+
+def test_all_quiz_session_routes_share_rate_and_serialization_boundaries():
+    assert web_api._SERIALIZED_QUIZ_PATHS == {
+        "/api/quiz/active",
+        "/api/quiz/start",
+        "/api/quiz/current",
+        "/api/quiz/answer",
+        "/api/quiz/cancel",
+    }
+    assert web_api._JSON_QUIZ_PATHS == {
+        "/api/quiz/start",
+        "/api/quiz/current",
+        "/api/quiz/answer",
+        "/api/quiz/cancel",
+    }
+    assert ("GET", "/api/quiz/active") in web_api._RATE_LIMITS
+    assert ("POST", "/api/quiz/cancel") in web_api._RATE_LIMITS
+
+
+def test_active_quiz_uses_user_lock_without_requiring_json(http, monkeypatch):
+    import web_api.routes as routes_module
+
+    class FakeLock:
+        def __init__(self):
+            self.held = False
+
+        def acquire(self):
+            assert self.held is False
+            self.held = True
+
+        def release(self):
+            assert self.held is True
+            self.held = False
+
+    lock = FakeLock()
+    monkeypatch.setattr(web_api, "user_operation_lock", lambda _user_id: lock)
+
+    def fake_get_active(user):
+        assert user["id"] == 987654323
+        assert lock.held is True
+        return {"active": False}, None, 200
+
+    monkeypatch.setattr(routes_module, "get_active_quiz", fake_get_active)
+
+    response = http.get("/api/quiz/active", headers=debug_headers(987654323))
+
+    assert response.status_code == 200
+    assert response.get_json() == {"active": False}
+    assert lock.held is False
+
+
 def test_request_body_limit_returns_json_413(http):
     payload = '{"padding":"' + ("x" * (70 * 1024)) + '"}'
     response = http.post(
