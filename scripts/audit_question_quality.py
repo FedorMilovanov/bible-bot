@@ -1053,7 +1053,6 @@ def citation_verification() -> list[str]:
     parse_rows = parse_claim_findings()
     parse_stats = parse_claim_coverage()
     parse_blocking = [finding for finding in parse_rows if finding.severity == "blocking"]
-    parse_manual = [finding for finding in parse_rows if finding.severity == "info"]
     lines.append(
         f"- Разбор форм: **{parse_stats['parse_claim_cards']}** карточек-кандидатов с разбором "
         f"на якоре 1 Петра; **{parse_stats['machine_verified_cards']}** действительно сверены "
