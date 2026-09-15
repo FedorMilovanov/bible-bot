@@ -276,6 +276,7 @@ def create_app():
 
     @app.after_request
     def _security_headers(response):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
