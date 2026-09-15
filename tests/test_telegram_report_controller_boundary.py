@@ -103,3 +103,11 @@ def test_inaccuracy_uses_durable_session_and_worker_threads(monkeypatch):
     assert len(accept_threads) == 1
     assert lookup_threads[0] != event_loop_thread
     assert accept_threads[0] != event_loop_thread
+
+
+def test_report_controller_logging_redacts_user_identity_and_tracebacks():
+    assert "logger.exception(" not in SOURCE
+    assert "exc_info=True" not in SOURCE
+    for line in SOURCE.splitlines():
+        if "logger." in line or "_log_report_failure(" in line:
+            assert "user_id" not in line

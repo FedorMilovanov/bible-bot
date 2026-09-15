@@ -18,6 +18,10 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_store_failure(operation: str, exc: BaseException) -> None:
+    logger.warning("%s failed (%s)", operation, type(exc).__name__)
+
 _REPORT_TYPES = frozenset({"bug", "idea", "question"})
 _DELIVERY_STAGES = frozenset({"photo", "text"})
 
@@ -164,8 +168,8 @@ def accept_report_once(
     except ReportStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("durable report acceptance failed for %s", report_id)
-        raise ReportStoreUnavailable("report acceptance failed") from exc
+        _log_store_failure("durable report acceptance", exc)
+        raise ReportStoreUnavailable("report acceptance failed") from None
 
 
 def claim_report_delivery_stage(
@@ -210,8 +214,8 @@ def claim_report_delivery_stage(
             return None
         return {"report": claimed, "stage": stage, "claim_token": token}
     except PyMongoError as exc:
-        logger.exception("failed to lease report %s stage %s", report_id, stage)
-        raise ReportStoreUnavailable("report delivery claim failed") from exc
+        _log_store_failure("report delivery lease", exc)
+        raise ReportStoreUnavailable("report delivery claim failed") from None
 
 
 def get_report_delivery_stage_state(report_id: str, stage: str) -> dict | None:
@@ -249,8 +253,8 @@ def get_report_delivery_stage_state(report_id: str, stage: str) -> dict | None:
     except ReportStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to read report %s stage %s", report_id, stage)
-        raise ReportStoreUnavailable("report delivery state lookup failed") from exc
+        _log_store_failure("report delivery state lookup", exc)
+        raise ReportStoreUnavailable("report delivery state lookup failed") from None
 
 
 def _sync_admin_delivered(reports, report_id: str, now: datetime) -> None:
@@ -318,8 +322,8 @@ def mark_report_delivery_stage_delivered(
     except ReportStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to acknowledge report %s stage %s", report_id, stage)
-        raise ReportStoreUnavailable("report delivery acknowledgement failed") from exc
+        _log_store_failure("report delivery acknowledgement", exc)
+        raise ReportStoreUnavailable("report delivery acknowledgement failed") from None
 
 
 def release_report_delivery_stage(
@@ -353,8 +357,8 @@ def release_report_delivery_stage(
         )
         return result.modified_count == 1
     except PyMongoError as exc:
-        logger.exception("failed to release report %s stage %s", report_id, stage)
-        raise ReportStoreUnavailable("report delivery release failed") from exc
+        _log_store_failure("report delivery release", exc)
+        raise ReportStoreUnavailable("report delivery release failed") from None
 
 
 def get_pending_reports(limit: int = 50) -> list[dict]:
@@ -369,5 +373,5 @@ def get_pending_reports(limit: int = 50) -> list[dict]:
             .limit(limit)
         )
     except PyMongoError as exc:
-        logger.exception("failed to list pending reports")
-        raise ReportStoreUnavailable("pending report listing failed") from exc
+        _log_store_failure("pending report listing", exc)
+        raise ReportStoreUnavailable("pending report listing failed") from None

@@ -56,6 +56,10 @@ from utils import safe_edit, safe_send
 logger = logging.getLogger(__name__)
 
 
+def _log_report_failure(operation: str, exc: BaseException, *, level: int = logging.WARNING) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 def _admin_user_id() -> int:
     raw = os.getenv("ADMIN_USER_ID")
     if not raw:
@@ -108,8 +112,8 @@ def _durable_draft_context(user_id: int) -> dict:
     """Best-effort context enrichment; report acceptance must not depend on it."""
     try:
         return _session_context(get_active_quiz_session_strict(user_id))
-    except (QuizSessionAccessUnavailable, QuizSessionAccessSchemaInvalid):
-        logger.warning("report context session lookup unavailable for user %s", user_id)
+    except (QuizSessionAccessUnavailable, QuizSessionAccessSchemaInvalid) as exc:
+        _log_report_failure("report context session lookup unavailable", exc)
         return {}
 
 
@@ -151,8 +155,8 @@ async def report_start(update, context):
 
     try:
         draft = new_report_draft(report_type)
-    except (ValueError, RuntimeError):
-        logger.exception("could not allocate stable report draft id for user %s", user_id)
+    except (ValueError, RuntimeError) as exc:
+        _log_report_failure("could not allocate stable report draft id", exc)
         await query.answer("⚠️ Не удалось начать сообщение. Попробуй позже.", show_alert=True)
         return ConversationHandler.END
 
@@ -182,8 +186,8 @@ async def report_receive_text(update, context):
         return REPORT_TEXT
     try:
         set_report_draft_text(draft, text)
-    except LegacyReportDraftInvalid:
-        logger.warning("report draft text rejected for user %s", user_id, exc_info=True)
+    except LegacyReportDraftInvalid as exc:
+        _log_report_failure("report draft text rejected", exc)
         await safe_send(update.message, "⚠️ Черновик повреждён. Начни сообщение заново.")
         return ConversationHandler.END
 
@@ -207,8 +211,8 @@ async def report_receive_photo(update, context):
         return REPORT_PHOTO
     try:
         set_report_draft_photo(draft, update.message.photo[-1].file_id)
-    except LegacyReportDraftInvalid:
-        logger.warning("report photo rejected for user %s", user_id, exc_info=True)
+    except LegacyReportDraftInvalid as exc:
+        _log_report_failure("report photo rejected", exc)
         await safe_send(update.message, "⚠️ Фото не удалось привязать к черновику.")
         return REPORT_PHOTO
 
@@ -300,8 +304,8 @@ async def drain_report_outbox(bot, *, limit: int = 50):
 async def report_delivery_job(context):
     try:
         await drain_report_outbox(context.bot)
-    except Exception:
-        logger.exception("unexpected report outbox drain failure")
+    except Exception as exc:
+        _log_report_failure("unexpected report outbox drain failure", exc, level=logging.ERROR)
 
 
 async def report_confirm(update, context):
@@ -329,8 +333,8 @@ async def report_confirm(update, context):
                 context=_durable_draft_context(user_id),
             )
         )
-    except (LegacyReportDraftInvalid, ReportStoreUnavailable, ValueError):
-        logger.warning("durable report acceptance failed for user %s", user_id, exc_info=True)
+    except (LegacyReportDraftInvalid, ReportStoreUnavailable, ValueError) as exc:
+        _log_report_failure("durable report acceptance failed", exc)
         await safe_edit(
             query,
             "⚠️ База не подтвердила сохранение. Черновик не удалён — нажми «Отправить» ещё раз.",
@@ -344,7 +348,7 @@ async def report_confirm(update, context):
         else None
     )
     if not isinstance(accepted_id, str) or accepted_id != report_id:
-        logger.error("durable report acceptance returned mismatched identity for user %s", user_id)
+        logger.error("durable report acceptance returned mismatched identity")
         await safe_edit(
             query,
             "⚠️ База вернула противоречивый идентификатор. Черновик сохранён локально для повтора.",
@@ -358,8 +362,8 @@ async def report_confirm(update, context):
 
     try:
         await drain_report_outbox(context.bot, limit=10)
-    except Exception:
-        logger.warning("accepted report remains queued for admin delivery", exc_info=True)
+    except Exception as exc:
+        _log_report_failure("accepted report remains queued for admin delivery", exc)
 
     await safe_edit(
         query,
@@ -439,13 +443,13 @@ async def report_inaccuracy_handler(update, context):
                 level_name=session.get("level_name"),
             )
         )
-    except (LegacyInaccuracyReportInvalid, ReportStoreUnavailable, ValueError):
-        logger.warning("inaccuracy report acceptance failed for user %s", user_id, exc_info=True)
+    except (LegacyInaccuracyReportInvalid, ReportStoreUnavailable, ValueError) as exc:
+        _log_report_failure("inaccuracy report acceptance failed", exc)
         await query.answer("⚠️ Не удалось сохранить сообщение. Попробуй ещё раз.", show_alert=True)
         return
 
     await query.answer("✅ Неточность сохранена.")
     try:
         await drain_report_outbox(context.bot, limit=10)
-    except Exception:
-        logger.warning("accepted inaccuracy report remains queued", exc_info=True)
+    except Exception as exc:
+        _log_report_failure("accepted inaccuracy report remains queued", exc)

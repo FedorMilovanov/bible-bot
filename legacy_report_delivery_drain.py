@@ -39,8 +39,8 @@ def _required_report_id(report: dict) -> str:
     return report_id
 
 
-def _error_text(identifier: str, exc: Exception) -> str:
-    return f"report:{identifier}:{type(exc).__name__}:{exc}"[:500]
+def _error_text(exc: Exception) -> str:
+    return f"report-delivery:{type(exc).__name__}"
 
 
 async def drain_pending_reports(
@@ -58,7 +58,7 @@ async def drain_pending_reports(
         reports = await asyncio.to_thread(get_pending_reports, limit)
     except ReportStoreUnavailable as exc:
         return ReportDeliveryDrainSummary(
-            errors=(f"report-list:<queue>:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"report-list:{type(exc).__name__}",)
         )
     if not isinstance(reports, list):
         raise LegacyReportDeliveryQueueInvalid(
@@ -75,14 +75,10 @@ async def drain_pending_reports(
     deferred = 0
     for report in reports:
         if not isinstance(report, dict):
-            errors.append(
-                "report:<unknown>:LegacyReportDeliveryQueueInvalid:pending report is invalid"
-            )
+            errors.append("report-delivery:LegacyReportDeliveryQueueInvalid")
             continue
-        identifier = str(report.get("_id") or report.get("report_id") or "<unknown>")
         try:
             report_id = _required_report_id(report)
-            identifier = report_id
             # Repair the crash window where both stage obligations were already
             # settled but the aggregate admin_delivered write did not land.
             if await asyncio.to_thread(repair_report_delivery_aggregate, report_id):
@@ -109,7 +105,7 @@ async def drain_pending_reports(
             if not text_sent and not terminal:
                 deferred += 1
         except Exception as exc:
-            errors.append(_error_text(identifier, exc))
+            errors.append(_error_text(exc))
 
     return ReportDeliveryDrainSummary(
         reports_seen=len(reports),

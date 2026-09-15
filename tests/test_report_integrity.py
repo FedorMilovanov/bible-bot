@@ -199,12 +199,18 @@ def test_same_report_id_with_different_content_fails_closed(monkeypatch):
         _accept(text="different report")
 
 
-def test_durable_report_survives_secondary_cooldown_failure_for_retry(monkeypatch):
+def test_durable_report_survives_secondary_cooldown_failure_for_retry(monkeypatch, caplog):
     reports, users, _now = _install(monkeypatch)
     users.fail_update = True
 
-    with pytest.raises(ReportStoreUnavailable):
-        _accept()
+    with caplog.at_level("WARNING", logger="report_integrity"):
+        with pytest.raises(ReportStoreUnavailable) as raised:
+            _accept()
+
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+    assert "mongo user write failed" not in caplog.text
+    assert "durable report acceptance failed (PyMongoError)" in caplog.text
 
     assert reports.docs["r1"]["text"] == "Something broke"
     users.fail_update = False

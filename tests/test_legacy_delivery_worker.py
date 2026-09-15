@@ -55,7 +55,7 @@ def test_battle_sender_failure_releases_for_retry(monkeypatch):
     with pytest.raises(RuntimeError, match="telegram down"):
         run(worker.deliver_battle_recipient_once("b1", 20, sender))
     assert released[0][0][:3] == ("b1", 20, "tok")
-    assert "telegram down" in released[0][1]["error"]
+    assert released[0][1]["error"] == "RuntimeError"
 
 
 def test_battle_defer_persists_future_retry_without_release(monkeypatch):
@@ -238,6 +238,7 @@ def test_report_sender_failure_releases_only_failed_stage(monkeypatch):
     with pytest.raises(RuntimeError, match="photo failed"):
         run(worker.deliver_report_once("r1", photo_sender, text_sender))
     assert released[0][0][:3] == ("r1", "photo", "photo-tok")
+    assert released[0][1]["error"] == "RuntimeError"
 
 
 def test_report_defer_persists_stage_pause_and_does_not_overtake_photo(monkeypatch):
