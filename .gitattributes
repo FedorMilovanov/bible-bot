@@ -1,0 +1,4 @@
+# Chapter-5 release identities pin Git blobs; keep these text files LF-stable
+# even when a developer uses core.autocrlf on Windows.
+questions/chapter5/bank.py text eol=lf
+questions/chapter5/bank_raw.py text eol=lf
