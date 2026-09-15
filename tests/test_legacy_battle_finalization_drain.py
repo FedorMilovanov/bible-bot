@@ -1,3 +1,5 @@
+import pytest
+from pymongo.errors import PyMongoError
 from copy import deepcopy
 
 import legacy_battle_finalization_drain as drain
@@ -67,15 +69,29 @@ def test_lost_finalization_race_is_deferred_not_error(monkeypatch):
 
 
 def test_one_finalization_failure_does_not_starve_next(monkeypatch):
-    collection = Collection([{"_id": "bad"}, {"_id": "good"}])
+    collection = Collection([{"_id": "battle-sensitive-id"}, {"_id": "good"}])
     monkeypatch.setattr(drain, "_collection", lambda: collection)
 
     def claim(battle_id, **_kwargs):
-        if battle_id == "bad":
-            raise drain.BattleStoreUnavailable("down")
+        if battle_id == "battle-sensitive-id":
+            raise drain.BattleStoreUnavailable("provider-sensitive-marker")
         return {"_id": battle_id}
 
     monkeypatch.setattr(drain, "claim_final_battle", claim)
     result = drain.finalize_ready_battles()
     assert result.finalized == 1
-    assert len(result.errors) == 1
+    assert result.errors == ("battle-finalize:BattleStoreUnavailable",)
+    assert "battle-sensitive-id" not in repr(result.errors)
+    assert "provider-sensitive-marker" not in repr(result.errors)
+
+
+def test_ready_lookup_suppresses_raw_mongo_cause(monkeypatch):
+    class BrokenCollection:
+        def find(self, *_args, **_kwargs):
+            raise PyMongoError("mongo-sensitive-marker")
+
+    monkeypatch.setattr(drain, "_collection", lambda: BrokenCollection())
+    with pytest.raises(drain.LegacyBattleFinalizationQueueUnavailable) as raised:
+        drain._ready_battle_ids(5)
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True

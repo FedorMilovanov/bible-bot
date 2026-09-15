@@ -46,7 +46,7 @@ def _battle_identity(battle: dict) -> tuple[str, int, int]:
 
 
 def _error(role: str, exc: Exception) -> str:
-    return f"{role}:{type(exc).__name__}:{exc}"[:500]
+    return f"{role}:{type(exc).__name__}"
 
 
 async def deliver_final_battle_once(

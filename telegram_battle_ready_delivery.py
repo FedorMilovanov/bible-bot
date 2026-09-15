@@ -24,6 +24,10 @@ from telegram_delivery_retry import send_with_durable_retry_after
 logger = logging.getLogger(__name__)
 
 
+def _error_kind(exc: BaseException) -> str:
+    return type(exc).__name__
+
+
 class BattleReadyDeliveryAcknowledgementPending(RuntimeError):
     """Remote send may have completed while Mongo acknowledgement is unresolved."""
 
@@ -117,7 +121,7 @@ async def deliver_creator_ready_once(
             release_creator_ready_delivery,
             battle_id,
             token,
-            error=f"{type(exc).__name__}: {exc}",
+            error=_error_kind(exc),
         )
         if not released:
             logger.warning("battle-ready transient failure lease release was not confirmed")
@@ -147,7 +151,7 @@ async def drain_creator_ready_outbox(
         battles = await asyncio.to_thread(get_pending_creator_ready_battles, limit)
     except LegacyBattleReadyDeliveryUnavailable as exc:
         return BattleReadyDrainSummary(
-            errors=(f"battle-ready-list:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"battle-ready-list:{_error_kind(exc)}",)
         )
     if not isinstance(battles, list):
         raise LegacyBattleReadyDeliveryConflict("pending battle-ready listing is invalid")
@@ -158,7 +162,7 @@ async def drain_creator_ready_outbox(
     for battle in battles:
         battle_id = battle.get("_id") if isinstance(battle, dict) else None
         if not isinstance(battle_id, str) or not battle_id:
-            errors.append("battle-ready:<invalid>:pending battle identity is invalid")
+            errors.append("battle-ready:LegacyBattleReadyDeliveryConflict")
             continue
         try:
             sent = await deliver_creator_ready_once(
@@ -171,7 +175,7 @@ async def drain_creator_ready_outbox(
             else:
                 deferred += 1
         except Exception as exc:
-            errors.append(f"battle-ready:{battle_id}:{type(exc).__name__}:{exc}"[:500])
+            errors.append(f"battle-ready:{_error_kind(exc)}")
     return BattleReadyDrainSummary(
         battles_seen=len(battles),
         delivered=delivered,

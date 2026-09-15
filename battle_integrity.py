@@ -12,6 +12,10 @@ from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
+
+def _log_store_failure(operation: str, exc: BaseException) -> None:
+    logger.warning("%s failed (%s)", operation, type(exc).__name__)
+
 BATTLE_DELIVERY_PROTOCOL_LEGACY_DIRECT = "legacy_direct_v1"
 BATTLE_DELIVERY_PROTOCOL_OUTBOX = "outbox_v1"
 _BATTLE_DELIVERY_PROTOCOLS = frozenset(
@@ -117,8 +121,8 @@ def claim_battle_opponent(battle_id: str, user_id: int, user_name: str) -> dict 
             return_document=ReturnDocument.AFTER,
         )
     except PyMongoError as exc:
-        logger.exception("failed to atomically claim opponent slot for battle %s", battle_id)
-        raise BattleStoreUnavailable("battle claim failed") from exc
+        _log_store_failure("battle opponent claim", exc)
+        raise BattleStoreUnavailable("battle claim failed") from None
 
 
 def record_battle_result(
@@ -173,8 +177,8 @@ def record_battle_result(
             }
         )
     except PyMongoError as exc:
-        logger.exception("failed to record %s result for battle %s", role, battle_id)
-        raise BattleStoreUnavailable("battle result write failed") from exc
+        _log_store_failure("battle result write", exc)
+        raise BattleStoreUnavailable("battle result write failed") from None
 
 
 def _result_for_role(battle: dict, role: str) -> str:
@@ -275,8 +279,8 @@ def _apply_battle_outcome_once(
     except BattleStoreUnavailable:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to apply battle outcome for user %s", user_id)
-        raise BattleStoreUnavailable("battle outcome write failed") from exc
+        _log_store_failure("battle outcome write", exc)
+        raise BattleStoreUnavailable("battle outcome write failed") from None
 
 
 def claim_final_battle(
@@ -347,11 +351,11 @@ def claim_final_battle(
     except BattleStoreUnavailable:
         raise
     except (KeyError, TypeError, ValueError) as exc:
-        logger.exception("battle %s has invalid participant/result data", battle_id)
-        raise BattleStoreUnavailable("battle result data is invalid") from exc
+        _log_store_failure("battle finalization data validation", exc)
+        raise BattleStoreUnavailable("battle result data is invalid") from None
     except PyMongoError as exc:
-        logger.exception("failed to claim final battle %s", battle_id)
-        raise BattleStoreUnavailable("battle finalization failed") from exc
+        _log_store_failure("battle finalization", exc)
+        raise BattleStoreUnavailable("battle finalization failed") from None
 
 
 def claim_battle_result_delivery(
@@ -408,8 +412,8 @@ def claim_battle_result_delivery(
             return None
         return {"battle": claimed, "role": role, "claim_token": token}
     except PyMongoError as exc:
-        logger.exception("failed to claim result delivery for battle %s user %s", battle_id, user_id)
-        raise BattleStoreUnavailable("battle result delivery claim failed") from exc
+        _log_store_failure("battle result delivery claim", exc)
+        raise BattleStoreUnavailable("battle result delivery claim failed") from None
 
 
 def mark_battle_result_delivered(
@@ -466,8 +470,8 @@ def mark_battle_result_delivered(
         delivered, exists = _entry_field(existing or {}, f"{path}.delivered")
         return exists and delivered is True
     except PyMongoError as exc:
-        logger.exception("failed to acknowledge result delivery for battle %s user %s", battle_id, user_id)
-        raise BattleStoreUnavailable("battle result delivery acknowledgement failed") from exc
+        _log_store_failure("battle result delivery acknowledgement", exc)
+        raise BattleStoreUnavailable("battle result delivery acknowledgement failed") from None
 
 
 def release_battle_result_delivery(
@@ -510,8 +514,8 @@ def release_battle_result_delivery(
         )
         return result.modified_count == 1
     except PyMongoError as exc:
-        logger.exception("failed to release result delivery for battle %s user %s", battle_id, user_id)
-        raise BattleStoreUnavailable("battle result delivery release failed") from exc
+        _log_store_failure("battle result delivery release", exc)
+        raise BattleStoreUnavailable("battle result delivery release failed") from None
 
 
 def get_pending_final_battles(limit: int = 50) -> list[dict]:
@@ -533,8 +537,8 @@ def get_pending_final_battles(limit: int = 50) -> list[dict]:
             ).limit(limit)
         )
     except PyMongoError as exc:
-        logger.exception("failed to list pending finalized battles")
-        raise BattleStoreUnavailable("battle result delivery listing failed") from exc
+        _log_store_failure("pending finalized battle listing", exc)
+        raise BattleStoreUnavailable("battle result delivery listing failed") from None
 
 
 def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
@@ -558,5 +562,5 @@ def delete_battle_for_participant(battle_id: str, user_id: int) -> bool:
         )
         return result.deleted_count == 1
     except PyMongoError as exc:
-        logger.exception("failed to delete battle %s for participant %s", battle_id, user_id)
-        raise BattleStoreUnavailable("battle delete failed") from exc
+        _log_store_failure("battle delete", exc)
+        raise BattleStoreUnavailable("battle delete failed") from None

@@ -20,6 +20,10 @@ from legacy_battle_protocols import BATTLE_QUESTION_PROGRESS_PROTOCOL_DURABLE
 
 logger = logging.getLogger(__name__)
 
+
+def _log_store_failure(operation: str, exc: BaseException) -> None:
+    logger.warning("%s failed (%s)", operation, type(exc).__name__)
+
 BATTLE_READY_DELIVERY_PROTOCOL = "battle_ready_outbox_v1"
 _BATTLE_READY_PATH = "creator_ready_delivery"
 
@@ -147,8 +151,8 @@ def claim_creator_ready_delivery(
     except LegacyBattleReadyDeliveryConflict:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to lease creator-ready notification for %s", battle_id)
-        raise LegacyBattleReadyDeliveryUnavailable("battle-ready claim failed") from exc
+        _log_store_failure("battle-ready delivery lease", exc)
+        raise LegacyBattleReadyDeliveryUnavailable("battle-ready claim failed") from None
 
 
 def mark_creator_ready_delivered(battle_id: str, claim_token: str) -> bool:
@@ -184,8 +188,8 @@ def mark_creator_ready_delivered(battle_id: str, claim_token: str) -> bool:
         existing = collection.find_one({"_id": battle_id}, {path: 1})
         marker = existing.get(path) if isinstance(existing, dict) else None
         return isinstance(marker, dict) and marker.get("delivered") is True
-    except PyMongoError as exc:
-        raise LegacyBattleReadyDeliveryUnavailable("battle-ready acknowledgement failed") from exc
+    except PyMongoError:
+        raise LegacyBattleReadyDeliveryUnavailable("battle-ready acknowledgement failed") from None
 
 
 def defer_creator_ready_delivery(
@@ -222,8 +226,8 @@ def defer_creator_ready_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
-        raise LegacyBattleReadyDeliveryUnavailable("battle-ready deferral failed") from exc
+    except PyMongoError:
+        raise LegacyBattleReadyDeliveryUnavailable("battle-ready deferral failed") from None
 
 
 def release_creator_ready_delivery(
@@ -253,8 +257,8 @@ def release_creator_ready_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
-        raise LegacyBattleReadyDeliveryUnavailable("battle-ready release failed") from exc
+    except PyMongoError:
+        raise LegacyBattleReadyDeliveryUnavailable("battle-ready release failed") from None
 
 
 def settle_creator_ready_failure(
@@ -295,8 +299,8 @@ def settle_creator_ready_failure(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
-        raise LegacyBattleReadyDeliveryUnavailable("battle-ready terminal settlement failed") from exc
+    except PyMongoError:
+        raise LegacyBattleReadyDeliveryUnavailable("battle-ready terminal settlement failed") from None
 
 
 def get_pending_creator_ready_battles(limit: int = 50) -> list[dict]:
@@ -313,5 +317,5 @@ def get_pending_creator_ready_battles(limit: int = 50) -> list[dict]:
             .limit(limit)
         )
     except PyMongoError as exc:
-        logger.exception("failed to list pending creator-ready notifications")
-        raise LegacyBattleReadyDeliveryUnavailable("pending battle-ready lookup failed") from exc
+        _log_store_failure("pending battle-ready listing", exc)
+        raise LegacyBattleReadyDeliveryUnavailable("pending battle-ready lookup failed") from None

@@ -2,6 +2,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from pymongo.errors import PyMongoError
+
 import pytest
 
 import legacy_battle_ready_delivery as delivery
@@ -111,3 +113,21 @@ def test_pending_lookup_requires_marker_and_in_progress_status(monkeypatch):
     assert query["creator_finished"] == {"$ne": True}
     assert query["creator_ready_delivery.protocol"] == delivery.BATTLE_READY_DELIVERY_PROTOCOL
     assert query["creator_ready_delivery.delivered"] == {"$ne": True}
+
+
+def test_claim_store_failure_redacts_battle_id_and_raw_mongo_message(monkeypatch, caplog):
+    collection = Mock()
+    collection.find_one_and_update.side_effect = PyMongoError("mongo-sensitive-marker")
+    now = datetime(2026, 8, 15, 16, 0, 0)
+    monkeypatch.setattr(delivery, "_collection", lambda: collection)
+    monkeypatch.setattr(delivery, "_database", lambda: SimpleNamespace(_now_utc=lambda: now))
+
+    with caplog.at_level("WARNING", logger=delivery.__name__):
+        with pytest.raises(delivery.LegacyBattleReadyDeliveryUnavailable) as raised:
+            delivery.claim_creator_ready_delivery("battle-sensitive-id")
+
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+    assert "battle-sensitive-id" not in caplog.text
+    assert "mongo-sensitive-marker" not in caplog.text
+    assert "battle-ready delivery lease failed (PyMongoError)" in caplog.text

@@ -48,10 +48,10 @@ def _ready_battle_ids(limit: int) -> list[str]:
                 {"_id": 1},
             ).limit(limit)
         )
-    except PyMongoError as exc:
+    except PyMongoError:
         raise LegacyBattleFinalizationQueueUnavailable(
             "ready battle finalization lookup failed"
-        ) from exc
+        ) from None
     ids = []
     for row in rows:
         battle_id = row.get("_id") if isinstance(row, dict) else None
@@ -71,7 +71,7 @@ def finalize_ready_battles(*, limit: int = 50) -> BattleFinalizationDrainSummary
         battle_ids = _ready_battle_ids(limit)
     except LegacyBattleFinalizationQueueUnavailable as exc:
         return BattleFinalizationDrainSummary(
-            errors=(f"battle-finalize-list:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"battle-finalize-list:{type(exc).__name__}",)
         )
 
     finalized = 0
@@ -88,9 +88,7 @@ def finalize_ready_battles(*, limit: int = 50) -> BattleFinalizationDrainSummary
             else:
                 finalized += 1
         except BattleStoreUnavailable as exc:
-            errors.append(
-                f"battle-finalize:{battle_id}:{type(exc).__name__}:{exc}"[:500]
-            )
+            errors.append(f"battle-finalize:{type(exc).__name__}")
     return BattleFinalizationDrainSummary(
         battles_seen=len(battle_ids),
         finalized=finalized,
