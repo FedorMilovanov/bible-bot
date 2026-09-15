@@ -1,6 +1,8 @@
 import asyncio
 import os
 import threading
+import logging
+from pathlib import Path
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -284,3 +286,24 @@ def test_create_battle_still_works_when_bot_username_is_unavailable(monkeypatch)
 
     markup = query.edits[0][1]["reply_markup"]
     assert all(button.url is None for row in markup.inline_keyboard for button in row)
+
+
+def test_share_controller_logging_redacts_identity_and_provider_text(caplog):
+    with caplog.at_level(logging.WARNING, logger=share.__name__):
+        share._log_battle_failure(
+            "durable shared battle creation failed",
+            RuntimeError("provider-sensitive-marker"),
+        )
+    assert "durable shared battle creation failed (RuntimeError)" in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text
+
+
+def test_share_controller_source_has_no_traceback_or_identity_logging():
+    source = Path(share.__file__).read_text(encoding="utf-8")
+    assert "logger.exception(" not in source
+    assert "exc_info=True" not in source
+    for line in source.splitlines():
+        if "logger." in line or "_log_battle_failure(" in line:
+            assert "user.id" not in line
+            assert "user_id" not in line
+            assert "battle_id" not in line

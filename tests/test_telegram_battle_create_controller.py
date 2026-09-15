@@ -1,6 +1,8 @@
 import asyncio
 import os
 import threading
+import logging
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -175,3 +177,24 @@ def test_rendered_share_link_uses_deterministic_created_id(monkeypatch):
         f"https://t.me/BibleQuizBot?start=duel_{battle_id}"
     ]
     assert markup.inline_keyboard[1][0].callback_data == f"cancel_battle_{battle_id}"
+
+
+def test_create_controller_logging_redacts_identity_and_provider_text(caplog):
+    with caplog.at_level(logging.WARNING, logger=create.__name__):
+        create._log_battle_failure(
+            "replay-safe battle creation failed",
+            RuntimeError("provider-sensitive-marker"),
+        )
+    assert "replay-safe battle creation failed (RuntimeError)" in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text
+
+
+def test_create_controller_source_has_no_traceback_or_identity_logging():
+    source = Path(create.__file__).read_text(encoding="utf-8")
+    assert "logger.exception(" not in source
+    assert "exc_info=True" not in source
+    for line in source.splitlines():
+        if "logger." in line or "_log_battle_failure(" in line:
+            assert "user.id" not in line
+            assert "user_id" not in line
+            assert "battle_id" not in line
