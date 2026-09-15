@@ -35,7 +35,8 @@ CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 PARSE_CLAIM_CARDS = 79
 MACHINE_VERIFIED_CARDS = 56
 MANUAL_REVIEW_CARDS = 23
-CORPUS_ROWS = 1134
+CORPUS_ROWS = 1218
+CORPUS_FORM_KEYS = 1133
 
 # Cards the checker reports as context instead of verifying, with the reason. A new
 # entry may only be added with the same kind of reason: the card names no form, or
@@ -152,6 +153,7 @@ def test_verified_coverage_is_pinned():
     assert stats["blocking_cards"] == 0
     assert MACHINE_VERIFIED_CARDS + MANUAL_REVIEW_CARDS == PARSE_CLAIM_CARDS
     assert stats["corpus_rows"] == CORPUS_ROWS
+    assert stats["corpus_form_keys"] == CORPUS_FORM_KEYS
 
 
 def test_keyed_parse_answers_match_the_corpus_row():

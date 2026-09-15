@@ -605,7 +605,8 @@ def coverage(pools: dict[str, list[dict]] | None = None) -> dict[str, int]:
         "machine_verified_cards": verified,
         "manual_review_cards": manual,
         "blocking_cards": blocked,
-        "corpus_rows": len(corpus),
+        "corpus_rows": sum(len(rows) for rows in corpus.values()),
+        "corpus_form_keys": len(corpus),
     }
 
 
