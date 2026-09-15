@@ -60,9 +60,10 @@ def test_write_all_is_always_rejected() -> None:
     assert len(violations) == 1
     assert "write-all is forbidden" in violations[0]
 
+
 def test_required_pip_audit_job_includes_dependency_review() -> None:
     workflow = Path(".github/workflows/security-audit.yml").read_text(encoding="utf-8")
-    assert "jobs:\\n  pip-audit:" in workflow
+    assert "jobs:\n  pip-audit:" in workflow
     assert "if: github.event_name == 'pull_request'" in workflow
     assert (
         "uses: actions/dependency-review-action@"
