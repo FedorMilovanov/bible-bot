@@ -139,7 +139,10 @@ FEATURE_TABLES = (
     ("gender", GENDER),
 )
 
-LEMMA_MARKER = re.compile(r"\bот\s+([\u0370-\u03ff\u1f00-\u1fff]{3,})")
+LEMMA_MARKER = re.compile(
+    r"\b(?:от|лемма|lemma)\s*[:=]?\s*([\u0370-\u03ff\u1f00-\u1fff]{3,})",
+    re.IGNORECASE,
+)
 
 # A distractor only competes with the key when the option *is* a parse label.
 # "Adj., nom. neut. sg." is a second answer; a full sentence that happens to
@@ -147,7 +150,7 @@ LEMMA_MARKER = re.compile(r"\bот\s+([\u0370-\u03ff\u1f00-\u1fff]{3,})")
 # грамматически обязательным") is an interpretation claim and is judged by the
 # interpretation, not by the parse code.
 GRAMMAR_LABEL_EXTRA = (
-    "врем", "залог", "наклонен", "падеж", "лиц", "числ", "род",
+    "врем", "залог", "наклонен", "падеж", "лиц", "числ", "род", "лемм",
     "от", "и", "или", "е", "л", "ч",
 )
 LABEL_TOKEN = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
@@ -548,15 +551,39 @@ def audit(pools: dict[str, list[dict]] | None = None) -> list[Finding]:
 
 
 def coverage(pools: dict[str, list[dict]] | None = None) -> dict[str, int]:
+    """Count candidates separately from cards the checker actually verifies."""
+
     corpus = load_corpus()
     pools = pools if pools is not None else pool_cards()
-    checked = 0
-    for cards in pools.values():
+    candidates = 0
+    verified = 0
+    manual = 0
+    blocked = 0
+    for pool, cards in pools.items():
         for card in cards:
             _stem, keyed, _explanation = _card_texts(card)
-            if _claimed_features(keyed) and first_peter_refs(str(card.get("verse") or "")):
-                checked += 1
-    return {"cards_with_parse_claim": checked, "corpus_rows": len(corpus)}
+            if not _has_parse_claim(keyed):
+                continue
+            if not first_peter_refs(str(card.get("verse") or "")):
+                continue
+            candidates += 1
+            findings = audit_card(card, pool, corpus)
+            if any(finding.severity == FINDING_BLOCKING for finding in findings):
+                blocked += 1
+            elif any(finding.severity == FINDING_INFO for finding in findings):
+                manual += 1
+            else:
+                verified += 1
+    return {
+        # Backward-compatible candidate count; this was historically (and
+        # misleadingly) described as the number already machine-verified.
+        "cards_with_parse_claim": candidates,
+        "parse_claim_cards": candidates,
+        "machine_verified_cards": verified,
+        "manual_review_cards": manual,
+        "blocking_cards": blocked,
+        "corpus_rows": len(corpus),
+    }
 
 
 def main() -> int:

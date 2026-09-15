@@ -32,7 +32,9 @@ CHECKER = ROOT / "scripts" / "verify_parse_claims.py"
 # Verified coverage. ``cards_with_parse_claim`` counts the cards whose keyed option
 # states morphology for a form that resolves to a corpus row and whose anchor names
 # a 1 Peter verse.
-VERIFIED_CARDS = 108
+PARSE_CLAIM_CARDS = 108
+MACHINE_VERIFIED_CARDS = 85
+MANUAL_REVIEW_CARDS = 23
 CORPUS_ROWS = 1134
 
 # Cards the checker reports as context instead of verifying, with the reason. A new
@@ -143,7 +145,12 @@ def test_every_skip_is_a_reviewed_one():
 def test_verified_coverage_is_pinned():
     checker = _checker()
     stats = checker.coverage()
-    assert stats["cards_with_parse_claim"] == VERIFIED_CARDS
+    assert stats["parse_claim_cards"] == PARSE_CLAIM_CARDS
+    assert stats["cards_with_parse_claim"] == PARSE_CLAIM_CARDS
+    assert stats["machine_verified_cards"] == MACHINE_VERIFIED_CARDS
+    assert stats["manual_review_cards"] == MANUAL_REVIEW_CARDS
+    assert stats["blocking_cards"] == 0
+    assert MACHINE_VERIFIED_CARDS + MANUAL_REVIEW_CARDS == PARSE_CLAIM_CARDS
     assert stats["corpus_rows"] == CORPUS_ROWS
 
 
@@ -195,6 +202,17 @@ def test_a_wrong_lemma_is_caught():
         "от εὐαγγελίζω", "от παύω"
     )
     findings = checker.audit_card(card, "chapter4", corpus)
+    assert [finding.check_id for finding in findings] == ["parse.lemma_mismatch"], findings
+
+
+def test_localized_lemma_marker_is_machine_checked():
+    checker = _checker()
+    corpus = checker.load_corpus()
+    card = copy.deepcopy(_cards_by_id()["ch3_disp_001"])
+    keyed = str(card["options"][card["correct"]])
+    assert checker._lemma_of(keyed) == checker._normalize_greek("πνεῦμα")
+    card["options"][card["correct"]] = keyed.replace("лемма πνεῦμα", "лемма παύω")
+    findings = checker.audit_card(card, "chapter3", corpus)
     assert [finding.check_id for finding in findings] == ["parse.lemma_mismatch"], findings
 
 
