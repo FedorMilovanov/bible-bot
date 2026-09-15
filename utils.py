@@ -323,8 +323,8 @@ async def _load_avatar(bot, user_id: int, first_name: str):
             )
             avatar_img.putalpha(mask)
             return avatar_img
-    except Exception as e:
-        logger.debug("Avatar load failed for %d: %s", user_id, e)
+    except Exception as exc:
+        logger.debug("Avatar load failed (%s)", type(exc).__name__)
 
     # Заглушка — круг с инициалом
     avatar_img = Image.new("RGBA", avatar_size, _COLORS["avatar_bg"])
@@ -477,8 +477,8 @@ async def generate_result_image(
         img.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
 
-    except Exception as e:
-        logger.error("generate_result_image error: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("generate_result_image failed (%s)", type(exc).__name__)
         return None
 
 
@@ -673,8 +673,8 @@ async def create_result_gif(
         buf.seek(0)
         return buf
 
-    except Exception as e:
-        logger.error("create_result_gif error: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("create_result_gif failed (%s)", type(exc).__name__)
         return None
 
 

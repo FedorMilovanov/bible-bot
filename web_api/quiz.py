@@ -15,6 +15,16 @@ from .result_store import apply_challenge_result_once, apply_regular_result_once
 
 logger = logging.getLogger(__name__)
 
+
+def _log_quiz_failure(
+    operation: str,
+    exc: BaseException,
+    *,
+    level: int = logging.ERROR,
+) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 MODE_CONFIG = {
     "relaxed": {"time_limit": None, "multiplier": 1.0},
     "timed": {"time_limit": 30, "multiplier": 1.5},
@@ -77,8 +87,8 @@ def miniapp_sessions():
             return None
         ensure_miniapp_indexes()
         return db["miniapp_sessions"]
-    except Exception:
-        logger.exception("Mini App session collection unavailable")
+    except Exception as exc:
+        _log_quiz_failure("Mini App session collection unavailable", exc)
         return None
 
 
@@ -113,8 +123,8 @@ def get_miniapp_history(user_id: int, limit: int = 10) -> list[dict]:
             }
             for item in cursor
         ]
-    except Exception:
-        logger.exception("failed to load Mini App history")
+    except Exception as exc:
+        _log_quiz_failure("failed to load Mini App history", exc)
         return []
 
 
@@ -213,11 +223,11 @@ def get_active_quiz(user: dict) -> tuple[dict | None, str | None, int]:
         session = sessions.find_one(
             {"user_id": user_id, "status": {"$in": list(OPEN_STATUSES)}}
         )
-    except PyMongoError:
-        logger.exception("failed to resolve active Mini App session")
+    except PyMongoError as exc:
+        _log_quiz_failure("failed to resolve active Mini App session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected active Mini App session lookup failure")
+    except Exception as exc:
+        _log_quiz_failure("unexpected active Mini App session lookup failure", exc)
         return None, "could not resolve active quiz session", 500
 
     if not session:
@@ -267,11 +277,11 @@ def cancel_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
     user_id = str(user["id"])
     try:
         session = sessions.find_one({"_id": session_id, "user_id": user_id})
-    except PyMongoError:
-        logger.exception("failed to load Mini App session for cancellation")
+    except PyMongoError as exc:
+        _log_quiz_failure("failed to load Mini App session for cancellation", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected Mini App cancellation lookup failure")
+    except Exception as exc:
+        _log_quiz_failure("unexpected Mini App cancellation lookup failure", exc)
         return None, "could not resolve quiz session", 500
 
     if not session:
@@ -320,11 +330,11 @@ def cancel_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
             },
             return_document=ReturnDocument.AFTER,
         )
-    except PyMongoError:
-        logger.exception("failed to cancel Mini App quiz session")
+    except PyMongoError as exc:
+        _log_quiz_failure("failed to cancel Mini App quiz session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected Mini App cancellation failure")
+    except Exception as exc:
+        _log_quiz_failure("unexpected Mini App cancellation failure", exc)
         return None, "could not cancel quiz session", 500
 
     if abandoned and abandoned.get("status") == "abandoned":
@@ -332,8 +342,8 @@ def cancel_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
 
     try:
         latest = sessions.find_one({"_id": session_id, "user_id": user_id})
-    except Exception:
-        logger.exception("failed to classify Mini App cancellation race")
+    except Exception as exc:
+        _log_quiz_failure("failed to classify Mini App cancellation race", exc)
         return None, "could not confirm quiz cancellation", 503
 
     if latest and latest.get("status") == "abandoned":
@@ -382,8 +392,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         pool = get_pool_by_key(pool_key)
     except KeyError:
         return None, "unknown question pool", 404
-    except Exception:
-        logger.exception("failed to load question pool")
+    except Exception as exc:
+        _log_quiz_failure("failed to load question pool", exc)
         return None, "question pool unavailable", 503
     if len(pool) < count:
         return None, f"question pool contains fewer than {count} questions", 409
@@ -397,11 +407,11 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         open_session = sessions.find_one(
             {"user_id": user_id, "status": {"$in": list(OPEN_STATUSES)}}
         )
-    except PyMongoError:
-        logger.exception("failed to resolve open Mini App session")
+    except PyMongoError as exc:
+        _log_quiz_failure("failed to resolve open Mini App session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected open Mini App session lookup failure")
+    except Exception as exc:
+        _log_quiz_failure("unexpected open Mini App session lookup failure", exc)
         return None, "could not resolve open quiz session", 500
 
     if open_session:
@@ -440,15 +450,15 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         )
         if get_user_stats(int(user["id"])) is None:
             return None, "user profile unavailable", 503
-    except Exception:
-        logger.exception("failed to initialise user profile")
+    except Exception as exc:
+        _log_quiz_failure("failed to initialise user profile", exc)
         return None, "user profile unavailable", 503
 
     selected = random.sample(pool, count)
     try:
         questions = [prepare_question(question) for question in selected]
-    except (TypeError, ValueError):
-        logger.exception("invalid question data in pool %s", pool_key)
+    except (TypeError, ValueError) as exc:
+        _log_quiz_failure("invalid question data in pool", exc)
         return None, "question data is invalid", 500
 
     cfg = dict(MODE_CONFIG[mode])
@@ -491,13 +501,13 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
     except DuplicateKeyError:
         # A concurrent open session won after the pre-read. Never abandon it and
         # never invent a second attempt; the caller can repeat the start request.
-        logger.info("open Mini App session already exists for user %s", user["id"])
+        logger.info("open Mini App session already exists")
         return None, "another unfinished quiz already exists; retry start", 409
-    except PyMongoError:
-        logger.exception("database unavailable while creating Mini App quiz session")
+    except PyMongoError as exc:
+        _log_quiz_failure("database unavailable while creating Mini App quiz session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected failure while creating Mini App quiz session")
+    except Exception as exc:
+        _log_quiz_failure("unexpected failure while creating Mini App quiz session", exc)
         return None, "could not create quiz session", 500
 
     current = _active_session_payload(document, resumed=False)
@@ -592,8 +602,8 @@ def _claim_or_resume_finalization(session: dict, sessions) -> dict | None:
                 {"_id": session["_id"], "leaderboard_recorded": True},
                 {"$set": {"status": "finalizing", "updated_at_dt": _now()}},
             )
-        except Exception:
-            logger.exception("failed to resume Mini App finalization")
+        except Exception as exc:
+            _log_quiz_failure("failed to resume Mini App finalization", exc)
             return None
         return sessions.find_one({"_id": session["_id"]}) or session
 
@@ -615,8 +625,8 @@ def _claim_or_resume_finalization(session: dict, sessions) -> dict | None:
             },
             return_document=ReturnDocument.AFTER,
         )
-    except Exception:
-        logger.exception("failed to claim Mini App finalization")
+    except Exception as exc:
+        _log_quiz_failure("failed to claim Mini App finalization", exc)
         return None
 
     if claimed:
@@ -681,7 +691,7 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
             if receipt is None:
                 raise RuntimeError("regular result receipt was not persisted")
     except Exception as exc:
-        logger.exception("failed to persist Mini App result %s", result_id)
+        _log_quiz_failure("failed to persist Mini App result", exc)
         try:
             sessions.update_one(
                 {"_id": result_id},
@@ -693,8 +703,8 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
                     }
                 },
             )
-        except Exception:
-            logger.exception("failed to mark Mini App score error")
+        except Exception as mark_exc:
+            _log_quiz_failure("failed to mark Mini App score error", mark_exc)
         return None
 
     result = {
@@ -718,8 +728,8 @@ def _finalize_quiz(session: dict, user: dict) -> dict | None:
             },
         )
         stored = sessions.find_one({"_id": result_id})
-    except Exception:
-        logger.exception("failed to mark Mini App result finished")
+    except Exception as exc:
+        _log_quiz_failure("failed to mark Mini App result finished", exc)
         return None
 
     if stored and stored.get("status") == "finished":
@@ -861,8 +871,8 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
             },
             return_document=ReturnDocument.AFTER,
         )
-    except Exception:
-        logger.exception("failed to advance Mini App session")
+    except Exception as exc:
+        _log_quiz_failure("failed to advance Mini App session", exc)
         return None, "could not save answer", 503
 
     if not updated:
@@ -878,8 +888,8 @@ def answer_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int
         from database import record_question_stat
 
         record_question_stat(question["id"], session["pool_key"], ok, elapsed_question)
-    except Exception:
-        logger.exception("failed to record question stat")
+    except Exception as exc:
+        _log_quiz_failure("failed to record question stat", exc)
 
     total = int(updated.get("question_count") or len(questions))
     finished = int(updated.get("current_index", 0)) >= total
