@@ -22,6 +22,17 @@ from . import quiz as core
 from .db_hardening import OPEN_STATUSES
 
 logger = logging.getLogger(__name__)
+
+
+def _log_start_failure(
+    operation: str,
+    exc: BaseException,
+    *,
+    level: int = logging.ERROR,
+) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _CLIENT_POLICY_FIELDS = frozenset(
     {
         "ranked",
@@ -128,8 +139,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
             return None, "course unavailable", 409
         except KeyError:
             return None, "question pool unavailable", 409
-        except Exception:
-            logger.exception("failed to load course question pool")
+        except Exception as exc:
+            _log_start_failure("failed to load course question pool", exc)
             return None, "question pool unavailable", 503
         if len(pool) < expected_count:
             return None, f"question pool contains fewer than {expected_count} questions", 409
@@ -152,11 +163,11 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         open_session = sessions.find_one(
             {"user_id": user_id, "status": {"$in": list(OPEN_STATUSES)}}
         )
-    except PyMongoError:
-        logger.exception("failed to resolve open Mini App session")
+    except PyMongoError as exc:
+        _log_start_failure("failed to resolve open Mini App session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected open Mini App session lookup failure")
+    except Exception as exc:
+        _log_start_failure("unexpected open Mini App session lookup failure", exc)
         return None, "could not resolve open quiz session", 500
 
     if open_session:
@@ -197,8 +208,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
         )
         if get_user_stats(int(user["id"])) is None:
             return None, "user profile unavailable", 503
-    except Exception:
-        logger.exception("failed to initialise user profile")
+    except Exception as exc:
+        _log_start_failure("failed to initialise user profile", exc)
         return None, "user profile unavailable", 503
 
     try:
@@ -207,8 +218,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
             selected = questions.pick_competitive_challenge_questions(challenge_mode)
         else:
             selected = random.sample(pool, count)
-    except ValueError:
-        logger.exception("question selection failed")
+    except ValueError as exc:
+        _log_start_failure("question selection failed", exc)
         return None, "question pool unavailable", 503
 
     if len(selected) != count:
@@ -221,8 +232,8 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
 
     try:
         prepared = [core.prepare_question(question) for question in selected]
-    except (TypeError, ValueError):
-        logger.exception("invalid question data selected for quiz start")
+    except (TypeError, ValueError) as exc:
+        _log_start_failure("invalid question data selected for quiz start", exc)
         return None, "question data is invalid", 500
 
     cfg = dict(core.MODE_CONFIG[mode])
@@ -268,13 +279,13 @@ def start_quiz(user: dict, payload: dict) -> tuple[dict | None, str | None, int]
             logger.error("Mini App quiz session insert was not acknowledged")
             return None, "database temporarily unavailable", 503
     except DuplicateKeyError:
-        logger.info("open Mini App session already exists for user %s", user["id"])
+        logger.info("open Mini App session already exists")
         return None, "another unfinished quiz already exists; retry start", 409
-    except PyMongoError:
-        logger.exception("database unavailable while creating Mini App quiz session")
+    except PyMongoError as exc:
+        _log_start_failure("database unavailable while creating Mini App quiz session", exc)
         return None, "database temporarily unavailable", 503
-    except Exception:
-        logger.exception("unexpected failure while creating Mini App quiz session")
+    except Exception as exc:
+        _log_start_failure("unexpected failure while creating Mini App quiz session", exc)
         return None, "could not create quiz session", 500
 
     current = core._active_session_payload(document, resumed=False)
