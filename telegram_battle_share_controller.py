@@ -20,6 +20,10 @@ from legacy_battle_session import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_battle_failure(operation: str, exc: BaseException, *, level: int = logging.WARNING) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
 _DEEP_LINK_PREFIX = "duel_"
 _BATTLE_ID_RE = re.compile(r"battle_[0-9a-f]{16}\Z")
 
@@ -106,10 +110,10 @@ async def _notify_creator_ready(bot, battle: dict, opponent_name: str) -> None:
             battle_id,
             start_payload_builder=battles._start_payload,
         )
-    except Exception:
+    except Exception as exc:
         # The opponent claim already staged the durable marker. A transient
         # failure remains recoverable by battle_maintenance_job.
-        logger.warning("creator durable-share notification remains pending", exc_info=True)
+        _log_battle_failure("creator durable-share notification remains pending", exc)
 
 
 async def create_battle(update, context):
@@ -130,8 +134,8 @@ async def create_battle(update, context):
             creator_name=user.first_name or "Игрок",
             questions=questions,
         )
-    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict, ValueError):
-        logger.warning("durable shared battle creation failed for user %s", user.id, exc_info=True)
+    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict, ValueError) as exc:
+        _log_battle_failure("durable shared battle creation failed", exc)
         await query.answer("⚠️ Не удалось создать битву. Попробуй ещё раз.", show_alert=True)
         return
 
@@ -142,8 +146,8 @@ async def create_battle(update, context):
             battle_id,
             user.first_name or "Игрок",
         )
-    except ValueError:
-        logger.info("battle share URL is unavailable", exc_info=True)
+    except ValueError as exc:
+        _log_battle_failure("battle share URL is unavailable", exc, level=logging.INFO)
     else:
         rows.append([InlineKeyboardButton("📤 Поделиться вызовом", url=share_url)])
     rows.extend(

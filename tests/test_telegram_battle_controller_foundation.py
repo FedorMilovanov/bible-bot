@@ -1,3 +1,6 @@
+import logging
+
+import telegram_battle_controller as battles
 from pathlib import Path
 
 
@@ -88,3 +91,23 @@ def test_maintenance_drains_ready_outbox_before_shared_finalization():
     assert maintenance.index("ready_delivery.drain_creator_ready_outbox") < maintenance.index(
         "finalize_ready_battles"
     )
+
+
+def test_battle_controller_logging_is_identity_and_payload_safe(caplog):
+    with caplog.at_level(logging.WARNING, logger=battles.__name__):
+        battles._log_battle_failure(
+            "battle operation failed",
+            RuntimeError("provider-sensitive-marker"),
+        )
+    assert "battle operation failed (RuntimeError)" in caplog.text
+    assert "provider-sensitive-marker" not in caplog.text
+
+
+def test_battle_controller_source_has_no_traceback_or_identity_logging():
+    assert "logger.exception(" not in SOURCE
+    assert "exc_info=True" not in SOURCE
+    for line in SOURCE.splitlines():
+        if "logger." in line or "_log_battle_failure(" in line:
+            assert "user.id" not in line
+            assert "user_id" not in line
+            assert "battle_id" not in line

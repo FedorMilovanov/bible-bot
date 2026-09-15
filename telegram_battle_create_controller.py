@@ -19,6 +19,10 @@ from legacy_battle_session import (
 from questions import BATTLE_POOL
 
 logger = logging.getLogger(__name__)
+
+
+def _log_battle_failure(operation: str, exc: BaseException, *, level: int = logging.WARNING) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
 _MAX_UPDATE_ID = (1 << 64) - 1
 
 
@@ -95,8 +99,8 @@ async def create_battle(update, context):
         else:
             await query.answer("⚠️ Запрос на создание битвы повреждён.", show_alert=True)
         return
-    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict):
-        logger.warning("replay-safe battle creation failed for user %s", user.id, exc_info=True)
+    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict) as exc:
+        _log_battle_failure("replay-safe battle creation failed", exc)
         await query.answer("⚠️ Не удалось создать битву. Попробуй ещё раз.", show_alert=True)
         return
 
@@ -108,8 +112,8 @@ async def create_battle(update, context):
             battle_id,
             str(battle.get("creator_name") or user.first_name or "Игрок"),
         )
-    except ValueError:
-        logger.info("battle share URL is unavailable", exc_info=True)
+    except ValueError as exc:
+        _log_battle_failure("battle share URL is unavailable", exc, level=logging.INFO)
     else:
         rows.append([InlineKeyboardButton("📤 Поделиться вызовом", url=share_url)])
     rows.extend(

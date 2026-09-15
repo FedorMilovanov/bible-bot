@@ -64,6 +64,10 @@ from telegram_conversation_states import BATTLE_ANSWERING
 logger = logging.getLogger(__name__)
 
 
+def _log_battle_failure(operation: str, exc: BaseException, *, level: int = logging.WARNING) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 def _battle_pool() -> list[dict]:
     intro_pool = intro_part1_questions + intro_part2_questions + intro_part3_questions
     pool = list(BATTLE_POOL) + list(intro_pool)
@@ -166,8 +170,8 @@ async def create_battle(update, context):
             creator_name=user.first_name or "Игрок",
             questions=questions,
         )
-    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict, ValueError):
-        logger.warning("durable battle creation failed for user %s", user.id, exc_info=True)
+    except (LegacyBattleSessionUnavailable, LegacyBattleSessionConflict, ValueError) as exc:
+        _log_battle_failure("durable battle creation failed", exc)
         await query.answer("⚠️ Не удалось создать битву. Попробуй ещё раз.", show_alert=True)
         return
     await query.answer()
@@ -216,8 +220,8 @@ async def join_battle(update, context):
             battle_id,
             start_payload_builder=_start_payload,
         )
-    except Exception:
-        logger.warning("creator battle-ready notification remains pending", exc_info=True)
+    except Exception as exc:
+        _log_battle_failure("creator battle-ready notification remains pending", exc)
 
 
 def _parse_start(payload: str | None) -> tuple[str, str]:
@@ -291,8 +295,8 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
     random.shuffle(shuffled)
     try:
         callbacks = [build_battle_answer_callback(battle_id, index, option) for option in shuffled]
-    except ValueError:
-        logger.error("battle callback generation failed for %s", battle_id, exc_info=True)
+    except ValueError as exc:
+        _log_battle_failure("battle callback generation failed", exc, level=logging.ERROR)
         await bot.send_message(chat_id=chat_id, text="⚠️ Вопрос битвы повреждён.")
         return
 
@@ -322,8 +326,8 @@ async def send_battle_question(bot, chat_id: int, user_id: int, battle_id: str, 
             reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="Markdown",
         )
-    except Exception:
-        logger.warning("battle question Telegram delivery failed", exc_info=True)
+    except Exception as exc:
+        _log_battle_failure("battle question Telegram delivery failed", exc)
         return
     try:
         await asyncio.to_thread(
@@ -433,8 +437,8 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str
         LegacyBattleProgressInvalid,
         BattleStoreUnavailable,
         ValueError,
-    ):
-        logger.warning("battle participant finalization pending for %s", battle_id, exc_info=True)
+    ) as exc:
+        _log_battle_failure("battle participant finalization pending", exc)
         await bot.send_message(
             chat_id=chat_id,
             text=(
@@ -454,8 +458,8 @@ async def finish_battle_for_user(bot, chat_id: int, user_id: int, battle_id: str
                 battle_id,
                 delivery_protocol=BATTLE_DELIVERY_PROTOCOL_OUTBOX,
             )
-        except BattleStoreUnavailable:
-            logger.warning("shared battle finalization deferred for %s", battle_id, exc_info=True)
+        except BattleStoreUnavailable as exc:
+            _log_battle_failure("shared battle finalization deferred", exc)
         await drain_battle_outbox(bot, limit=10)
         return
 
@@ -562,16 +566,16 @@ async def battle_maintenance_job(context):
         )
         if ready_summary.errors:
             logger.warning("battle-ready outbox sweep errors: %s", ready_summary.errors)
-    except Exception:
-        logger.exception("battle-ready outbox maintenance failed")
+    except Exception as exc:
+        _log_battle_failure("battle-ready outbox maintenance failed", exc, level=logging.ERROR)
     finalization = await asyncio.to_thread(finalize_ready_battles, limit=50)
     if finalization.errors:
         logger.warning("battle finalization sweep errors: %s", finalization.errors)
     try:
         await drain_battle_outbox(context.bot, limit=50)
-    except Exception:
-        logger.exception("battle outbox maintenance failed")
+    except Exception as exc:
+        _log_battle_failure("battle outbox maintenance failed", exc, level=logging.ERROR)
     try:
         await asyncio.to_thread(cleanup_stale_waiting_battles, max_age_minutes=10)
-    except LegacyBattleCleanupUnavailable:
-        logger.warning("battle stale cleanup unavailable", exc_info=True)
+    except LegacyBattleCleanupUnavailable as exc:
+        _log_battle_failure("battle stale cleanup unavailable", exc)
