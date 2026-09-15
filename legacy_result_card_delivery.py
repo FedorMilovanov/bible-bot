@@ -285,7 +285,7 @@ def mark_result_card_delivered(
         )
         marker = existing.get(path) if isinstance(existing, dict) else None
         return isinstance(marker, dict) and marker.get("delivered") is True
-    except PyMongoError as exc:
+    except PyMongoError:
         raise ResultCardDeliveryUnavailable("result-card acknowledgement failed") from None
 
 
@@ -325,7 +325,7 @@ def defer_result_card_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
+    except PyMongoError:
         raise ResultCardDeliveryUnavailable("result-card deferral failed") from None
 
 
@@ -358,7 +358,7 @@ def release_result_card_delivery(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
+    except PyMongoError:
         raise ResultCardDeliveryUnavailable("result-card release failed") from None
 
 
@@ -402,7 +402,7 @@ def settle_result_card_delivery_failure(
             },
         )
         return result.modified_count == 1
-    except PyMongoError as exc:
+    except PyMongoError:
         raise ResultCardDeliveryUnavailable("result-card terminal settlement failed") from None
 
 
