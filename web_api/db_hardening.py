@@ -220,5 +220,5 @@ def ensure_miniapp_indexes() -> bool:
         except MiniAppIndexSafetyUnavailable:
             raise
         except Exception as exc:
-            logger.warning("Mini App index hardening pending: %s", exc)
-            raise MiniAppIndexSafetyUnavailable("Mini App index hardening failed") from exc
+            logger.warning("Mini App index hardening pending (%s)", type(exc).__name__)
+            raise MiniAppIndexSafetyUnavailable("Mini App index hardening failed") from None

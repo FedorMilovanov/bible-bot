@@ -163,15 +163,22 @@ def test_old_in_progress_only_unique_index_is_preserved_for_operator_migration(m
     )
 
 
-def test_index_metadata_failure_is_explicit(monkeypatch):
-    sessions = FakeSessions(info_error=RuntimeError("mongo unavailable"))
+def test_index_metadata_failure_is_explicit(monkeypatch, caplog):
+    sensitive_marker = "duplicate-user-id-991201"
+    sessions = FakeSessions(info_error=RuntimeError(sensitive_marker))
     install(monkeypatch, sessions)
 
-    with pytest.raises(
-        hardening.MiniAppIndexSafetyUnavailable,
-        match="hardening failed",
-    ):
-        hardening.ensure_miniapp_indexes()
+    with caplog.at_level("WARNING", logger=hardening.__name__):
+        with pytest.raises(
+            hardening.MiniAppIndexSafetyUnavailable,
+            match="hardening failed",
+        ) as raised:
+            hardening.ensure_miniapp_indexes()
+
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+    assert "Mini App index hardening pending (RuntimeError)" in caplog.text
+    assert sensitive_marker not in caplog.text
 
 
 def test_quiz_collection_is_not_exposed_when_index_safety_fails(monkeypatch):
