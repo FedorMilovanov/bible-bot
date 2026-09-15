@@ -34,6 +34,13 @@ def _failure_name(exc: BaseException) -> str:
     return type(exc).__name__
 
 
+def _safe_delivery_detail(exc: BaseException) -> str:
+    detail = getattr(exc, "detail", "")
+    if detail in {"RetryAfter", "BadRequest", "Forbidden"}:
+        return detail
+    return _failure_name(exc)
+
+
 def _log_result_delivery_failure(operation: str, exc: BaseException) -> None:
     logger.error("%s (%s)", operation, _failure_name(exc))
 
@@ -118,7 +125,7 @@ async def deliver_result_card_once(bot, session_id: str, user_id: int | str) -> 
             session_id,
             user_id,
             token,
-            error=_failure_name(exc),
+            error=_safe_delivery_detail(exc),
         )
         if not settled:
             raise ResultCardDeliveryAcknowledgementPending(
@@ -132,7 +139,7 @@ async def deliver_result_card_once(bot, session_id: str, user_id: int | str) -> 
             user_id,
             token,
             delay_seconds=exc.delay_seconds,
-            error=_failure_name(exc),
+            error=_safe_delivery_detail(exc),
         )
         if not deferred:
             raise ResultCardDeliveryAcknowledgementPending(
