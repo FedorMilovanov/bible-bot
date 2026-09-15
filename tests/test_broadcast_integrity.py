@@ -1,3 +1,5 @@
+import ast
+from pathlib import Path
 from copy import deepcopy
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -339,3 +341,20 @@ def test_index_bootstrap_includes_completion_scoped_retention(monkeypatch):
     assert "ttl_broadcast_retention" in broadcast_names
     assert "ttl_broadcast_delivery_retention" in delivery_names
     assert "idx_broadcast_delivery_claim" in delivery_names
+
+
+def test_broadcast_store_boundaries_do_not_chain_raw_provider_causes():
+    source = Path(integrity.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise) or node.cause is None:
+            continue
+        if not isinstance(node.exc, ast.Call):
+            continue
+        target = node.exc.func
+        if isinstance(target, ast.Name) and target.id == "BroadcastStoreUnavailable":
+            if not (isinstance(node.cause, ast.Constant) and node.cause.value is None):
+                violations.append(node.lineno)
+    assert violations == []
+    assert "logger.exception(" not in source

@@ -64,9 +64,12 @@ def test_recipient_snapshot_distinguishes_empty_collection_from_outage(monkeypat
     with pytest.raises(BroadcastStoreUnavailable, match="recipient storage"):
         broadcasts._recipient_ids_strict()
 
-    monkeypatch.setattr(database, "collection", Users(error=AutoReconnect("down")))
-    with pytest.raises(BroadcastStoreUnavailable, match="snapshot failed"):
+    sensitive_marker = "mongo-recipient-991201"
+    monkeypatch.setattr(database, "collection", Users(error=AutoReconnect(sensitive_marker)))
+    with pytest.raises(BroadcastStoreUnavailable, match="snapshot failed") as raised:
         broadcasts._recipient_ids_strict()
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
 
 
 def test_non_admin_cannot_accept_broadcast(monkeypatch):
@@ -276,7 +279,7 @@ def test_delivery_worker_acks_successful_recipient(monkeypatch):
 def test_permanent_telegram_failure_is_terminal_not_retried_forever(monkeypatch):
     bot, delivery, _syncs = _install_one_delivery(
         monkeypatch,
-        send_error=Forbidden("blocked"),
+        send_error=Forbidden("blocked-sensitive-marker"),
     )
     terminal = []
     releases = []
@@ -295,7 +298,8 @@ def test_permanent_telegram_failure_is_terminal_not_retried_forever(monkeypatch)
 
     assert summary.terminal_failed == 1
     assert summary.deferred == 0
-    assert terminal[0][0:2] == (delivery["_id"], "claim")
+    assert terminal[0] == (delivery["_id"], "claim", "Forbidden")
+    assert "blocked-sensitive-marker" not in terminal[0][2]
     assert releases == []
 
 
@@ -325,14 +329,14 @@ def test_retry_after_is_durably_deferred_without_second_send_or_release(monkeypa
     assert summary.deferred == 1
     assert summary.delivered == 0
     assert len(bot.sent) == 1
-    assert deferrals[0][0:3] == (delivery["_id"], "claim", 300.0)
+    assert deferrals[0] == (delivery["_id"], "claim", 300.0, "RetryAfter")
     assert releases == []
 
 
 def test_transient_network_failure_releases_lease_and_defers(monkeypatch):
     bot, delivery, _syncs = _install_one_delivery(
         monkeypatch,
-        send_error=NetworkError("network down"),
+        send_error=NetworkError("network-sensitive-marker"),
     )
     releases = []
     monkeypatch.setattr(
@@ -345,4 +349,27 @@ def test_transient_network_failure_releases_lease_and_defers(monkeypatch):
 
     assert summary.deferred == 1
     assert summary.delivered == 0
-    assert releases[0][0:2] == (delivery["_id"], "claim")
+    assert releases[0] == (delivery["_id"], "claim", "NetworkError")
+    assert "network-sensitive-marker" not in releases[0][2]
+
+
+def test_unexpected_delivery_failure_redacts_provider_text_and_recipient_id(monkeypatch):
+    bot, delivery, _syncs = _install_one_delivery(
+        monkeypatch,
+        send_error=RuntimeError("provider-sensitive-marker"),
+    )
+    releases = []
+    monkeypatch.setattr(
+        broadcasts,
+        "release_broadcast_delivery",
+        lambda delivery_id, token, *, error: releases.append((delivery_id, token, error)) or True,
+    )
+
+    summary = run(broadcasts.drain_broadcast_outbox(bot, limit=5))
+
+    assert summary.deferred == 1
+    assert releases[0] == (delivery["_id"], "claim", "RuntimeError")
+    assert summary.errors == ("broadcast-delivery:RuntimeError",)
+    serialized = repr(summary.errors)
+    assert delivery["_id"] not in serialized
+    assert "provider-sensitive-marker" not in serialized

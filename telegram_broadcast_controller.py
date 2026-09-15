@@ -69,8 +69,8 @@ def _recipient_ids_strict() -> list[int]:
         return recipients
     except BroadcastStoreUnavailable:
         raise
-    except (PyMongoError, TypeError, ValueError) as exc:
-        raise BroadcastStoreUnavailable("broadcast recipient snapshot failed") from exc
+    except (PyMongoError, TypeError, ValueError):
+        raise BroadcastStoreUnavailable("broadcast recipient snapshot failed") from None
 
 
 def _replay_broadcast(
@@ -129,6 +129,10 @@ def _accept_or_recover_new_broadcast(
         return stored, False, persisted_recipients
 
 
+def _error_kind(exc: BaseException) -> str:
+    return type(exc).__name__
+
+
 def _retry_after_seconds(exc: RetryAfter) -> float:
     value = exc.retry_after
     if isinstance(value, timedelta):
@@ -173,7 +177,7 @@ async def drain_broadcast_outbox(
                 await _store_call(ensure_broadcast_fanout, parent)
     except (BroadcastStoreUnavailable, ValueError) as exc:
         return BroadcastDrainSummary(
-            errors=(f"broadcast-prepare:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"broadcast-prepare:{_error_kind(exc)}",)
         )
 
     claimed_count = 0
@@ -188,7 +192,7 @@ async def drain_broadcast_outbox(
                 broadcast_id=broadcast_id,
             )
         except BroadcastStoreUnavailable as exc:
-            errors.append(f"broadcast-claim:{type(exc).__name__}:{exc}"[:500])
+            errors.append(f"broadcast-claim:{_error_kind(exc)}")
             break
         if delivery is None:
             break
@@ -254,7 +258,7 @@ async def drain_broadcast_outbox(
                     mark_broadcast_delivery_terminal_failure,
                     delivery_id,
                     claim_token,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_error_kind(exc),
                 ):
                     terminal_failed += 1
             except RetryAfter as exc:
@@ -264,9 +268,9 @@ async def drain_broadcast_outbox(
                     delivery_id,
                     claim_token,
                     delay_seconds=delay,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_error_kind(exc),
                 ):
-                    errors.append(f"broadcast:{parent_id}:{delivery_id}:defer conflict")
+                    errors.append("broadcast-delivery:defer conflict")
                 deferred += 1
                 break
             except (NetworkError, TimedOut) as exc:
@@ -274,7 +278,7 @@ async def drain_broadcast_outbox(
                     release_broadcast_delivery,
                     delivery_id,
                     claim_token,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_error_kind(exc),
                 )
                 deferred += 1
                 break
@@ -283,11 +287,11 @@ async def drain_broadcast_outbox(
                     release_broadcast_delivery,
                     delivery_id,
                     claim_token,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_error_kind(exc),
                 )
                 deferred += 1
                 errors.append(
-                    f"broadcast:{parent_id}:{delivery_id}:{type(exc).__name__}:{exc}"[:500]
+                    f"broadcast-delivery:{_error_kind(exc)}"
                 )
                 break
             else:
@@ -298,18 +302,18 @@ async def drain_broadcast_outbox(
                 ):
                     delivered_count += 1
                 else:
-                    errors.append(f"broadcast:{parent_id}:{delivery_id}:ack conflict")
+                    errors.append("broadcast-delivery:ack conflict")
             await asyncio.sleep(max(0.0, float(BROADCAST_SLEEP)))
         except (BroadcastStoreUnavailable, TypeError, ValueError) as exc:
             errors.append(
-                f"broadcast:{parent_id}:{delivery_id}:{type(exc).__name__}:{exc}"[:500]
+                f"broadcast-delivery:{_error_kind(exc)}"
             )
             try:
                 await _store_call(
                     release_broadcast_delivery,
                     delivery_id,
                     claim_token,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_error_kind(exc),
                 )
             except Exception:
                 pass
@@ -320,7 +324,7 @@ async def drain_broadcast_outbox(
         try:
             await _store_call(sync_broadcast_completion, parent_id)
         except (BroadcastStoreUnavailable, ValueError) as exc:
-            errors.append(f"broadcast-sync:{parent_id}:{type(exc).__name__}:{exc}"[:500])
+            errors.append(f"broadcast-sync:{_error_kind(exc)}")
 
     return BroadcastDrainSummary(
         claimed=claimed_count,
@@ -336,8 +340,11 @@ async def broadcast_delivery_job(context) -> None:
         summary = await drain_broadcast_outbox(context.bot, limit=20)
         if summary.errors:
             logger.warning("broadcast outbox drain completed with errors: %s", summary.errors)
-    except Exception:
-        logger.exception("unexpected broadcast outbox drain failure")
+    except Exception as exc:
+        logger.error(
+            "unexpected broadcast outbox drain failure (%s)",
+            _error_kind(exc),
+        )
 
 
 async def broadcast_command(update, context):
@@ -379,11 +386,10 @@ async def broadcast_command(update, context):
                 admin_chat_id=message.chat_id,
                 text=text,
             )
-    except (BroadcastStoreUnavailable, ValueError):
+    except (BroadcastStoreUnavailable, ValueError) as exc:
         logger.warning(
-            "durable broadcast acceptance failed for admin %s",
-            user.id,
-            exc_info=True,
+            "durable broadcast acceptance failed (%s)",
+            _error_kind(exc),
         )
         await message.reply_text(
             "Broadcast status is unknown. Do not create a new command; retry this command later."
