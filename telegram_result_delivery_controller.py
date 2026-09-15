@@ -30,6 +30,14 @@ from telegram_delivery_retry import send_with_durable_retry_after
 logger = logging.getLogger(__name__)
 
 
+def _failure_name(exc: BaseException) -> str:
+    return type(exc).__name__
+
+
+def _log_result_delivery_failure(operation: str, exc: BaseException) -> None:
+    logger.error("%s (%s)", operation, _failure_name(exc))
+
+
 class ResultCardDeliveryAcknowledgementPending(RuntimeError):
     """Remote delivery may have happened but durable acknowledgement is pending."""
 
@@ -110,12 +118,12 @@ async def deliver_result_card_once(bot, session_id: str, user_id: int | str) -> 
             session_id,
             user_id,
             token,
-            error=exc.detail,
+            error=_failure_name(exc),
         )
         if not settled:
             raise ResultCardDeliveryAcknowledgementPending(
                 "result-card permanent failure could not be durably settled"
-            ) from exc
+            ) from None
         return False
     except LegacyDeliveryDeferred as exc:
         deferred = await asyncio.to_thread(
@@ -124,12 +132,12 @@ async def deliver_result_card_once(bot, session_id: str, user_id: int | str) -> 
             user_id,
             token,
             delay_seconds=exc.delay_seconds,
-            error=exc.detail or str(exc),
+            error=_failure_name(exc),
         )
         if not deferred:
             raise ResultCardDeliveryAcknowledgementPending(
                 "result-card RetryAfter could not be durably deferred"
-            ) from exc
+            ) from None
         return False
     except Exception as exc:
         await asyncio.to_thread(
@@ -137,7 +145,7 @@ async def deliver_result_card_once(bot, session_id: str, user_id: int | str) -> 
             session_id,
             user_id,
             token,
-            error=f"{type(exc).__name__}: {exc}",
+            error=_failure_name(exc),
         )
         raise
 
@@ -183,7 +191,7 @@ async def drain_result_card_outbox(bot, *, limit: int = 50) -> ResultCardDrainSu
         sessions = await asyncio.to_thread(get_pending_result_card_sessions, limit)
     except ResultCardDeliveryUnavailable as exc:
         return ResultCardDrainSummary(
-            errors=(f"result-card-list:{type(exc).__name__}:{exc}"[:500],)
+            errors=(f"result-card-list:{_failure_name(exc)}",)
         )
     if not isinstance(sessions, list):
         raise ResultCardDeliveryConflict("pending result-card listing is invalid")
@@ -195,7 +203,7 @@ async def drain_result_card_outbox(bot, *, limit: int = 50) -> ResultCardDrainSu
         session_id = session.get("_id") if isinstance(session, dict) else None
         user_id = session.get("user_id") if isinstance(session, dict) else None
         if not isinstance(session_id, str) or not session_id or user_id is None:
-            errors.append("result-card:<invalid>:pending session identity is invalid")
+            errors.append("result-card:invalid-session")
             continue
         try:
             sent = await deliver_result_card_once(bot, session_id, user_id)
@@ -204,9 +212,7 @@ async def drain_result_card_outbox(bot, *, limit: int = 50) -> ResultCardDrainSu
             else:
                 deferred += 1
         except Exception as exc:
-            errors.append(
-                f"result-card:{session_id}:{type(exc).__name__}:{exc}"[:500]
-            )
+            errors.append(f"result-card:{_failure_name(exc)}")
     return ResultCardDrainSummary(
         sessions_seen=len(sessions),
         delivered=delivered,
@@ -218,8 +224,8 @@ async def drain_result_card_outbox(bot, *, limit: int = 50) -> ResultCardDrainSu
 async def result_card_delivery_job(context):
     try:
         summary = await drain_result_card_outbox(context.bot)
-    except Exception:
-        logger.exception("unexpected result-card outbox drain failure")
+    except Exception as exc:
+        _log_result_delivery_failure("unexpected result-card outbox drain failure", exc)
         return
     if summary.errors:
         logger.warning("result-card outbox drain completed with errors: %s", summary.errors)
