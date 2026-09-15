@@ -28,12 +28,17 @@ PATTERNS = {
     ),
 }
 
+EXAMPLE_MONGO_PLACEHOLDER = (
+    "MONGO_URL=mongodb+srv://"
+    "user:password"
+    "@cluster0.example.mongodb.net/?retryWrites=true&w=majority"
+)
+
 SAFE_PLACEHOLDER_LINES = {
     (
         ".env.example",
         "MongoDB URI with embedded credentials",
-        "MONGO_URL=mongodb+srv://user:password@cluster0.example.mongodb.net/"
-        "?retryWrites=true&w=majority",
+        EXAMPLE_MONGO_PLACEHOLDER,
     ),
 }
 
