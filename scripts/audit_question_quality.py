@@ -1436,6 +1436,10 @@ def compare_budget(report: AuditReport, budget: dict[str, Any]) -> list[tuple[st
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", type=Path, help="write the machine-readable report here")
     parser.add_argument("--report", type=Path, default=None, help="write the Markdown report here")

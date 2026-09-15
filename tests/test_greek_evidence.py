@@ -19,6 +19,8 @@ suite.
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -103,6 +105,22 @@ def test_reviewed_forms_have_the_corpus_row_the_correction_rests_on():
     index = evidence.by_word()
     for form in module.REVIEWED_FORMS:
         assert index.get(module.normalize(form)), f"{form} has no corpus row in the excerpt"
+
+
+def test_cli_forces_utf8_even_under_a_legacy_windows_code_page():
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = subprocess.run(
+        [sys.executable, str(CHECKER)],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    stdout = result.stdout.decode("utf-8")
+    assert "ἑστήκατε" in stdout
+    assert "ἐκκλησία" in stdout
 
 
 def test_corrected_cards_cite_the_sblgnt_reading():
