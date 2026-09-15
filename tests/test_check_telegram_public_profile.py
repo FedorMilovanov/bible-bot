@@ -48,12 +48,15 @@ def test_exit_codes_match_production_acceptance_semantics():
 def test_standalone_script_loads_canonical_contract_from_repo_root():
     env = os.environ.copy()
     env.pop("BOT_TOKEN", None)
+    env["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, str(SCRIPT_PATH)],
         cwd=ROOT,
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=10,
     )

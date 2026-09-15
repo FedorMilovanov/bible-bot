@@ -52,6 +52,7 @@ def test_production_composition_imports_with_runtime_dependencies():
             "DISABLE_WEB_SERVER": "true",
         }
     )
+    env["PYTHONIOENCODING"] = "utf-8"
     result = subprocess.run(
         [
             sys.executable,
@@ -74,6 +75,8 @@ def test_production_composition_imports_with_runtime_dependencies():
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=20,
         check=False,
     )
@@ -125,6 +128,7 @@ def test_production_startup_requires_explicit_mongo_url():
         }
     )
     env.pop("MONGO_URL", None)
+    env["PYTHONIOENCODING"] = "utf-8"
     result = subprocess.run(
         [
             sys.executable,
@@ -143,6 +147,8 @@ def test_production_startup_requires_explicit_mongo_url():
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=20,
         check=False,
     )
