@@ -20,6 +20,10 @@ from legacy_result_card_delivery import (
 logger = logging.getLogger(__name__)
 
 
+def _log_completion_failure(operation: str, exc: BaseException, *, level: int = logging.ERROR) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 class QuizSessionCompletionInvalid(RuntimeError):
     """Raised when an owned persisted session is not durably complete."""
 
@@ -117,11 +121,11 @@ def _result_card_marker(session: dict) -> dict | None:
     """Stage UI recovery evidence without making UI metadata scoring authority."""
     try:
         return build_result_card_delivery_marker(session)
-    except ResultCardDeliveryConflict:
-        logger.warning(
-            "completed session %s has no safe result-card destination marker",
-            session.get("_id"),
-            exc_info=True,
+    except ResultCardDeliveryConflict as exc:
+        _log_completion_failure(
+            "completed session has no safe result-card destination marker",
+            exc,
+            level=logging.WARNING,
         )
         return None
 
@@ -146,10 +150,10 @@ def validate_completed_owned_quiz_session(
     except QuizSessionCompletionInvalid:
         raise
     except PyMongoError as exc:
-        logger.exception("failed to validate completed quiz session %s", session_id)
+        _log_completion_failure("failed to validate completed quiz session", exc)
         raise QuizSessionCompletionStoreUnavailable(
             "quiz session completion proof failed"
-        ) from exc
+        ) from None
 
 
 def finish_completed_owned_quiz_session(
@@ -228,7 +232,7 @@ def finish_completed_owned_quiz_session(
     except (QuizSessionCompletionInvalid, QuizSessionCompletionStoreUnavailable):
         raise
     except PyMongoError as exc:
-        logger.exception("failed to finish completed quiz session %s", session_id)
+        _log_completion_failure("failed to finish completed quiz session", exc)
         raise QuizSessionCompletionStoreUnavailable(
             "quiz session completion write failed"
-        ) from exc
+        ) from None

@@ -72,7 +72,7 @@ def test_retry_after_becomes_durable_defer_without_sleep(monkeypatch):
     assert run(controller.deliver_result_card_once(bot, "s1", 42)) is False
     assert deferred[0][:3] == ("s1", 42, "token-1")
     assert deferred[0][3]["delay_seconds"] == 23.0
-    assert "RetryAfter" in deferred[0][3]["error"]
+    assert deferred[0][3]["error"] == "RetryAfter"
 
 
 def test_restart_fallback_uses_only_durable_core_evidence(monkeypatch):
@@ -133,3 +133,73 @@ def test_memory_only_renderer_remains_direct(monkeypatch):
     run(quiz._render_result(bot, 42, SimpleNamespace()))
 
     assert bot.calls == [((), {"chat_id": 777, "text": "memory result"})]
+
+
+def test_unexpected_delivery_error_releases_with_class_only(monkeypatch):
+    bot = Bot()
+    bot.error = RuntimeError("provider-sensitive-marker")
+    monkeypatch.setattr(controller, "claim_result_card_delivery", lambda *_args, **_kwargs: _claim())
+    released = []
+    monkeypatch.setattr(
+        controller,
+        "release_result_card_delivery",
+        lambda session_id, user_id, token, **kwargs: released.append(
+            (session_id, user_id, token, kwargs)
+        ) or True,
+    )
+
+    try:
+        run(controller.deliver_result_card_once(bot, "session-sensitive-marker", 42))
+    except RuntimeError as exc:
+        assert str(exc) == "provider-sensitive-marker"
+    else:
+        raise AssertionError("delivery error must propagate")
+
+    assert released == [
+        (
+            "session-sensitive-marker",
+            42,
+            "token-1",
+            {"error": "RuntimeError"},
+        )
+    ]
+
+
+def test_drain_summary_redacts_session_and_exception_payload(monkeypatch):
+    monkeypatch.setattr(
+        controller,
+        "get_pending_result_card_sessions",
+        lambda _limit: [{"_id": "session-sensitive-marker", "user_id": 42}],
+    )
+
+    async def fail(_bot, _session_id, _user_id):
+        raise RuntimeError("provider-sensitive-marker")
+
+    monkeypatch.setattr(controller, "deliver_result_card_once", fail)
+
+    summary = run(controller.drain_result_card_outbox(Bot()))
+
+    assert summary.errors == ("result-card:RuntimeError",)
+    assert "session-sensitive-marker" not in repr(summary.errors)
+    assert "provider-sensitive-marker" not in repr(summary.errors)
+
+
+def test_untrusted_delivery_detail_is_not_persisted(monkeypatch):
+    bot = Bot()
+    monkeypatch.setattr(controller, "claim_result_card_delivery", lambda *_args, **_kwargs: _claim())
+    deferred = []
+    monkeypatch.setattr(
+        controller,
+        "defer_result_card_delivery",
+        lambda session_id, user_id, token, **kwargs: deferred.append(kwargs) or True,
+    )
+
+    async def raise_untrusted(*_args, **_kwargs):
+        from legacy_delivery_worker import LegacyDeliveryDeferred
+        raise LegacyDeliveryDeferred(9, detail="provider-sensitive-marker")
+
+    monkeypatch.setattr(controller, "send_with_durable_retry_after", raise_untrusted)
+
+    assert run(controller.deliver_result_card_once(bot, "s1", 42)) is False
+    assert deferred == [{"delay_seconds": 9.0, "error": "LegacyDeliveryDeferred"}]
+    assert "provider-sensitive-marker" not in repr(deferred)
