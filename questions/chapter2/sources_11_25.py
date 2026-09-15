@@ -3,7 +3,7 @@
 SOURCE_CATALOG = {
     "gty_1p2_18_21": {
         "title": "John MacArthur, Why Does the Christian's Work Ethic Matter?",
-        "url": "https://shop.gty.org/library/bibleqnas-library/QA0202/why-does-the-christians-work-ethic-matter",
+        "url": "https://www.gty.org/articles/QA0202/why-does-the-christians-work-ethic-matter",
         "kind": "conservative_application",
     },
     "gty_1p2_21_23": {

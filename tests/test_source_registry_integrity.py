@@ -18,6 +18,17 @@ def test_known_passage_sources_resolve_to_the_passages_their_ids_claim():
             "the-triumph-of-christs-suffering-part-1"
         ),
         "josephus_jewish_war_6": "https://penelope.uchicago.edu/josephus/war-6.html",
+        "gty_1p2_18_21": (
+            "https://www.gty.org/articles/QA0202/"
+            "why-does-the-christians-work-ethic-matter"
+        ),
+        "macarthur_husbands": "https://www.gty.org/sermons/80-383/husbands-love-your-wives",
+        "w3i_sinaiticus_1p4_5": (
+            "https://www.codexsinaiticus.org/en/manuscript.aspx?book=53&chapter=4&verse=15"
+        ),
+        "w3i_sinaiticus_1p5_13_14": (
+            "https://www.codexsinaiticus.org/en/manuscript.aspx?book=54"
+        ),
     }
     for source_id, url in expected.items():
         assert questions.SOURCE_CATALOG[source_id]["url"] == url
@@ -62,3 +73,14 @@ def test_non_identity_existing_authority_is_never_replaced_by_product_identity()
     root = questions.SOURCE_CATALOG["sblgnt"]
     assert root.get("source_identity_only") is not True
     assert root["url"] != CHAPTER3_IDENTITIES["sblgnt"]["url"]
+
+
+def test_source_registry_contains_no_known_legacy_or_tls_fragile_url_forms():
+    urls = {
+        str(metadata.get("url") or "")
+        for metadata in questions.SOURCE_CATALOG.values()
+        if metadata.get("url")
+    }
+    assert not any("shop.gty.org/library/bibleqnas-library" in url for url in urls)
+    assert not any("gty.org/library/sermons-library" in url for url in urls)
+    assert not any(url.startswith("https://codexsinaiticus.org/") for url in urls)
