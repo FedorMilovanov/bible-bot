@@ -25,6 +25,17 @@ from pymongo.errors import DuplicateKeyError
 from questions.pool_policy import is_non_scoring_learning_pool
 
 logger = logging.getLogger(__name__)
+
+
+def _log_result_store_failure(
+    operation: str,
+    exc: BaseException,
+    *,
+    level: int = logging.WARNING,
+) -> None:
+    logger.log(level, "%s (%s)", operation, type(exc).__name__)
+
+
 _RESULT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RECEIPT_RETENTION = timedelta(hours=24)
 _TERMINAL_SESSION_STATUSES = frozenset({"finished", "abandoned"})
@@ -240,8 +251,8 @@ def _prune_old_receipts(user_id: int) -> None:
             )
             if not _acknowledged(cleanup):
                 logger.warning("Mini App receipt pruning write was not acknowledged")
-    except Exception:
-        logger.warning("could not safely prune old Mini App result receipts", exc_info=True)
+    except Exception as exc:
+        _log_result_store_failure("could not safely prune old Mini App result receipts", exc)
 
 
 def _persist_once(
@@ -267,7 +278,7 @@ def _persist_once(
     try:
         result = collection.update_one(query, update, upsert=False)
         if not _acknowledged(result):
-            logger.error("Mini App result write was not acknowledged for %s", result_id)
+            logger.error("Mini App result write was not acknowledged")
             return None
         if getattr(result, "modified_count", 0) == 1:
             _prune_old_receipts(user_id)
@@ -277,8 +288,12 @@ def _persist_once(
         if existing is not None:
             _prune_old_receipts(user_id)
         return existing
-    except Exception:
-        logger.exception("failed to persist Mini App result receipt %s", result_id)
+    except Exception as exc:
+        _log_result_store_failure(
+            "failed to persist Mini App result receipt",
+            exc,
+            level=logging.ERROR,
+        )
         return None
 
 
@@ -312,7 +327,7 @@ def _apply_learning_result_once(
             total=total,
         )
         if validated is None:
-            logger.warning("Mini App learning receipt %s does not match durable result", result_id)
+            logger.warning("Mini App learning receipt does not match durable result")
         return validated
 
     receipt = {
@@ -347,7 +362,7 @@ def _apply_learning_result_once(
         total=total,
     )
     if validated is None:
-        logger.warning("Mini App learning receipt %s changed during persistence", result_id)
+        logger.warning("Mini App learning receipt changed during persistence")
     return validated
 
 
@@ -472,7 +487,7 @@ def apply_regular_result_once(
         if stored is not None:
             return stored
 
-    logger.error("Mini App regular result CAS retry budget exhausted for %s", result_id)
+    logger.error("Mini App regular result CAS retry budget exhausted")
     return None
 
 
@@ -607,5 +622,5 @@ def apply_challenge_result_once(
         )
         return stored
 
-    logger.error("Mini App Challenge result CAS retry budget exhausted for %s", result_id)
+    logger.error("Mini App Challenge result CAS retry budget exhausted")
     return None
