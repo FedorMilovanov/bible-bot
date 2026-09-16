@@ -13,6 +13,8 @@ Current production contract:
 
 The build filter is an optimization only. It must never substitute for `checksPass`.
 
+For an existing Render service, do not assume that changing `render.yaml` has updated the live control plane. Verify the provider-side service settings after rollout. In particular, confirm that Included Paths is empty and the three entries above are present under Ignored Paths before relying on skip behavior.
+
 Paths that can affect runtime, dependencies, application data/content, deployment configuration, Mini App assets, or release/runtime scripts must remain deploy-triggering.
 
 Operational verification should distinguish three independent properties:
