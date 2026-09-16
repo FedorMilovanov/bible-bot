@@ -10,6 +10,11 @@ services:
     healthCheckPath: /production/ready
     maxShutdownDelaySeconds: 30
     autoDeployTrigger: checksPass
+    buildFilter:
+      ignoredPaths:
+        - .github/**
+        - docs/**
+        - tests/**
     envVars:
       - key: BOT_TOKEN
         sync: false
