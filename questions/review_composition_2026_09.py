@@ -45,6 +45,7 @@ from .intro_reception_review import RECEPTION_REVIEW_OVERRIDES
 from .legacy_source_review import LEGACY_REVIEW_OVERRIDES, LEGACY_SOURCE_CATALOG
 from .nero_review import ADDITIONAL_SOURCE_CATALOG, NERO_OVERRIDES
 from .nero_review_extra import EXTRA_SOURCE_CATALOG, NERO_EXTRA_OVERRIDES
+from .seminary_depth_review_2026_09 import SEMINARY_REVIEW_OVERRIDES
 
 
 def _pristine_base_review_overrides() -> dict:
@@ -71,6 +72,7 @@ REVIEW_LAYERS = (
     DEPTH_OVERRIDES,
     intro_review_extra.INTRO_EXTRA_OVERRIDES,
     RECEPTION_REVIEW_OVERRIDES,
+    SEMINARY_REVIEW_OVERRIDES,
     NERO_OVERRIDES,
     NERO_EXTRA_OVERRIDES,
     # Applied last: the evidence/boundary review supersedes earlier wording-only fixes.
