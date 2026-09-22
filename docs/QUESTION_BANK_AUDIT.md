@@ -8,8 +8,8 @@
 - `blocker`: **0**
 - `major`: **6**
 - `minor`: **0**
-- `info`: **53**
-- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 47
+- `info`: **51**
+- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 45
 - пятая глава: reviewed bank закреплён blob-пинами; любое будущее изменение содержимого проходит только через новый reviewed release repin.
 - покрытие послания: **105/105** стихов (1: 25/25, 2: 25/25, 3: 22/22, 4: 19/19, 5: 14/14)
 
@@ -25,8 +25,8 @@
 | `medium_p2` | 25 | 77 | 161 | 0% | 0% | 48% | 17 | 4/19/2 |
 | `hard_p1` | 35 | 88 | 232 | 0% | 0% | 26% | 24 | 3/17/15 |
 | `hard_p2` | 35 | 96 | 230 | 0% | 0% | 37% | 20 | 0/15/20 |
-| `practical_p1` | 47 | 80 | 181 | 0% | 0% | 47% | 24 | 0/0/47 |
-| `practical_p2` | 43 | 84 | 188 | 0% | 0% | 26% | 16 | 0/0/43 |
+| `practical_p1` | 47 | 80 | 181 | 0% | 0% | 47% | 24 | 1/39/7 |
+| `practical_p2` | 43 | 84 | 188 | 0% | 0% | 26% | 16 | 0/35/8 |
 | `linguistics_ch1` | 15 | 66 | 170 | 0% | 0% | 47% | 10 | 3/8/4 |
 | `linguistics_ch1_2` | 15 | 72 | 172 | 7% | 0% | 27% | 14 | 3/7/5 |
 | `linguistics_ch1_3` | 15 | 62 | 196 | 0% | 0% | 47% | 11 | 2/8/5 |
@@ -54,16 +54,14 @@
 - `chapter4` / `ch4_text_005`: single-clause recall item
 - … ещё 7
 
-### `levels.derived_tiers_only` — info, 6
+### `levels.derived_tiers_only` — info, 4
 
-Пулы: `chapter2` (1), `chapter3` (1), `chapter4` (1), `chapter5` (1), `practical_p1` (1), `practical_p2` (1)
+Пулы: `chapter2` (1), `chapter3` (1), `chapter4` (1), `chapter5` (1)
 
 - `chapter2` / `-`: difficulty mix still uses metadata proxy for 78/78 cards (base/core/advanced = 35/19/24)
 - `chapter3` / `-`: difficulty mix still uses metadata proxy for 165/165 cards (base/core/advanced = 44/50/71)
 - `chapter4` / `-`: difficulty mix still uses metadata proxy for 52/52 cards (base/core/advanced = 20/15/17)
 - `chapter5` / `-`: difficulty mix still uses metadata proxy for 72/72 cards (base/core/advanced = 28/21/23)
-- `practical_p1` / `-`: difficulty mix still uses metadata proxy for 47/47 cards (base/core/advanced = 0/0/47)
-- … ещё 1
 
 ### `metadata.source_quorum` — major, 6
 
@@ -119,13 +117,13 @@
 - `language.*` — поймёт ли обычный читатель формулировку; внутренний язык конвейера исследований (`inspected`, `HOLD`, `Wave3n`, `production-status`) — блокер.
 - `disputed.*` — есть ли обязательное покрытие спорных мест и не выдаётся ли спор за факт.
 - `content.trivia` — факт о древнем мире, который не нужен для чтения послания.
-- `levels.*` — распределение по трудности. Индивидуально проверенный когнитивный уровень уже имеют 302 карточек (base 112, core 118, advanced 72). Остальные 457 пока получают только audit-прокси (base 127, core 105, advanced 225) из claim_type/confidence; этот прокси не считается продуктовым уровнем. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
+- `levels.*` — распределение по трудности. Индивидуально проверенный когнитивный уровень уже имеют 392 карточек (base 113, core 192, advanced 87). Остальные 367 пока получают только audit-прокси (base 127, core 105, advanced 135) из claim_type/confidence; этот прокси не считается продуктовым уровнем. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
 
 ## Что делать по приоритету
 
 1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет. В пятой главе остаётся только явно учтённый non-info долг: `blocker` 0, `major` 6, `minor` 0.
    - `metadata.source_quorum`: 6
    - Эти source-quorum находки принадлежат Research-authority boundary: product-репозиторий не добавляет недостающие evidence edges самовольно; для их закрытия нужен новый reviewed Research release и последующий repin.
-2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 6 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
-3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 6, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
+2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 4 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
+3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 4, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
 4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` не даёт счётчикам вырасти, а `tests/test_question_depth_regressions.py` держит глубину объяснений, нейтральность длины вариантов и источник-quorum вне пятой главы.
