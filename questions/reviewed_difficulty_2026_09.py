@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-LEVEL_REVIEW_ID = "chapter1-cognitive-levels-2026-09-v1"
+LEVEL_REVIEW_ID = "chapter1-context-cognitive-levels-2026-09-v2"
 VALID_LEVELS = frozenset({"base", "core", "advanced"})
 
 
@@ -45,6 +45,25 @@ _BASE_IDS = frozenset(
 
         # TMS entry layer.
         "tms1_easy_01", "tms1_easy_02", "tms1_easy_03",
+
+        # Context/history: direct chronology, names, places, and source recall.
+        "nero_01", "nero_02", "nero_03", "nero_04", "nero_06", "nero_07",
+        "nero_08", "nero_09", "nero_10", "nero_12", "nero_13", "nero_14",
+        "geo_01", "geo_02", "geo_03", "geo_04", "geo_05", "geo_06",
+        "geo_08", "geo_09", "geo_10",
+
+        # Linguistics: direct gloss/source recognition remains entry-level even
+        # when the prompt contains Greek.
+        "ling1_02", "ling1_09", "ling1_15",
+        "ling2_03", "ling2_07", "ling2_14",
+        "ling3_01", "ling3_12",
+
+        # Introduction: direct identification/recall of an argument, witness,
+        # scholar, period, theory, or outline.
+        "intro1_01", "intro1_03", "intro1_04", "intro1_06", "intro1_09",
+        "intro1_10", "intro1_11", "intro1_13", "intro1_14",
+        "intro2_03", "intro2_10", "intro2_11",
+        "intro3_03", "intro3_11", "intro3_15",
     }
 )
 
@@ -79,6 +98,27 @@ _CORE_IDS = frozenset(
         # TMS middle/application layer.
         "tms1_med_01", "tms1_med_02", "tms1_med_03", "tms1_med_04",
         "tms1_app_01", "tms1_app_02", "tms1_app_03",
+
+        # Context/history: one-step historical or textual interpretation.
+        "nero_05", "nero_11", "nero_15",
+        "geo_07",
+
+        # Linguistics: contextual lexical/grammatical relations that require one
+        # interpretive step rather than mere recognition.
+        "ling1_01", "ling1_04", "ling1_05", "ling1_06", "ling1_10",
+        "ling1_11", "ling1_13", "ling1_14",
+        "ling2_02", "ling2_04", "ling2_05", "ling2_08", "ling2_10",
+        "ling2_11", "ling2_12",
+        "ling3_03", "ling3_06", "ling3_07", "ling3_08", "ling3_09",
+        "ling3_10", "ling3_11", "ling3_15",
+
+        # Introduction: trace an argument, answer a methodological objection, or
+        # connect multiple clauses without requiring full evidence adjudication.
+        "intro1_02", "intro1_05", "intro1_07", "intro1_08", "intro1_15",
+        "intro2_01", "intro2_02", "intro2_04", "intro2_07", "intro2_08",
+        "intro2_09", "intro2_13",
+        "intro3_01", "intro3_02", "intro3_06", "intro3_07", "intro3_09",
+        "intro3_10", "intro3_14",
     }
 )
 
@@ -107,6 +147,21 @@ _ADVANCED_IDS = frozenset(
         # TMS hard layer after the seminary-depth rewrite.
         "tms1_hard_01", "tms1_hard_02", "tms1_hard_03", "tms1_hard_04",
         "tms1_hard_05",
+
+        # Linguistics: tense/aspect semantics, syntactic judgement,
+        # translation comparison, OT/LXX intertext, or cross-text synthesis.
+        "ling1_03", "ling1_07", "ling1_08", "ling1_12",
+        "ling2_01", "ling2_06", "ling2_09", "ling2_13", "ling2_15",
+        "ling3_02", "ling3_04", "ling3_05", "ling3_13", "ling3_14",
+
+        # Introduction: evaluate historical evidence, literary dependence,
+        # argument from silence, audience reconstruction, disputed structure,
+        # covenant identity, provenance, or the cumulative authorship case.
+        "intro1_12",
+        "intro2_05", "intro2_06", "intro2_12", "intro2_14", "intro2_15",
+        "intro2_16",
+        "intro3_04", "intro3_05", "intro3_08", "intro3_12", "intro3_13",
+        "intro3_16",
     }
 )
 
@@ -125,6 +180,9 @@ REVIEWED_LEVEL_POOLS = frozenset(
         "medium_p1", "medium_p2",
         "hard_p1", "hard_p2",
         "tms_deep",
+        "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
+        "nero", "geography",
+        "intro1", "intro2", "intro3",
     }
 )
 
@@ -162,12 +220,12 @@ def _assert_review_map() -> None:
     )
     if overlap:
         raise ValueError(f"difficulty review assigns multiple levels: {sorted(overlap)}")
-    if len(REVIEWED_LEVEL_BY_ID) != 185:
+    if len(REVIEWED_LEVEL_BY_ID) != 302:
         raise ValueError(
-            "difficulty review must cover exactly 185 Chapter-1/TMS cards; "
+            "difficulty review must cover exactly 302 reviewed Chapter-1/context cards; "
             f"got {len(REVIEWED_LEVEL_BY_ID)}"
         )
-    if reviewed_level_counts() != {"base": 68, "core": 72, "advanced": 45}:
+    if reviewed_level_counts() != {"base": 112, "core": 118, "advanced": 72}:
         raise ValueError(f"unexpected difficulty distribution: {reviewed_level_counts()}")
 
 
