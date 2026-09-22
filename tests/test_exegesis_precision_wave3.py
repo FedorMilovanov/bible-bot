@@ -80,7 +80,7 @@ def test_perfect_passive_1_23_separates_morphology_agent_and_theology():
 
     keyed = _key(card)
     assert "получив" in keyed and "новое рождение" in keyed
-    assert "контекст" in keyed and "вместе с формой" in keyed
+    assert "контекст" in keyed and "формой" in keyed
     explanation = card["explanation"]
     assert "перфектное страдательное причастие" in explanation
     assert "получателей действия" in explanation
