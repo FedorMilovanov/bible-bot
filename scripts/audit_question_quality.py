@@ -840,6 +840,14 @@ TIER_ORDER = ("base", "core", "advanced")
 POOL_TIER_CLAIMS = {pool.rsplit("_", 1)[0]: level for pool, level in POOL_LEVELS.items()}
 
 
+def _derived_difficulty(card: dict) -> str:
+    """Compatibility helper: reviewed card level first, metadata proxy otherwise."""
+    reviewed = str(card.get("level") or "").strip()
+    if reviewed in TIER_ORDER:
+        return reviewed
+    return level_for("__audit_unscoped__", card)[0]
+
+
 def _pool_metrics(
     pool: str,
     cards: list[dict],
