@@ -45,7 +45,7 @@ from .intro_reception_review import RECEPTION_REVIEW_OVERRIDES
 from .legacy_source_review import LEGACY_REVIEW_OVERRIDES, LEGACY_SOURCE_CATALOG
 from .nero_review import ADDITIONAL_SOURCE_CATALOG, NERO_OVERRIDES
 from .nero_review_extra import EXTRA_SOURCE_CATALOG, NERO_EXTRA_OVERRIDES
-from .seminary_depth_review_2026_09 import SEMINARY_REVIEW_OVERRIDES
+from .seminary_depth_review_2026_09 import SEMINARY_REVIEW_OVERRIDES, SEMINARY_SOURCE_CATALOG
 
 
 def _pristine_base_review_overrides() -> dict:
@@ -84,6 +84,7 @@ SOURCE_LAYERS = (
     ADDITIONAL_SOURCE_CATALOG,
     EXTRA_SOURCE_CATALOG,
     CORRECTION_SOURCE_CATALOG,
+    SEMINARY_SOURCE_CATALOG,
     LEGACY_SOURCE_CATALOG,
     HISTORY_WITNESS_SOURCE_CATALOG,
 )
