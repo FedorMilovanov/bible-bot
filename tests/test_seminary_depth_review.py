@@ -57,7 +57,7 @@ def test_intro_audience_and_israel_language_keep_exegetical_boundaries_visible()
 
     assert "ветхозаветн" in people["question"] and "титул" in people["question"]
     assert "Применяет к христианским адресатам" in people["options"][people["correct"]]
-    assert "полное тождество церкви и Израиля" in " ".join(people["options"])
+    assert "полное тождество церкви и Израиля" not in people["options"][people["correct"]]
     assert "систематической богословской модели" in people["explanation"]
 
 
