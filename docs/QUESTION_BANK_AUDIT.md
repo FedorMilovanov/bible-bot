@@ -8,8 +8,8 @@
 - `blocker`: **0**
 - `major`: **6**
 - `minor`: **0**
-- `info`: **68**
-- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 62
+- `info`: **61**
+- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 55
 - пятая глава: reviewed bank закреплён blob-пинами; любое будущее изменение содержимого проходит только через новый reviewed release repin.
 - покрытие послания: **105/105** стихов (1: 25/25, 2: 25/25, 3: 22/22, 4: 19/19, 5: 14/14)
 
@@ -19,12 +19,12 @@
 
 | пул | карточек | ср. длина варианта | ср. длина объяснения | верный = самый длинный | сильная утечка | уклон позиции | якоря стихов | база/ядро/продвинутый |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `easy_p1` | 25 | 53 | 206 | 0% | 0% | 44% | 13 | 22/0/3 |
+| `easy_p1` | 25 | 53 | 206 | 0% | 0% | 44% | 13 | 25/0/0 |
 | `easy_p2` | 25 | 48 | 196 | 0% | 0% | 48% | 12 | 25/0/0 |
-| `medium_p1` | 25 | 65 | 179 | 0% | 0% | 40% | 17 | 20/1/4 |
-| `medium_p2` | 25 | 77 | 161 | 0% | 0% | 48% | 17 | 24/0/1 |
-| `hard_p1` | 35 | 83 | 210 | 0% | 0% | 26% | 24 | 28/3/4 |
-| `hard_p2` | 35 | 92 | 218 | 0% | 0% | 37% | 20 | 27/0/8 |
+| `medium_p1` | 25 | 65 | 179 | 0% | 0% | 40% | 17 | 8/14/3 |
+| `medium_p2` | 25 | 77 | 161 | 0% | 0% | 48% | 17 | 4/19/2 |
+| `hard_p1` | 35 | 83 | 210 | 0% | 0% | 26% | 24 | 3/17/15 |
+| `hard_p2` | 35 | 92 | 218 | 0% | 0% | 37% | 20 | 0/15/20 |
 | `practical_p1` | 47 | 80 | 181 | 0% | 0% | 47% | 24 | 0/0/47 |
 | `practical_p2` | 43 | 84 | 188 | 0% | 0% | 26% | 16 | 0/0/43 |
 | `linguistics_ch1` | 15 | 66 | 170 | 0% | 0% | 47% | 10 | 0/0/15 |
@@ -32,7 +32,7 @@
 | `linguistics_ch1_3` | 15 | 62 | 196 | 0% | 0% | 47% | 11 | 0/0/15 |
 | `nero` | 15 | 72 | 261 | 0% | 0% | 27% | 3 | 1/0/14 |
 | `geography` | 10 | 43 | 218 | 10% | 0% | 30% | 3 | 3/0/7 |
-| `tms_deep` | 15 | 119 | 250 | 0% | 0% | 27% | 14 | 4/11/0 |
+| `tms_deep` | 15 | 119 | 250 | 0% | 0% | 27% | 14 | 3/7/5 |
 | `intro1` | 15 | 92 | 174 | 0% | 0% | 27% | 4 | 0/0/15 |
 | `intro2` | 16 | 100 | 183 | 0% | 0% | 25% | 5 | 1/2/13 |
 | `intro3` | 16 | 105 | 247 | 0% | 0% | 25% | 13 | 0/5/11 |
@@ -54,16 +54,16 @@
 - `chapter4` / `ch4_text_005`: single-clause recall item
 - … ещё 7
 
-### `levels.derived_tiers_only` — info, 21
+### `levels.derived_tiers_only` — info, 14
 
-Пулы: `chapter2` (1), `chapter3` (1), `chapter4` (1), `chapter5` (1), `easy_p1` (1), `easy_p2` (1), `geography` (1), `hard_p1` (1), `hard_p2` (1), `intro1` (1), `intro2` (1), `intro3` (1), `linguistics_ch1` (1), `linguistics_ch1_2` (1), `linguistics_ch1_3` (1), `medium_p1` (1), `medium_p2` (1), `nero` (1), `practical_p1` (1), `practical_p2` (1), `tms_deep` (1)
+Пулы: `chapter2` (1), `chapter3` (1), `chapter4` (1), `chapter5` (1), `geography` (1), `intro1` (1), `intro2` (1), `intro3` (1), `linguistics_ch1` (1), `linguistics_ch1_2` (1), `linguistics_ch1_3` (1), `nero` (1), `practical_p1` (1), `practical_p2` (1)
 
-- `chapter2` / `-`: difficulty mix is derived from reviewed metadata (base/core/advanced = 35/19/24); no card carries a reviewed level field
-- `chapter3` / `-`: difficulty mix is derived from reviewed metadata (base/core/advanced = 44/50/71); no card carries a reviewed level field
-- `chapter4` / `-`: difficulty mix is derived from reviewed metadata (base/core/advanced = 20/15/17); no card carries a reviewed level field
-- `chapter5` / `-`: difficulty mix is derived from reviewed metadata (base/core/advanced = 28/21/23); no card carries a reviewed level field
-- `easy_p1` / `-`: difficulty mix is derived from reviewed metadata (base/core/advanced = 22/0/3); this pool's name asserts base and the derived tier agrees for 22/25 cards, so the ladder is authored by pool, not per card
-- … ещё 16
+- `chapter2` / `-`: difficulty mix still uses metadata proxy for 78/78 cards (base/core/advanced = 35/19/24)
+- `chapter3` / `-`: difficulty mix still uses metadata proxy for 165/165 cards (base/core/advanced = 44/50/71)
+- `chapter4` / `-`: difficulty mix still uses metadata proxy for 52/52 cards (base/core/advanced = 20/15/17)
+- `chapter5` / `-`: difficulty mix still uses metadata proxy for 72/72 cards (base/core/advanced = 28/21/23)
+- `geography` / `-`: difficulty mix still uses metadata proxy for 10/10 cards (base/core/advanced = 3/0/7)
+- … ещё 9
 
 ### `metadata.source_quorum` — major, 6
 
@@ -119,13 +119,13 @@
 - `language.*` — поймёт ли обычный читатель формулировку; внутренний язык конвейера исследований (`inspected`, `HOLD`, `Wave3n`, `production-status`) — блокер.
 - `disputed.*` — есть ли обязательное покрытие спорных мест и не выдаётся ли спор за факт.
 - `content.trivia` — факт о древнем мире, который не нужен для чтения послания.
-- `levels.*` — распределение по трудности. Лестница глав 1 задана именами пулов: `easy_p1` 22/25 (base), `easy_p2` 25/25 (base), `hard_p1` 4/35 (advanced), `hard_p2` 8/35 (advanced), `medium_p1` 1/25 (core), `medium_p2` 0/25 (core). Уровень пула несут 170 карточек (base 50, core 50, advanced 70); остальные 589 получают производный уровень от `claim_type`/`confidence`, который в `medium_*`/`hard_*` совпадает с именем пула редко: там в основном `claim_type=text`, а схема относит его к `base`. Проверенного уровня у отдельной карточки вне главы 1 в банке нет. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
+- `levels.*` — распределение по трудности. Индивидуально проверенный когнитивный уровень уже имеют 185 карточек (base 68, core 72, advanced 45). Остальные 574 пока получают только audit-прокси (base 133, core 112, advanced 329) из claim_type/confidence; этот прокси не считается продуктовым уровнем. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
 
 ## Что делать по приоритету
 
 1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет. В пятой главе остаётся только явно учтённый non-info долг: `blocker` 0, `major` 6, `minor` 0.
    - `metadata.source_quorum`: 6
    - Эти source-quorum находки принадлежат Research-authority boundary: product-репозиторий не добавляет недостающие evidence edges самовольно; для их закрытия нужен новый reviewed Research release и последующий repin.
-2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 21 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
-3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 21, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
+2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 14 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
+3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 14, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
 4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` не даёт счётчикам вырасти, а `tests/test_question_depth_regressions.py` держит глубину объяснений, нейтральность длины вариантов и источник-quorum вне пятой главы.
