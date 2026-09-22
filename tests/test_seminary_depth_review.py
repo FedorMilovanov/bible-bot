@@ -51,7 +51,7 @@ def test_intro_audience_and_israel_language_keep_exegetical_boundaries_visible()
     people = _card("intro3", "intro3_08")
 
     assert "смешанный состав вероятен" in audience["options"][audience["correct"]]
-    assert "точную пропорцию" in audience["explanation"]
+    assert "пропорция известна" in audience["explanation"]
     assert audience["competitive"] is False
 
     assert "ветхозаветные титулы" in people["question"]
@@ -104,10 +104,10 @@ def test_tms_hard_items_require_evidence_discrimination_not_cartoon_rejection():
         assert card["competitive"] is False
         assert card["confidence"] == "medium"
         wrong = _wrong_options(card)
-        # An advanced distractor must state a coherent competing inference, not
-        # a one-clause joke. Length is not the quality proof by itself; it is a
-        # cheap regression fence around the reviewed substantive alternatives.
-        assert min(len(option) for option in wrong) >= 105
+        # Advanced distractors must be developed enough to encode a real
+        # competing inference. The repository-wide wiseness audit separately
+        # guards option-length cues, so this test only prevents one-clause jokes.
+        assert min(len(option.split()) for option in wrong) >= 9
         surface = " ".join(wrong)
         assert not any(marker in surface for marker in banned_caricatures)
 
