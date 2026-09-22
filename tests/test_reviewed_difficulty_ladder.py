@@ -36,15 +36,15 @@ def _cards(pool: str) -> list[dict]:
 
 
 def test_review_map_is_complete_for_every_exposed_difficulty_pool():
-    assert LEVEL_REVIEW_ID == "chapter1-context-cognitive-levels-2026-09-v2"
+    assert LEVEL_REVIEW_ID == "chapter1-practical-cognitive-levels-2026-09-v3"
     ids = {
         card["id"]
         for pool in REVIEWED_LEVEL_POOLS
         for card in _cards(pool)
     }
     assert ids == set(REVIEWED_LEVEL_BY_ID)
-    assert len(ids) == 302
-    assert reviewed_level_counts() == {"base": 112, "core": 118, "advanced": 72}
+    assert len(ids) == 392
+    assert reviewed_level_counts() == {"base": 113, "core": 192, "advanced": 87}
 
 
 def test_production_cards_carry_reviewed_level_and_provenance():
@@ -140,6 +140,31 @@ def test_context_and_greek_labels_do_not_fake_difficulty():
     ):
         source = linguistics | intro
         assert source[question_id]["level"] == "advanced"
+
+
+def test_practical_courses_are_not_mistaken_for_advanced_by_topic():
+    cards = {
+        card["id"]: card
+        for pool in ("practical_p1", "practical_p2")
+        for card in _cards(pool)
+    }
+    assert len(cards) == 90
+    assert sum(card["level"] == "base" for card in cards.values()) == 1
+    assert sum(card["level"] == "core" for card in cards.values()) == 74
+    assert sum(card["level"] == "advanced" for card in cards.values()) == 15
+
+    assert cards["prac_06"]["level"] == "base"
+    for question_id in ("prac_01", "pracSit_01", "prac17_22", "prac17_es2_10"):
+        assert cards[question_id]["level"] == "core"
+    for question_id in (
+        "prac_08",
+        "prac13_12",
+        "prac_es2_07",
+        "prac17_11",
+        "pracSit_13",
+        "prac17_es2_08",
+    ):
+        assert cards[question_id]["level"] == "advanced"
 
 
 def test_no_reviewed_advanced_card_is_a_recall_only_audit_finding():
