@@ -1,4 +1,4 @@
-"""Regression contract for the third exegesis-precision wave."""
+# ruff: noqa: RUF001\n"""Regression contract for the third exegesis-precision wave."""
 from __future__ import annotations
 
 import questions
