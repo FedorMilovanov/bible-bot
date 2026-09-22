@@ -2,7 +2,7 @@
 
 The bank serves beginner and advanced readers, so "which level is this card?" has
 to be answerable from the repository rather than from memory. Today the answer is:
-the exposed Chapter-1/TMS plus context/linguistics courses carry a human-reviewed per-card
+the exposed Chapter-1/TMS, context/linguistics and practical courses carry a human-reviewed per-card
 level. Unreviewed pools still use an audit-only proxy from claim_type/confidence.
 These tests keep reviewed judgement, legacy pool-name fallback and proxy
 provenance distinct.
@@ -77,7 +77,7 @@ def test_ladder_summary_counts_every_card_once():
     assert sum(summary["reviewed"].values()) == summary["reviewed_cards"]
     assert sum(summary["authored"].values()) == summary["authored_cards"]
     assert sum(summary["derived"].values()) == summary["derived_cards"]
-    assert summary["reviewed_cards"] == 302
+    assert summary["reviewed_cards"] == 392
     # Every card in the legacy named ladder now has an item review, so pool-name
     # provenance remains only as a compatibility fallback for hypothetical raw cards.
     assert summary["authored_cards"] == 0
@@ -100,7 +100,7 @@ def test_reviewed_per_card_levels_have_reviewed_provenance():
         for card in questions.get_pool_by_key(pool)
         if card.get("level")
     ]
-    assert len(reviewed) == 302
+    assert len(reviewed) == 392
     for pool, card in reviewed:
         level, source = level_for(pool, card)
         assert level == card["level"]
