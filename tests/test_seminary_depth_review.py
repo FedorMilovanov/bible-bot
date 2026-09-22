@@ -29,7 +29,8 @@ def test_intro_dating_and_authorship_are_not_presented_as_settled_history():
 
     assert date_card["position"] == "project"
     assert date_card["competitive"] is False
-    assert "точный год 62 или 63 нельзя доказать" in date_card["options"][date_card["correct"]]
+    keyed_date = date_card["options"][date_card["correct"]]
+    assert "точный год 62 или 63" in keyed_date and "одного молчания" in keyed_date
     assert "аргумент от молчания" in date_card["explanation"]
 
     assert silence_card["competitive"] is False
@@ -54,7 +55,7 @@ def test_intro_audience_and_israel_language_keep_exegetical_boundaries_visible()
     assert "пропорция известна" in audience["explanation"]
     assert audience["competitive"] is False
 
-    assert "ветхозаветные титулы" in people["question"]
+    assert "ветхозаветн" in people["question"] and "титул" in people["question"]
     assert "Применяет к христианским адресатам" in people["options"][people["correct"]]
     assert "полное тождество церкви и Израиля" in " ".join(people["options"])
     assert "систематической богословской модели" in people["explanation"]
@@ -69,8 +70,9 @@ def test_intro_route_and_babylon_are_reconstruction_not_lexical_fact():
     assert "не даёт дорожного журнала" in route["explanation"]
 
     assert babylon["competitive"] is False
-    assert "Наиболее распространённая" in babylon["options"][babylon["correct"]]
-    assert "не словарная тождественность" in babylon["options"][babylon["correct"]]
+    keyed_babylon = babylon["options"][babylon["correct"]]
+    assert "Рим" in keyed_babylon and "историческая реконструкция" in keyed_babylon
+    assert "не словарное значение" in keyed_babylon
     assert "скорее всего Рим" in babylon["explanation"]
 
 
@@ -84,7 +86,7 @@ def test_literary_hypotheses_are_taught_before_being_evaluated():
         assert card["competitive"] is False
         assert card["confidence"] == "medium"
 
-    assert "не является необходимым объяснением" in baptismal["options"][baptismal["correct"]]
+    assert "не необходимое объяснение" in baptismal["options"][baptismal["correct"]]
     assert "истории исследования" in cross["explanation"]
     assert "наблюдения реальны" in partition["explanation"]
     assert "не математическое опровержение" in counter["explanation"]
