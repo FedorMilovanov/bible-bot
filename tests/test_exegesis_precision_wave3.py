@@ -22,7 +22,7 @@ def test_girded_mind_teaches_readiness_without_forcing_exodus_12():
     keyed = _key(card)
     assert "готовност" in keyed and "собранност" in keyed
     assert "может" in keyed and "Исх. 12:11" in keyed
-    assert "прямо его не цитирует" in keyed
+    assert "прямо его не цитирует" in keyed  # noqa: RUF001
     assert "возможную интертекстуальную связь" in card["explanation"]
 
 
@@ -37,7 +37,7 @@ def test_nero_silence_is_secondary_dating_evidence_not_calendar_proof():
 
     keyed = _key(card)
     assert "может" in keyed and "поддерживать" in keyed
-    assert "само по себе" in keyed and "не доказывает" in keyed
+    assert "само по себе" in keyed and "не доказывает" in keyed  # noqa: RUF001
     assert "аргументе от молчания" in card["explanation"]
 
 
@@ -66,7 +66,7 @@ def test_perfect_participle_1_22_is_not_a_tense_shortcut():
     assert "perfect active participle" in keyed
     assert "синтаксис" in keyed and "контекст" in keyed
     surface = " ".join([keyed, card["explanation"]])
-    assert "завершённое действие с продолжающимся результатом" not in surface
+    assert "завершённое действие с продолжающимся результатом" not in surface  # noqa: RUF001
     assert "сделано однажды" in card["explanation"]
 
 
