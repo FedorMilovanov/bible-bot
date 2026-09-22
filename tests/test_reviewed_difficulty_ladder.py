@@ -36,15 +36,15 @@ def _cards(pool: str) -> list[dict]:
 
 
 def test_review_map_is_complete_for_every_exposed_difficulty_pool():
-    assert LEVEL_REVIEW_ID == "chapter1-cognitive-levels-2026-09-v1"
+    assert LEVEL_REVIEW_ID == "chapter1-context-cognitive-levels-2026-09-v2"
     ids = {
         card["id"]
         for pool in REVIEWED_LEVEL_POOLS
         for card in _cards(pool)
     }
     assert ids == set(REVIEWED_LEVEL_BY_ID)
-    assert len(ids) == 185
-    assert reviewed_level_counts() == {"base": 68, "core": 72, "advanced": 45}
+    assert len(ids) == 302
+    assert reviewed_level_counts() == {"base": 112, "core": 118, "advanced": 72}
 
 
 def test_production_cards_carry_reviewed_level_and_provenance():
@@ -110,6 +110,36 @@ def test_tms_sublevels_match_the_reviewed_cognitive_task():
         assert cards[f"tms1_hard_0{number}"]["level"] == "advanced"
     for number in range(1, 4):
         assert cards[f"tms1_app_0{number}"]["level"] == "core"
+
+
+def test_context_and_greek_labels_do_not_fake_difficulty():
+    nero = {card["id"]: card for card in _cards("nero")}
+    geography = {card["id"]: card for card in _cards("geography")}
+    linguistics = {
+        card["id"]: card
+        for pool in ("linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3")
+        for card in _cards(pool)
+    }
+    intro = {
+        card["id"]: card
+        for pool in ("intro1", "intro2", "intro3")
+        for card in _cards(pool)
+    }
+
+    # Names, dates and direct lexical recognition remain base even when the
+    # subject sounds scholarly.
+    for question_id in ("nero_01", "nero_03", "nero_07", "geo_03", "ling1_02", "ling2_07"):
+        source = nero | geography | linguistics
+        assert source[question_id]["level"] == "base"
+
+    # Advanced means evidence discrimination or multi-step interpretation.
+    for question_id in (
+        "ling1_07", "ling2_06", "ling3_04",
+        "intro1_12", "intro2_15", "intro2_16",
+        "intro3_04", "intro3_08", "intro3_13", "intro3_16",
+    ):
+        source = linguistics | intro
+        assert source[question_id]["level"] == "advanced"
 
 
 def test_no_reviewed_advanced_card_is_a_recall_only_audit_finding():
