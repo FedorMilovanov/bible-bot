@@ -8,8 +8,8 @@
 - `blocker`: **0**
 - `major`: **6**
 - `minor`: **0**
-- `info`: **51**
-- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 45
+- `info`: **50**
+- вне пятой главы: `blocker` 0, `major` 0, `minor` 0, `info` 44
 - пятая глава: reviewed bank закреплён blob-пинами; любое будущее изменение содержимого проходит только через новый reviewed release repin.
 - покрытие послания: **105/105** стихов (1: 25/25, 2: 25/25, 3: 22/22, 4: 19/19, 5: 14/14)
 
@@ -36,7 +36,7 @@
 | `intro1` | 15 | 92 | 174 | 0% | 0% | 27% | 4 | 9/5/1 |
 | `intro2` | 16 | 100 | 183 | 0% | 0% | 25% | 5 | 3/7/6 |
 | `intro3` | 16 | 105 | 247 | 0% | 0% | 25% | 13 | 3/7/6 |
-| `chapter2` | 78 | 68 | 192 | 1% | 0% | 26% | 40 | 35/19/24 |
+| `chapter2` | 78 | 68 | 192 | 1% | 0% | 26% | 40 | 52/11/15 |
 | `chapter3` | 165 | 84 | 186 | 0% | 0% | 26% | 56 | 44/50/71 |
 | `chapter4` | 52 | 87 | 187 | 0% | 0% | 25% | 24 | 20/15/17 |
 | `chapter5` | 72 | 110 | 204 | 1% | 0% | 25% | 22 | 28/21/23 |
@@ -54,11 +54,10 @@
 - `chapter4` / `ch4_text_005`: single-clause recall item
 - … ещё 7
 
-### `levels.derived_tiers_only` — info, 4
+### `levels.derived_tiers_only` — info, 3
 
-Пулы: `chapter2` (1), `chapter3` (1), `chapter4` (1), `chapter5` (1)
+Пулы: `chapter3` (1), `chapter4` (1), `chapter5` (1)
 
-- `chapter2` / `-`: difficulty mix still uses metadata proxy for 78/78 cards (base/core/advanced = 35/19/24)
 - `chapter3` / `-`: difficulty mix still uses metadata proxy for 165/165 cards (base/core/advanced = 44/50/71)
 - `chapter4` / `-`: difficulty mix still uses metadata proxy for 52/52 cards (base/core/advanced = 20/15/17)
 - `chapter5` / `-`: difficulty mix still uses metadata proxy for 72/72 cards (base/core/advanced = 28/21/23)
@@ -117,13 +116,13 @@
 - `language.*` — поймёт ли обычный читатель формулировку; внутренний язык конвейера исследований (`inspected`, `HOLD`, `Wave3n`, `production-status`) — блокер.
 - `disputed.*` — есть ли обязательное покрытие спорных мест и не выдаётся ли спор за факт.
 - `content.trivia` — факт о древнем мире, который не нужен для чтения послания.
-- `levels.*` — распределение по трудности. Индивидуально проверенный когнитивный уровень уже имеют 392 карточек (base 113, core 192, advanced 87). Остальные 367 пока получают только audit-прокси (base 127, core 105, advanced 135) из claim_type/confidence; этот прокси не считается продуктовым уровнем. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
+- `levels.*` — распределение по трудности. Индивидуально проверенный когнитивный уровень уже имеют 470 карточек (base 165, core 203, advanced 102). Остальные 289 пока получают только audit-прокси (base 92, core 86, advanced 111) из claim_type/confidence; этот прокси не считается продуктовым уровнем. Развести курсы по уровням можно будет после того, как этот уровень появится у карточки.
 
 ## Что делать по приоритету
 
 1. Вне пятой главы находок уровня `blocker`/`major`/`minor` нет. В пятой главе остаётся только явно учтённый non-info долг: `blocker` 0, `major` 6, `minor` 0.
    - `metadata.source_quorum`: 6
    - Эти source-quorum находки принадлежат Research-authority boundary: product-репозиторий не добавляет недостающие evidence edges самовольно; для их закрытия нужен новый reviewed Research release и последующий repin.
-2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 4 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
-3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 4, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
+2. Добавить проверенное поле `level` (база/ядро/продвинутый) и развести курсы по уровням: `levels.derived_tiers_only` сейчас отмечает 3 пулов, где трудность выводится из `claim_type`/`confidence`, а не из отдельного проверенного поля.
+3. INFO-находки — измеряемый контекст, а не скрытая веточная работа: `depth.recall_only` 12, `levels.derived_tiers_only` 3, `wiseness.correct_longest` 4, `wiseness.option_shape_spread` 31. `language.latin_jargon` по пулам: 0. Базовые recall-карточки, различия длины в коротких label-наборах и производные уровни остаются видимыми в ratchet и не объявляются исправленными только потому, что они не блокируют релиз.
 4. Каждая новая карточка проходит `--check`: ratchet в `data/question-quality-budget.json` не даёт счётчикам вырасти, а `tests/test_question_depth_regressions.py` держит глубину объяснений, нейтральность длины вариантов и источник-quorum вне пятой главы.
