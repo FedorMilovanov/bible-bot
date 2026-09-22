@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-LEVEL_REVIEW_ID = "chapter1-context-cognitive-levels-2026-09-v2"
+LEVEL_REVIEW_ID = "chapter1-practical-cognitive-levels-2026-09-v3"
 VALID_LEVELS = frozenset({"base", "core", "advanced"})
 
 
@@ -64,6 +64,10 @@ _BASE_IDS = frozenset(
         "intro1_10", "intro1_11", "intro1_13", "intro1_14",
         "intro2_03", "intro2_10", "intro2_11",
         "intro3_03", "intro3_11", "intro3_15",
+
+        # Practical pool: this one item is direct textual recall despite living
+        # in an application course.
+        "prac_06",
     }
 )
 
@@ -119,6 +123,29 @@ _CORE_IDS = frozenset(
         "intro2_09", "intro2_13",
         "intro3_01", "intro3_02", "intro3_06", "intro3_07", "intro3_09",
         "intro3_10", "intro3_14",
+
+        # Practical Chapter-1 application: one-step transfer from the text to a
+        # concrete decision, pastoral situation, habit, or ordinary-life case.
+        "prac_01", "prac_02", "prac_03", "prac_04", "prac_05", "prac_07",
+        "prac_09", "prac_10", "prac_11", "prac_12", "prac_13", "prac_14",
+        "prac_15",
+        "prac13_01", "prac13_02", "prac13_03", "prac13_04", "prac13_05",
+        "prac13_06", "prac13_07", "prac13_08", "prac13_09", "prac13_10",
+        "prac13_11",
+        "pracSit_01", "pracSit_02", "pracSit_03", "pracSit_04", "pracSit_05",
+        "pracSit_06", "pracSit_08", "pracSit_09", "pracSit_10",
+        "prac_es2_01", "prac_es2_02", "prac_es2_03", "prac_es2_05",
+        "prac_es2_08", "prac_es2_09",
+
+        "prac17_01", "prac17_02", "prac17_03", "prac17_04", "prac17_05",
+        "prac17_06", "prac17_07", "prac17_08", "prac17_09", "prac17_10",
+        "prac17_12", "prac17_13", "prac17_14",
+        "prac17_21", "prac17_22", "prac17_23", "prac17_24", "prac17_25",
+        "prac17_26", "prac17_27", "prac17_28",
+        "pracSit_12", "pracSit_14", "pracSit_15", "pracSit_16", "pracSit_17",
+        "pracSit_19", "pracSit_20",
+        "prac17_es2_02", "prac17_es2_04", "prac17_es2_05", "prac17_es2_06",
+        "prac17_es2_07", "prac17_es2_09", "prac17_es2_10",
     }
 )
 
@@ -162,6 +189,14 @@ _ADVANCED_IDS = frozenset(
         "intro2_16",
         "intro3_04", "intro3_05", "intro3_08", "intro3_12", "intro3_13",
         "intro3_16",
+
+        # Practical advanced: intertextual or multi-step pastoral/theological
+        # synthesis rather than merely applying one proposition.
+        "prac_08", "prac13_12", "pracSit_07",
+        "prac_es2_04", "prac_es2_06", "prac_es2_07", "prac_es2_10",
+        "prac17_11", "prac17_15",
+        "pracSit_11", "pracSit_13", "pracSit_18",
+        "prac17_es2_01", "prac17_es2_03", "prac17_es2_08",
     }
 )
 
@@ -183,6 +218,7 @@ REVIEWED_LEVEL_POOLS = frozenset(
         "linguistics_ch1", "linguistics_ch1_2", "linguistics_ch1_3",
         "nero", "geography",
         "intro1", "intro2", "intro3",
+        "practical_p1", "practical_p2",
     }
 )
 
@@ -220,12 +256,12 @@ def _assert_review_map() -> None:
     )
     if overlap:
         raise ValueError(f"difficulty review assigns multiple levels: {sorted(overlap)}")
-    if len(REVIEWED_LEVEL_BY_ID) != 302:
+    if len(REVIEWED_LEVEL_BY_ID) != 392:
         raise ValueError(
-            "difficulty review must cover exactly 302 reviewed Chapter-1/context cards; "
+            "difficulty review must cover exactly 392 reviewed Chapter-1/context/practical cards; "
             f"got {len(REVIEWED_LEVEL_BY_ID)}"
         )
-    if reviewed_level_counts() != {"base": 112, "core": 118, "advanced": 72}:
+    if reviewed_level_counts() != {"base": 113, "core": 192, "advanced": 87}:
         raise ValueError(f"unexpected difficulty distribution: {reviewed_level_counts()}")
 
 
