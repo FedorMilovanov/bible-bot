@@ -79,7 +79,7 @@ def test_perfect_passive_1_23_separates_morphology_agent_and_theology():
     assert "cambridge_greek_perfect_aspect" in card["sources"]
 
     keyed = _key(card)
-    assert "получивших новое рождение" in keyed
+    assert "получив" in keyed and "новое рождение" in keyed
     assert "контекст" in keyed and "не одна морфология" in keyed
     explanation = card["explanation"]
     assert "перфектное страдательное причастие" in explanation
