@@ -38,6 +38,7 @@ from .option_balance_review import apply_option_balance
 from .option_order_review import apply_option_order
 from .project_position_label import apply_project_position_label
 from .ranking_policy import SOURCE_REVIEWED_RANKING_IDS, ranking_eligible
+from .reviewed_difficulty_2026_09 import apply_reviewed_level
 from . import review_composition_2026_09 as _review_composition_2026_09
 from .source_registry import SOURCE_CATALOG
 
@@ -47,8 +48,11 @@ def _canonical(raw: list[dict], key: str) -> list[dict]:
     # Learner-facing option balance is the last wording pass: it replaces
     # distractors only and never touches the reviewed correct option.
     return [
-        apply_option_order(
-            apply_option_balance(apply_intro_balance(apply_project_position_label(question)))
+        apply_reviewed_level(
+            apply_option_order(
+                apply_option_balance(apply_intro_balance(apply_project_position_label(question)))
+            ),
+            pool_key=key,
         )
         for question in reviewed
     ]

@@ -54,7 +54,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from questions.level_policy import POOL_LEVELS, derived_level, ladder_summary  # noqa: E402
+from questions.level_policy import POOL_LEVELS, SOURCE_REVIEWED, ladder_summary, level_for  # noqa: E402
 BUDGET_PATH = ROOT / "data" / "question-quality-budget.json"
 DEFAULT_REPORT = ROOT / "docs" / "QUESTION_BANK_AUDIT.md"
 
@@ -831,24 +831,21 @@ def _audit_disputed(card: dict, pool: str) -> list[Finding]:
     return findings
 
 
-# Difficulty tiers. The bank has no reviewed ``level`` field yet, so the audit
-# derives a three-tier mix from *already reviewed* metadata only: a direct text
-# observation is a base item, interpretation/application/multi-source work is a
-# core item, and work that requires Greek, history or a genuinely contested
-# judgement is advanced. The derivation is reported, never used to gate a card.
+# Difficulty tiers. A reviewed per-card level wins. Pools that have not yet
+# received that human review remain visible through the metadata-derived proxy.
 TIER_ORDER = ("base", "core", "advanced")
 
-# Chapter-1 pools are the only part of the bank whose name states a difficulty
-# ladder; everything else groups cards by book, chapter or topic. The check reports
-# how far the derived tier of such a pool matches the tier the name asserts - that
-# is evidence about the ladder, and it is not a claim that any single card was
-# individually reviewed for difficulty.
+# Retained only to explain legacy pool-name promises while the product migrates
+# from "easy/medium/hard" buckets to reviewed cognitive levels.
 POOL_TIER_CLAIMS = {pool.rsplit("_", 1)[0]: level for pool, level in POOL_LEVELS.items()}
 
 
 def _derived_difficulty(card: dict) -> str:
-    """The proxy tier; the rule itself lives in ``questions/level_policy.py``."""
-    return derived_level(card)
+    """Compatibility helper: reviewed card level first, metadata proxy otherwise."""
+    reviewed = str(card.get("level") or "").strip()
+    if reviewed in TIER_ORDER:
+        return reviewed
+    return level_for("__audit_unscoped__", card)[0]
 
 
 def _pool_metrics(
@@ -866,6 +863,7 @@ def _pool_metrics(
     longer = 0
     leaking = 0
     tiers: Counter[str] = Counter()
+    reviewed_levels = 0
 
     for card in cards:
         options = [str(option) for option in card.get("options", ())]
@@ -890,8 +888,10 @@ def _pool_metrics(
         confidence[str(card.get("confidence"))] += 1
         if card.get("competitive") is True:
             metrics.competitive += 1
-        tier = _derived_difficulty(card)
+        tier, tier_source = level_for(pool, card)
         tiers[tier] += 1
+        if tier_source == SOURCE_REVIEWED:
+            reviewed_levels += 1
         if card.get("level") or card.get("difficulty"):
             metrics.tiered += 1
 
@@ -910,20 +910,19 @@ def _pool_metrics(
     if cards:
         metrics.index_skew = max(correct_index.values()) / len(cards) if correct_index else 0.0
 
-    if cards:
+    if cards and reviewed_levels < len(cards):
         mix = f"{metrics.tiers['base']}/{metrics.tiers['core']}/{metrics.tiers['advanced']}"
         claimed = POOL_TIER_CLAIMS.get(pool.split("_")[0])
         if claimed:
-            agree = metrics.tiers[claimed]
             message = (
-                f"difficulty mix is derived from reviewed metadata (base/core/advanced = {mix}); "
-                f"this pool's name asserts {claimed} and the derived tier agrees for {agree}/{len(cards)} "
-                "cards, so the ladder is authored by pool, not per card"
+                f"difficulty mix is only partly reviewed (base/core/advanced = {mix}); "
+                f"{reviewed_levels}/{len(cards)} cards carry a human-reviewed level while "
+                f"the legacy pool name asserts {claimed}"
             )
         else:
             message = (
-                f"difficulty mix is derived from reviewed metadata (base/core/advanced = {mix}); "
-                "no card carries a reviewed level field"
+                f"difficulty mix still uses metadata proxy for {len(cards) - reviewed_levels}/"
+                f"{len(cards)} cards (base/core/advanced = {mix})"
             )
         findings.append(Finding("levels.derived_tiers_only", INFO, pool, "-", message))
     if len(cards) >= INDEX_SKEW_MIN_POOL and metrics.index_skew >= INDEX_SKEW_THRESHOLD:
@@ -1068,32 +1067,17 @@ def citation_verification() -> list[str]:
 
 
 def level_ladder_note(report: AuditReport) -> str:
-    """One line about what the pool names assert versus what the tiers derive.
-
-    The bank's difficulty ladder lives in the chapter-1 pool names (``easy_p1``,
-    ``medium_p2``, ``hard_p1``); the derived tier is a proxy built from
-    ``claim_type``/``confidence``. Printing the two side by side is the honest
-    state of the "all levels" requirement: the ladder is authored by pool, and no
-    card carries an individually reviewed level yet.
-    """
-    rows: list[str] = []
-    for finding in report.findings:
-        if finding.check_id != "levels.derived_tiers_only" or " asserts " not in finding.message:
-            continue
-        match = re.search(r"this pool's name asserts (\w+) and the derived tier agrees for (\d+)/(\d+)", finding.message)
-        if match:
-            rows.append(f"`{finding.pool}` {match.group(2)}/{match.group(3)} ({match.group(1)})")
-    if not rows:
-        return "Лестница уровней не задана ни одним пулом: уровень выводится из метаданных."
+    """Summarize reviewed difficulty versus the remaining audit-only proxy."""
     summary = ladder_summary(_pool_items())
-    authored = summary["authored"]
+    reviewed = summary["reviewed"]
+    derived = summary["derived"]
     return (
-        f"Лестница глав 1 задана именами пулов: {', '.join(rows)}. Уровень пула несут "
-        f"{summary['authored_cards']} карточек (base {authored['base']}, core {authored['core']}, "
-        f"advanced {authored['advanced']}); остальные {summary['derived_cards']} получают производный "
-        "уровень от `claim_type`/`confidence`, который в `medium_*`/`hard_*` совпадает с именем пула редко: "
-        "там в основном `claim_type=text`, а схема относит его к `base`. Проверенного уровня у отдельной "
-        "карточки вне главы 1 в банке нет."
+        f"Индивидуально проверенный когнитивный уровень уже имеют "
+        f"{summary['reviewed_cards']} карточек (base {reviewed['base']}, "
+        f"core {reviewed['core']}, advanced {reviewed['advanced']}). "
+        f"Остальные {summary['derived_cards']} пока получают только audit-прокси "
+        f"(base {derived['base']}, core {derived['core']}, advanced {derived['advanced']}) "
+        "из claim_type/confidence; этот прокси не считается продуктовым уровнем."
     )
 
 

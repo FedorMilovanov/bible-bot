@@ -2,12 +2,10 @@
 
 The bank serves beginner and advanced readers, so "which level is this card?" has
 to be answerable from the repository rather than from memory. Today the answer is:
-only the chapter-1 tier pools state one (``easy_*``/``medium_*``/``hard_*``), and
-for everything else the audit derives a proxy from ``claim_type``/``confidence``.
-These tests keep that distinction in one place, keep the audit and the report using
-the same rule, and keep the numbers in the report honest - if a reviewed per-card
-level is added later, ``reviewed_cards`` stops being zero and this file has to say
-so.
+the exposed Chapter-1/TMS difficulty courses now carry a human-reviewed per-card
+level. Unreviewed pools still use an audit-only proxy from claim_type/confidence.
+These tests keep reviewed judgement, legacy pool-name fallback and proxy
+provenance distinct.
 """
 from __future__ import annotations
 
@@ -20,6 +18,7 @@ from questions.level_policy import (
     POOL_LEVELS,
     SOURCE_DERIVED,
     SOURCE_POOL,
+    SOURCE_REVIEWED,
     derived_level,
     ladder_summary,
     level_for,
@@ -68,31 +67,41 @@ def test_ladder_summary_counts_every_card_once():
     """Authored plus derived cards equal the bank; the ladder pools are listed."""
     summary = ladder_summary(_pools())
     total = sum(len(cards) for cards in _pools().values())
-    assert summary["authored_cards"] + summary["derived_cards"] == total
+    assert (
+        summary["reviewed_cards"]
+        + summary["authored_cards"]
+        + summary["derived_cards"]
+        == total
+    )
     assert summary["authored_pools"] == sorted(POOL_LEVELS)
+    assert sum(summary["reviewed"].values()) == summary["reviewed_cards"]
     assert sum(summary["authored"].values()) == summary["authored_cards"]
     assert sum(summary["derived"].values()) == summary["derived_cards"]
-    # The chapter-1 ladder is the only authored tier, so it is the whole base tier.
-    assert summary["authored"]["base"] == sum(len(_pools()[pool]) for pool in ("easy_p1", "easy_p2"))
+    assert summary["reviewed_cards"] == 185
+    # Every card in the legacy named ladder now has an item review, so pool-name
+    # provenance remains only as a compatibility fallback for hypothetical raw cards.
+    assert summary["authored_cards"] == 0
 
 
 def test_audit_and_report_use_the_policy_rule():
     """One rule, one place: the audit delegates to the policy module."""
     for pool in LEAF_POOLS:
         for card in questions.get_pool_by_key(pool):
-            assert _derived_difficulty(card) == derived_level(card), card["id"]
+            expected = card.get("level") or derived_level(card)
+            assert _derived_difficulty(card) == expected, card["id"]
     assert POOL_TIER_CLAIMS == {pool.rsplit("_", 1)[0]: level for pool, level in POOL_LEVELS.items()}
 
 
-def test_no_reviewed_per_card_level_exists_yet():
-    """The open task stays visible: nothing carries an individually reviewed level."""
+def test_reviewed_per_card_levels_have_reviewed_provenance():
+    """The first calibrated surface is explicit and does not masquerade as proxy data."""
     reviewed = [
-        card["id"]
+        (pool, card)
         for pool in LEAF_POOLS
         for card in questions.get_pool_by_key(pool)
-        if card.get("level") or card.get("difficulty")
+        if card.get("level")
     ]
-    assert reviewed == [], (
-        "a per-card level appeared: move it into questions/level_policy.py, count it in the "
-        "ladder summary and update the audit report text that says no card carries one"
-    )
+    assert len(reviewed) == 185
+    for pool, card in reviewed:
+        level, source = level_for(pool, card)
+        assert level == card["level"]
+        assert source == SOURCE_REVIEWED
