@@ -261,6 +261,10 @@ BALANCED_DISTRACTORS: dict[str, tuple[str, str, str]] = {
         "Свидетельства остаются настолько равновесными, что курс не должен занимать позицию и может лишь перечислять конкурирующие модели",
         "Высокий греческий стиль лучше всего объяснять тем, что литературным автором был Сильван, писавший от имени Петра как источника традиции",
     ),
+}
+
+
+def apply_intro_balance(item: dict) -> dict:
     """Return the card with length-balanced distractors and an untouched answer."""
     distractors = BALANCED_DISTRACTORS.get(str(item.get("id") or "").strip())
     if not distractors:
