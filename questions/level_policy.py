@@ -1,24 +1,4 @@
-"""Where the bank's difficulty ladder actually lives, and what is still missing.
-
-The Chapter-1 pools are the only part of the bank whose *name* states a difficulty
-tier: ``easy_p1``/``easy_p2`` are the base tier, ``medium_*`` the core tier,
-``hard_*`` the advanced one. Every other pool groups cards by book, chapter or
-topic, so for those the audit can only derive a proxy tier from
-``claim_type``/``confidence`` - and a proxy is not a review.
-
-This module is the single place that says which is which, so the audit, the report
-and the tests cannot drift apart:
-
-* ``POOL_LEVELS`` records the tier a pool name asserts, with its provenance
-  spelled out (the name, not a per-card review);
-* ``level_for`` returns the recorded level and where it came from;
-* ``ladder_summary`` counts the cards on the authored ladder and the cards that
-  only have the derived proxy.
-
-Attaching a reviewed level to every card - the honest version of "serve every
-level" - is still open for the pools without a tier name; until that review
-happens the derived proxy must not be presented as a level.
-"""
+"""Difficulty provenance for the production question bank.\n\nA difficulty label is trustworthy only when a reviewer judged the cognitive task\nof that specific card. A reviewed level therefore wins over every fallback.\n\nLegacy Chapter-1 pool names still carry a historical level promise and remain a\ncompatibility fallback for unreviewed cards. All other cards may receive an\naudit-only proxy from claim_type/confidence; that proxy is measurement, not a\nproduct-level claim.\n\nlevel_for always returns both the level and its provenance so callers cannot\nsilently confuse reviewed judgement with a heuristic.\n"""
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
