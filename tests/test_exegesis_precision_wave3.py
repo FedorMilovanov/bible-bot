@@ -63,8 +63,9 @@ def test_perfect_participle_1_22_is_not_a_tense_shortcut():
     assert "cambridge_greek_perfect_aspect" in questions.SOURCE_CATALOG
 
     keyed = _key(card)
-    assert "perfect active participle" in keyed
+    assert "нынешнего призыва" in keyed
     assert "синтаксис" in keyed and "контекст" in keyed
+    assert "перфектное действительное причастие" in card["explanation"]
     surface = " ".join([keyed, card["explanation"]])
     assert "завершённое действие с продолжающимся результатом" not in surface  # noqa: RUF001
     assert "сделано однажды" in card["explanation"]
@@ -78,9 +79,10 @@ def test_perfect_passive_1_23_separates_morphology_agent_and_theology():
     assert "cambridge_greek_perfect_aspect" in card["sources"]
 
     keyed = _key(card)
-    assert "perfect passive participle" in keyed
-    assert "контекст" in keyed and "не одна форма" in keyed
+    assert "получивших новое рождение" in keyed
+    assert "контекст" in keyed and "не одна морфология" in keyed
     explanation = card["explanation"]
+    assert "перфектное страдательное причастие" in explanation
     assert "получателей действия" in explanation
     assert "имя действующего лица нужно брать из контекста" in explanation
     assert "не является грамматическим доказательством" in explanation
