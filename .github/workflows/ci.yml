@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -26,13 +25,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Download and verify pinned Gitleaks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="8.30.1"
+          archive="$RUNNER_TEMP/gitleaks-$version-linux-x64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v$version/gitleaks_$version_linux_x64.tar.gz" \
+            --output "$archive"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+
       - name: Scan full Git history for exposed secrets
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: "false"
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
-          GITLEAKS_ENABLE_SUMMARY: "true"
+        shell: bash
+        run: "$RUNNER_TEMP/gitleaks" git --redact --no-color --verbose .
       - name: Enforce supply-chain policy
         run: python scripts/check_supply_chain_policy.py
       - name: Reject temporary self-writing patch machinery
