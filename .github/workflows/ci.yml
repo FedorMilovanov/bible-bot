@@ -40,7 +40,9 @@ jobs:
 
       - name: Scan full Git history for exposed secrets
         shell: bash
-        run: "$RUNNER_TEMP/gitleaks" git --redact --no-color --verbose .
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitleaks" git --redact --no-color --verbose .
       - name: Enforce supply-chain policy
         run: python scripts/check_supply_chain_policy.py
       - name: Reject temporary self-writing patch machinery
