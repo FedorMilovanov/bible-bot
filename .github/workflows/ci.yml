@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       PTB_TIMEDELTA: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -23,7 +23,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Download and verify pinned Gitleaks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="8.30.1"
+          archive="$RUNNER_TEMP/gitleaks-${version}-linux-x64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            --output "$archive"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: Scan full Git history for exposed secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitleaks" git --redact --no-color --verbose .
       - name: Enforce supply-chain policy
         run: python scripts/check_supply_chain_policy.py
       - name: Reject temporary self-writing patch machinery
