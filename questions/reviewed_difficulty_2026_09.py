@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-LEVEL_REVIEW_ID = "chapter1-practical-cognitive-levels-2026-09-v3"
+LEVEL_REVIEW_ID = "chapter2-cognitive-levels-2026-09-v4"
 VALID_LEVELS = frozenset({"base", "core", "advanced"})
 
 
@@ -68,6 +68,23 @@ _BASE_IDS = frozenset(
         # Practical pool: this one item is direct textual recall despite living
         # in an application course.
         "prac_06",
+
+        # Chapter 2 direct text, morphology, and source recognition.
+        "ch2_text_001", "ch2_text_002", "ch2_text_003", "ch2_text_004",
+        "ch2_text_005", "ch2_text_006", "ch2_text_007", "ch2_text_008",
+        "ch2_text_009", "ch2_text_010", "ch2_text_011", "ch2_text_012",
+        "ch2_text_013", "ch2_text_014", "ch2_text_015", "ch2_text_016",
+        "ch2_text_017", "ch2_text_018", "ch2_text_019", "ch2_text_020",
+        "ch2_text_021", "ch2_text_022", "ch2_text_023", "ch2_text_024",
+        "ch2_text_025", "ch2_text_026", "ch2_text_027", "ch2_text_028",
+        "ch2_text_029", "ch2_text_030",
+        "ch2_gr_001", "ch2_gr_003", "ch2_gr_004", "ch2_gr_005",
+        "ch2_gr_008", "ch2_gr_009", "ch2_gr_010", "ch2_gr_012",
+        "ch2_gr_013", "ch2_gr_014", "ch2_gr_015", "ch2_gr_016",
+        "ch2_gr_017",
+        "ch2_ot_001", "ch2_ot_002", "ch2_ot_003", "ch2_ot_004",
+        "ch2_ot_005", "ch2_ot_006", "ch2_ot_007", "ch2_ot_008",
+        "ch2_ot_009",
     }
 )
 
@@ -146,6 +163,12 @@ _CORE_IDS = frozenset(
         "pracSit_19", "pracSit_20",
         "prac17_es2_02", "prac17_es2_04", "prac17_es2_05", "prac17_es2_06",
         "prac17_es2_07", "prac17_es2_09", "prac17_es2_10",
+
+        # Chapter 2 one-step semantics, contextual theology, and application.
+        "ch2_gr_006", "ch2_gr_011",
+        "ch2_app_001", "ch2_app_002", "ch2_app_003", "ch2_app_005",
+        "ch2_app_006",
+        "ch2_theol_004", "ch2_theol_006", "ch2_theol_009", "ch2_theol_010",
     }
 )
 
@@ -197,6 +220,16 @@ _ADVANCED_IDS = frozenset(
         "prac17_11", "prac17_15",
         "pracSit_11", "pracSit_13", "pracSit_18",
         "prac17_es2_01", "prac17_es2_03", "prac17_es2_08",
+
+        # Chapter 2 evidence discrimination: lexical/syntactic ambiguity,
+        # contested readings, socio-historical reconstruction, and multi-step
+        # theological synthesis.
+        "ch2_gr_002", "ch2_gr_007",
+        "ch2_disputed_001", "ch2_disputed_002", "ch2_disputed_003",
+        "ch2_disputed_004",
+        "ch2_hist_001", "ch2_hist_003", "ch2_hist_004", "ch2_hist_005",
+        "ch2_theol_001", "ch2_theol_002", "ch2_theol_003", "ch2_theol_005",
+        "ch2_theol_008",
     }
 )
 
@@ -219,6 +252,7 @@ REVIEWED_LEVEL_POOLS = frozenset(
         "nero", "geography",
         "intro1", "intro2", "intro3",
         "practical_p1", "practical_p2",
+        "chapter2",
     }
 )
 
@@ -256,12 +290,12 @@ def _assert_review_map() -> None:
     )
     if overlap:
         raise ValueError(f"difficulty review assigns multiple levels: {sorted(overlap)}")
-    if len(REVIEWED_LEVEL_BY_ID) != 392:
+    if len(REVIEWED_LEVEL_BY_ID) != 470:
         raise ValueError(
-            "difficulty review must cover exactly 392 reviewed Chapter-1/context/practical cards; "
+            "difficulty review must cover exactly 470 reviewed Chapter-1/context/practical/Chapter-2 cards; "
             f"got {len(REVIEWED_LEVEL_BY_ID)}"
         )
-    if reviewed_level_counts() != {"base": 113, "core": 192, "advanced": 87}:
+    if reviewed_level_counts() != {"base": 165, "core": 203, "advanced": 102}:
         raise ValueError(f"unexpected difficulty distribution: {reviewed_level_counts()}")
 
 

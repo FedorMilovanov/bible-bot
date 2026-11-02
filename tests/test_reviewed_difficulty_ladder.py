@@ -36,15 +36,15 @@ def _cards(pool: str) -> list[dict]:
 
 
 def test_review_map_is_complete_for_every_exposed_difficulty_pool():
-    assert LEVEL_REVIEW_ID == "chapter1-practical-cognitive-levels-2026-09-v3"
+    assert LEVEL_REVIEW_ID == "chapter2-cognitive-levels-2026-09-v4"
     ids = {
         card["id"]
         for pool in REVIEWED_LEVEL_POOLS
         for card in _cards(pool)
     }
     assert ids == set(REVIEWED_LEVEL_BY_ID)
-    assert len(ids) == 392
-    assert reviewed_level_counts() == {"base": 113, "core": 192, "advanced": 87}
+    assert len(ids) == 470
+    assert reviewed_level_counts() == {"base": 165, "core": 203, "advanced": 102}
 
 
 def test_production_cards_carry_reviewed_level_and_provenance():
@@ -167,6 +167,33 @@ def test_practical_courses_are_not_mistaken_for_advanced_by_topic():
         assert cards[question_id]["level"] == "advanced"
 
 
+def test_chapter2_levels_follow_cognitive_task_not_metadata_label():
+    cards = {card["id"]: card for card in _cards("chapter2")}
+    assert len(cards) == 78
+    assert sum(card["level"] == "base" for card in cards.values()) == 52
+    assert sum(card["level"] == "core" for card in cards.values()) == 11
+    assert sum(card["level"] == "advanced" for card in cards.values()) == 15
+
+    for question_id in (
+        "ch2_text_001",
+        "ch2_gr_001",
+        "ch2_gr_015",
+        "ch2_ot_005",
+    ):
+        assert cards[question_id]["level"] == "base"
+
+    for question_id in ("ch2_app_001", "ch2_gr_011", "ch2_theol_010"):
+        assert cards[question_id]["level"] == "core"
+
+    for question_id in (
+        "ch2_gr_002",
+        "ch2_disputed_001",
+        "ch2_hist_005",
+        "ch2_theol_002",
+    ):
+        assert cards[question_id]["level"] == "advanced"
+
+
 def test_no_reviewed_advanced_card_is_a_recall_only_audit_finding():
     audit = _audit_module().audit()
     advanced_ids = {
@@ -184,5 +211,5 @@ def test_no_reviewed_advanced_card_is_a_recall_only_audit_finding():
 
 
 def test_unreviewed_chapter_courses_remain_honest_proxy_not_fake_levels():
-    for pool in ("chapter2", "chapter3", "chapter4", "chapter5"):
+    for pool in ("chapter3", "chapter4", "chapter5"):
         assert all("level" not in card for card in _cards(pool))

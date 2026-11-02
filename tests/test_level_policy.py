@@ -77,7 +77,7 @@ def test_ladder_summary_counts_every_card_once():
     assert sum(summary["reviewed"].values()) == summary["reviewed_cards"]
     assert sum(summary["authored"].values()) == summary["authored_cards"]
     assert sum(summary["derived"].values()) == summary["derived_cards"]
-    assert summary["reviewed_cards"] == 392
+    assert summary["reviewed_cards"] == 470
     # Every card in the legacy named ladder now has an item review, so pool-name
     # provenance remains only as a compatibility fallback for hypothetical raw cards.
     assert summary["authored_cards"] == 0
@@ -100,7 +100,7 @@ def test_reviewed_per_card_levels_have_reviewed_provenance():
         for card in questions.get_pool_by_key(pool)
         if card.get("level")
     ]
-    assert len(reviewed) == 392
+    assert len(reviewed) == 470
     for pool, card in reviewed:
         level, source = level_for(pool, card)
         assert level == card["level"]

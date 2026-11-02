@@ -80,7 +80,7 @@ tms_deep_questions = _canonical(_raw_tms_deep, "tms_deep")
 
 # Chapters 2-5 cross the product boundary only through reviewed aggregates.
 # Their normal-learning pools remain non-scoring through questions.pool_policy.
-chapter2_questions = list(CHAPTER2_REVIEWED_QUESTIONS)
+chapter2_questions = [apply_reviewed_level(item, pool_key="chapter2") for item in CHAPTER2_REVIEWED_QUESTIONS]
 chapter3_questions = list(CHAPTER3_REVIEWED_QUESTIONS)
 chapter4_questions = list(CHAPTER4_REVIEWED_QUESTIONS)
 chapter5_questions = list(CHAPTER5_REVIEWED_QUESTIONS)
