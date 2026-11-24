@@ -13,6 +13,16 @@ Read it before changing code, questions, documentation, CI, deployment, or GitHu
 - If `main` moves, re-evaluate the merge result. Do not assume a previously green head is still admission-ready.
 - Keep changes bounded. Content, runtime, deployment, and control-plane mutations should be separate commits and, when materially independent, separate PRs.
 
+## Shared workstation and Remote Commander policy
+
+Follow the [shared local execution protocol](https://github.com/FedorMilovanov/AuditRepo/blob/ad9b5c3df44985a5f7aba2fbb283dd8178b1c92d/LOCAL_EXECUTION_RESOURCE_PROTOCOL.md); these minimum rules are mandatory even if the link is unavailable.
+
+- GitHub connector/API first for repository files, issues, PRs, checks and artifacts; hosted sandbox/CI for builds and full browser matrices; authorized provider API for provider actions. Remote Desktop Commander (RDC) only for evidence/actions requiring the owner's computer. Explain local necessity, batch related commands, keep one process/call ID, compact logs and reconcile unknown outcomes before retrying. No redundant polls, clones, downloads or account switching to evade limits.
+- Heavy Windows work requires fresh Commit/RAM/disk counters and shared admission. Warn at 75%, deny new heavy work at 80%, diagnose at 90%; deny if available RAM < 6 GiB, disk reserve < 15 GiB or coordination unknown. Maximum one shared heavy job until a verified controller is deployed; then no more than its enforced slots (maximum two). No parallel browser engines. Use hosted CI or HOLD when admission is unavailable.
+- Local WebKit/CUDA off by default; only explicit owner-approved bounded exceptions. Browser probe 10 min, heavy build/QA 20 min; longer media tasks require a justified deadline and disk reserve. Close owned browsers/servers/children in finally and use an external watchdog; never terminate owner tabs or unrelated processes. Preserve exact-head checks, source integrity, visual acceptance and all provider/rights/publication gates. Report transport, actual RDC calls, results, cleanup and HOLD.
+
+Use hosted CI for quiz/data and Telegram bot tests; never use a real Telegram account or production database as a substitute for isolated fixtures, and preserve provider/deployment authority.
+
 ## 2. Production architecture boundaries
 
 - `telegram_production.py` is the only production Telegram composition root.
