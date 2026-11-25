@@ -1,5 +1,12 @@
 # AGENTS.md — bible-bot operating contract
 
+## ENGINEERING FIRST — общий принцип работы (25.11.2026)
+
+**Меньше координационной суеты — больше реальной инженерной работы за одну волну.** Общий регламент всех проектов: [AuditRepo Operating Model — ENGINEERING FIRST](https://github.com/FedorMilovanov/AuditRepo/blob/main/AUDITREPO_OPERATING_MODEL.md) ([policy PR #590](https://github.com/FedorMilovanov/AuditRepo/pull/590)). Прямая директива владельца действует немедленно.
+
+По умолчанию агент самостоятельно закрывает порученный scope от диагностики до проверенного результата, включая связанные мелочи; «Продолжай» — следующий полезный блок в текущем сеансе. MAX — только явно назначенная или уже действующая роль в конкретном направлении, не обязательный режим: наличие runbook не активирует его и не расширяет полномочия. При действующем MAX он сам закрывает доступные исправления и интеграцию, делегирует только целостные пакеты, когда полезны параллельность, специализация или независимая приёмка. Один содержательный handoff по готовому пакету либо немедленная эскалация реального блокера. Без микропоручений, повторных неизменных статусов, искусственных квот и новых уровней управления. При HOLD — независимая разрешённая работа. Сохранять единственного writer, обязательные проверки, независимую приёмку, безопасность, права, ресурсные и релизные ограничения.
+
+
 This file is mandatory for every human or automated agent working in this repository.
 Read it before changing code, questions, documentation, CI, deployment, or GitHub settings.
 
@@ -12,6 +19,16 @@ Read it before changing code, questions, documentation, CI, deployment, or GitHu
 - Do not rerun an old successful or failed workflow as evidence for a new tree. New code requires new exact-head evidence.
 - If `main` moves, re-evaluate the merge result. Do not assume a previously green head is still admission-ready.
 - Keep changes bounded. Content, runtime, deployment, and control-plane mutations should be separate commits and, when materially independent, separate PRs.
+
+## Shared workstation and Remote Commander policy
+
+Follow the [shared local execution protocol](https://github.com/FedorMilovanov/AuditRepo/blob/main/LOCAL_EXECUTION_RESOURCE_PROTOCOL.md); these minimum rules are mandatory even if the link is unavailable.
+
+- QUALITY FIRST, RESOURCE SMART: choose the most effective authorized surface by total time, tokens, RDC credits, CI queue, local load and evidence fidelity. GitHub/API normally suits simple repository reads/status; hosted CI normally suits full matrices. RDC is welcome for efficient local batches, worktree edits and short verification when it materially improves speed, quality or cost. LIGHT (short reads/commands/edits) and genuinely bounded MEDIUM (incremental build/file transform/isolated short probe) are autonomous, with proportionate MEDIUM risk checks and owned cleanup; no per-call approval, proof of failed alternatives, fixed call cap or heavy slot. Sustained/uncertain pressure, full builds, persistent browsers/servers and bulk media are HEAVY. Never relabel to evade admission. Batch related work, retain one process/call ID, compact logs, reconcile uncertain outcomes before retrying; no redundant polls/downloads or account switching to evade limits.
+- Heavy Windows work requires fresh Commit/RAM/disk counters and shared admission. Warn at 75%, deny new heavy work at 80%, diagnose at 90%; deny if available RAM < 6 GiB, disk reserve < 15 GiB or coordination unknown. Maximum one shared heavy job until a verified controller is deployed; then its actual enforced slots (initially one; two only after measured acceptance). No parallel browser engines. Use hosted CI or HOLD when admission is unavailable.
+- Local WebKit/CUDA off by default; only explicit owner-approved bounded exceptions. Browser probe 10 min, heavy build/QA 20 min; longer media tasks require a justified deadline and disk reserve. Close owned browsers/servers/children in finally and use an external watchdog; never terminate owner tabs or unrelated processes. Preserve exact-head checks, source integrity, visual acceptance and all provider/rights/publication gates. Report meaningful phase results, actual RDC calls where useful, cleanup and HOLD; no per-call ceremony. Additional useful calls improve evidence.
+
+Use hosted CI for quiz/data and Telegram bot tests; never use a real Telegram account or production database as a substitute for isolated fixtures, and preserve provider/deployment authority.
 
 ## 2. Production architecture boundaries
 
